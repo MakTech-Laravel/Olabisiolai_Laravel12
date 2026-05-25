@@ -1,0 +1,9 @@
+# =============================================================================
+# Coolify: use Build Pack → Dockerfile (NOT Nixpacks)
+# =============================================================================
+# This app needs supervisor inside the image: nginx, php-fpm, Reverb (:8089),
+# queue workers, and scheduler. The repo Dockerfile provides that stack.
+#
+# A previous [start] here ran `php artisan serve` on port 8089 — that is the
+# Laravel dev HTTP server, NOT Reverb, and it breaks real-time messaging.
+# =============================================================================

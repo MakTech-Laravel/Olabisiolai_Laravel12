@@ -1,0 +1,214 @@
+<?php
+
+namespace App\Http\Controllers\Api\V1;
+
+use App\Enums\SubscriptionPlan;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\V1\StoreBusinessInfoRequest;
+use App\Http\Requests\Api\V1\UpdateBusinessInfoRequest;
+use App\Http\Resources\Api\V1\BusinessInfoResource;
+use App\Http\Resources\Api\V1\CategoryResource;
+use App\Http\Resources\Api\V1\LocationResource;
+use App\Models\Category;
+use App\Models\Location;
+use App\Services\BusinessInfoService;
+use App\Services\LocationCatalogService;
+use App\Services\SubscriptionService;
+use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
+use RuntimeException;
+use Symfony\Component\HttpFoundation\Response;
+use Throwable;
+
+class BusinessInfoController extends Controller
+{
+    public function __construct(
+        private readonly BusinessInfoService $businessInfoService,
+        private readonly LocationCatalogService $locationCatalogService,
+        private readonly SubscriptionService $subscriptionService,
+    ) {}
+
+    /**
+     * Categories and static locations for the business listing form.
+     */
+    public function formOptions()
+    {
+        $categories = Category::query()
+            ->orderBy('name')
+            ->get(['id', 'name', 'subcategories', 'created_at', 'updated_at']);
+
+        $locations = Location::query()
+            ->with('lgaBoost')
+            ->orderBy('state_name')
+            ->orderBy('city_name')
+            ->get();
+
+        return sendResponse(true, 'Form options retrieved successfully.', [
+            'categories' => CategoryResource::collection($categories),
+            'locations' => LocationResource::collection($locations),
+        ]);
+    }
+
+    /**
+     * Current user's business profile (if any).
+     */
+    public function show(Request $request)
+    {
+        $user = $request->user('api');
+        $business = $this->businessInfoService->findForUser($user);
+
+        if ($business === null) {
+            return sendResponse(false, 'No business profile found.', null, Response::HTTP_NOT_FOUND);
+        }
+
+        return sendResponse(true, 'Business profile retrieved successfully.', [
+            'business' => new BusinessInfoResource($business),
+        ]);
+    }
+
+    public function store(StoreBusinessInfoRequest $request)
+    {
+        $user = $request->user('api');
+
+        try {
+            $validated = $request->validated();
+            $logo = $request->file('logo');
+            $coverPhotos = array_values($request->file('cover_photos', []));
+
+            $subscriptionPlan = SubscriptionPlan::tryFrom((string) ($validated['subscription_plan'] ?? 'free'))
+                ?? SubscriptionPlan::Free;
+
+            $business = $this->businessInfoService->createForUser(
+                $user,
+                (int) $validated['category_id'],
+                isset($validated['subcategory']) ? trim((string) $validated['subcategory']) : null,
+                (int) $validated['location_id'],
+                $validated['business_name'],
+                $validated['business_description'],
+                $validated['services'],
+                $validated['phone'],
+                $validated['whatsapp'] ?? null,
+                $validated['website'] ?? null,
+                $validated['social_accounts'] ?? null,
+                $logo,
+                $coverPhotos,
+                $subscriptionPlan,
+                $validated['business_hours'] ?? null,
+            );
+
+            $business->load(['category:id,name,subcategories,created_at,updated_at', 'businessHours']);
+
+            $requiresPayment = $this->subscriptionService->requiresPayment($business);
+
+            return sendResponse(
+                true,
+                $requiresPayment
+                    ? 'Business profile created. Complete premium payment to unlock premium features.'
+                    : 'Business profile created successfully.',
+                [
+                    'business' => new BusinessInfoResource($business),
+                    'subscription' => $this->subscriptionService->subscriptionPayload($business),
+                    'requires_subscription_payment' => $requiresPayment,
+                ],
+                Response::HTTP_CREATED,
+            );
+        } catch (ValidationException $exception) {
+            return sendResponse(
+                false,
+                $exception->getMessage(),
+                ['errors' => $exception->errors()],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
+        } catch (InvalidArgumentException $exception) {
+            return sendResponse(false, $exception->getMessage(), null, Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (RuntimeException $exception) {
+            return sendResponse(false, $exception->getMessage(), null, Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    public function update(UpdateBusinessInfoRequest $request)
+    {
+        $user = $request->user('api');
+
+        try {
+            $validated = $request->validated();
+            $logo = $request->file('logo');
+            $coverPhotos = array_values($request->file('cover_photos', []));
+
+            $business = $this->businessInfoService->updateForUser(
+                $user,
+                (int) $validated['category_id'],
+                isset($validated['subcategory']) ? trim((string) $validated['subcategory']) : null,
+                (int) $validated['location_id'],
+                $validated['business_name'],
+                $validated['business_description'],
+                $validated['services'],
+                $validated['phone'],
+                $validated['whatsapp'] ?? null,
+                $validated['website'] ?? null,
+                array_key_exists('social_accounts', $validated) ? $validated['social_accounts'] : null,
+                $logo,
+                $coverPhotos,
+                array_key_exists('business_hours', $validated) ? $validated['business_hours'] : null,
+            );
+
+            $business->load(['category:id,name,subcategories,created_at,updated_at', 'businessHours']);
+
+            return sendResponse(true, 'Business profile updated successfully.', [
+                'business' => new BusinessInfoResource($business),
+            ]);
+        } catch (ValidationException $exception) {
+            return sendResponse(
+                false,
+                $exception->getMessage(),
+                ['errors' => $exception->errors()],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
+        } catch (InvalidArgumentException $exception) {
+            return sendResponse(false, $exception->getMessage(), null, Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (RuntimeException $exception) {
+            return sendResponse(false, $exception->getMessage(), null, Response::HTTP_NOT_FOUND);
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    public function updateBoostStatus(Request $request)
+    {
+        $user = $request->user('api');
+
+        try {
+            $validated = $request->validate([
+                'is_active' => ['required', 'boolean'],
+            ]);
+
+            $boost = $this->businessInfoService->setBoostStatusForVendor($user, (bool) $validated['is_active']);
+
+            return sendResponse(true, 'Boost status updated successfully.', [
+                'boost' => [
+                    'id' => $boost->id,
+                    'business_info_id' => $boost->business_info_id,
+                    'is_active' => (bool) $boost->is_active,
+                    'status' => $boost->is_active ? 'active' : 'none',
+                    'activated_at' => humanDateTime($boost->activated_at),
+                    'deactivated_at' => humanDateTime($boost->deactivated_at),
+                ],
+            ]);
+        } catch (InvalidArgumentException $exception) {
+            return sendResponse(false, $exception->getMessage(), null, Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (RuntimeException $exception) {
+            return sendResponse(false, $exception->getMessage(), null, Response::HTTP_NOT_FOUND);
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+}

@@ -1,0 +1,116 @@
+import { useRef } from 'react'
+import { Loader2, Upload } from 'lucide-react'
+
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+import { storageUrlFromProfile } from '@/lib/mediaUrl'
+
+type Props = {
+  logoPath?: string | null
+  logoUrl?: string | null
+  serverLogoSrc?: string
+  previewUrl?: string | null
+  disabled?: boolean
+  uploading?: boolean
+  canUpload: boolean
+  onFileSelect: (file: File) => void
+}
+
+function DashedFrame({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <motionless
+      className={cn(
+        'rounded-xl bg-[repeating-linear-gradient(90deg,#d1d5db_0px,#d1d5db_10px,transparent_10px,transparent_18px)] p-[2px]',
+        className,
+      )}
+    >
+      <div className="rounded-[10px] bg-neutral-50/95">{children}</div>
+    </motionless>
+  )
+}
+
+export function LogoFileUpload({
+  logoPath,
+  logoUrl,
+  serverLogoSrc,
+  previewUrl,
+  disabled,
+  uploading,
+  canUpload,
+  onFileSelect,
+}: Props) {
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const serverLogo =
+    serverLogoSrc || storageUrlFromProfile({ path: logoPath, url: logoUrl })
+  const displaySrc = previewUrl || serverLogo || null
+
+  const openPicker = () => {
+    if (!disabled && !uploading && canUpload) {
+      inputRef.current?.click()
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        className="hidden"
+        disabled={disabled || uploading || !canUpload}
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file) onFileSelect(file)
+          e.target.value = ''
+        }}
+      />
+
+      <DashedFrame className="w-full max-w-[200px]">
+        <div className="relative flex min-h-[140px] w-full flex-col items-center justify-center gap-3 px-4 py-6">
+          {uploading ? (
+            <Loader2 className="size-8 animate-spin text-brand-red" aria-label="Uploading logo" />
+          ) : displaySrc ? (
+            <>
+              <img
+                key={displaySrc}
+                src={displaySrc}
+                alt="Business logo"
+                className="max-h-24 max-w-full rounded-lg object-contain"
+              />
+              {canUpload ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 rounded-lg"
+                  disabled={disabled}
+                  onClick={openPicker}
+                >
+                  Change logo
+                </Button>
+              ) : null}
+            </>
+          ) : (
+            <button
+              type="button"
+              disabled={disabled || !canUpload}
+              onClick={openPicker}
+              className="flex w-full flex-col items-center justify-center gap-2 rounded-[10px] transition-colors hover:bg-neutral-100/60 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span className="flex size-11 items-center justify-center rounded-full bg-neutral-200/80 text-foreground">
+                <Upload className="size-5" aria-hidden />
+              </span>
+              <span className="text-sm font-semibold text-emerald-600">Click to upload logo</span>
+              <span className="text-xs text-muted-foreground">JPG, PNG or WebP · max 10MB</span>
+            </button>
+          )}
+        </div>
+      </DashedFrame>
+
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        Logo
+      </span>
+    </div>
+  )
+}

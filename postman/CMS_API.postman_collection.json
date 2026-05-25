@@ -1,0 +1,605 @@
+{
+  "info": {
+    "_postman_id": "cms-api-olabisiolai-2026",
+    "name": "Olabisiolai - CMS API",
+    "description": "CMS pages: Terms & Conditions, Privacy Policy, About Us.\n\n1. Run **Admin Login** first — token auto-saves to `admin_token`.\n2. Then run Admin CMS requests.\n3. Public GET requests need no token.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000/api/v1"
+    },
+    {
+      "key": "admin_token",
+      "value": ""
+    },
+    {
+      "key": "admin_email",
+      "value": "superadmin@dev.com"
+    },
+    {
+      "key": "admin_password",
+      "value": "superadmin@dev.com"
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Auth (run first)",
+      "item": [
+        {
+          "name": "Admin Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    if (json.token) {",
+                  "        pm.collectionVariables.set('admin_token', json.token);",
+                  "        console.log('admin_token saved');",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "login"
+              ]
+            },
+            "description": "Login as admin. Token is saved to collection variable `admin_token`."
+          },
+          "response": []
+        },
+        {
+          "name": "Admin Me (verify token)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "me"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "1. Admin CMS",
+      "item": [
+        {
+          "name": "CMS List (all pages)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/cms",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "cms"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CMS View by Type",
+          "item": [
+            {
+              "name": "View - Privacy Policy",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"type\": \"privacy_policy\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/admin/cms/view",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "cms",
+                    "view"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "View - Terms and Conditions",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"type\": \"terms_and_conditions\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/admin/cms/view",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "cms",
+                    "view"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "View - About Us",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"type\": \"about_us\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/admin/cms/view",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "cms",
+                    "view"
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "CMS Upsert (create or update)",
+          "item": [
+            {
+              "name": "Upsert - Privacy Policy",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"type\": \"privacy_policy\",\n  \"title\": \"Privacy Policy\",\n  \"description\": \"<h1>Privacy Policy</h1><p>Last updated: May 2026</p><p>We respect your privacy and protect your personal data.</p><ul><li>What data we collect</li><li>How we use cookies</li><li>Your rights</li></ul>\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/admin/cms/upsert",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "cms",
+                    "upsert"
+                  ]
+                },
+                "description": "First call creates (201). Same type again updates (200)."
+              },
+              "response": []
+            },
+            {
+              "name": "Upsert - Terms and Conditions",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"type\": \"terms_and_conditions\",\n  \"title\": \"Terms and Conditions\",\n  \"description\": \"<h1>Terms and Conditions</h1><p>By using Olabisiolai you agree to the following terms.</p><ol><li>Account responsibility</li><li>Vendor listings</li><li>Payment and refunds</li><li>Limitation of liability</li></ol>\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/admin/cms/upsert",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "cms",
+                    "upsert"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Upsert - About Us",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"type\": \"about_us\",\n  \"title\": \"About Us\",\n  \"description\": \"<h1>About Olabisiolai</h1><p>We connect customers with trusted local vendors across Qatar.</p><p><strong>Our mission:</strong> Make discovery simple and verification transparent.</p>\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/admin/cms/upsert",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "cms",
+                    "upsert"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Upsert - Privacy Policy (update test)",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"type\": \"privacy_policy\",\n  \"title\": \"Privacy Policy (Updated)\",\n  \"description\": \"<h1>Privacy Policy</h1><p><em>Updated content</em> — This version replaces the previous policy.</p>\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/admin/cms/upsert",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "cms",
+                    "upsert"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Upsert - Invalid Type (422 test)",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"type\": \"faq\",\n  \"title\": \"FAQ\",\n  \"description\": \"<p>Invalid type — should return 422</p>\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/admin/cms/upsert",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "cms",
+                    "upsert"
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Public CMS (no auth)",
+      "item": [
+        {
+          "name": "GET - Privacy Policy",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/privacy-policy",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "cms",
+                "privacy_policy"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET - Terms and Conditions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/terms",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "cms",
+                "terms_and_conditions"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET - About Us",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/about",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "cms",
+                "about_us"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET - Invalid Type (422 test)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/cms/faq",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "cms",
+                "faq"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

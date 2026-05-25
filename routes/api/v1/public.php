@@ -1,0 +1,50 @@
+<?php
+
+use App\Http\Controllers\Api\V1\Public\BusinessInfoController;
+use App\Http\Controllers\Api\V1\Public\ContactMessageController;
+use App\Http\Controllers\Api\V1\Public\PublicCategoryCatalogController;
+use App\Http\Controllers\Api\V1\Public\PublicCmsPageController;
+use App\Http\Controllers\Api\V1\Public\PublicLocationCatalogController;
+use App\Http\Controllers\Api\V1\Public\ReviewController;
+use App\Http\Controllers\Api\V1\BusinessReportController;
+use App\Http\Controllers\Api\V1\ReviewReportController;
+use Illuminate\Support\Facades\Route;
+
+/*
+|--------------------------------------------------------------------------
+| Public API Routes (no authentication required)
+|--------------------------------------------------------------------------
+*/
+
+Route::post('/contact-messages', [ContactMessageController::class, 'store'])
+    ->middleware('throttle:10,1')
+    ->name('contact-messages.store');
+
+Route::get('/categories', [PublicCategoryCatalogController::class, 'index'])->name('public.categories');
+Route::get('/categories/{category}', [PublicCategoryCatalogController::class, 'show'])->name('public.categories.show');
+Route::get('/locations', [PublicLocationCatalogController::class, 'index'])->name('public.locations');
+
+Route::prefix('businesses')->name('businesses.')->group(function () {
+    Route::get('/all', [BusinessInfoController::class, 'all'])->name('all');
+    Route::get('/home', [BusinessInfoController::class, 'homePage'])->name('home');
+    Route::get('/featured', [BusinessInfoController::class, 'featured'])->name('featured');
+    Route::get('/search', [BusinessInfoController::class, 'search'])->name('search');
+    Route::get('/{businessId}', [BusinessInfoController::class, 'show'])->name('show');
+});
+
+Route::get('/business-report-reasons', [BusinessReportController::class, 'reasons'])
+    ->name('business-report-reasons');
+
+Route::get('/review-report-reasons', [BusinessReportController::class, 'reasons'])
+    ->name('review-report-reasons');
+
+Route::prefix('reviews')->name('reviews.')->group(function () {
+    Route::post('/', [ReviewController::class, 'index'])->name('index');
+    Route::post('/store', [ReviewController::class, 'store'])
+        ->middleware('auth:api')
+        ->name('store');
+});
+
+Route::get('/about', [PublicCmsPageController::class, 'show'])->defaults('slug', 'about')->name('about');
+Route::get('/privacy-policy', [PublicCmsPageController::class, 'show'])->defaults('slug', 'privacy-policy')->name('privacy-policy');
+Route::get('/terms', [PublicCmsPageController::class, 'show'])->defaults('slug', 'terms')->name('terms');

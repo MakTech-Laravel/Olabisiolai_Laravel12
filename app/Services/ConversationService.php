@@ -1,0 +1,132 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services;
+
+use App\DTOs\Messaging\ConversationDTO;
+use App\Enums\ConversationType;
+use App\Enums\ParticipantRole;
+use App\Exceptions\ConversationNotFoundException;
+use App\Models\Conversation;
+use App\Models\User;
+use App\Repositories\Contracts\ConversationRepositoryInterface;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+
+final class ConversationService
+{
+    public function __construct(
+        private readonly ConversationRepositoryInterface $conversations,
+    ) {}
+
+    public function createConversation(ConversationDTO $dto, User $creator): Conversation
+    {
+        $max = (int) config('messaging.max_participants_per_conversation', 50);
+
+        if (count($dto->participantUserIds) > $max) {
+            throw new \InvalidArgumentException('Too many participants.');
+        }
+
+        if ($dto->type === ConversationType::Direct && count($dto->participantUserIds) === 1) {
+            $existing = $this->conversations->findDirectBetweenUsers([$creator->id, $dto->participantUserIds[0]]);
+
+            if ($existing !== null) {
+                return $existing;
+            }
+        }
+
+        return DB::transaction(function () use ($dto, $creator): Conversation {
+            $conversation = new Conversation([
+                'uuid' => (string) Str::uuid(),
+                'type' => $dto->type,
+                'name' => $dto->name,
+                'created_by' => $creator->id,
+                'tenant_id' => $dto->tenantId,
+            ]);
+            $this->conversations->save($conversation);
+
+            $participantIds = array_unique(array_merge([$creator->id], $dto->participantUserIds));
+
+            foreach ($participantIds as $userId) {
+                $conversation->participantRows()->create([
+                    'user_id' => $userId,
+                    'role' => $userId === $creator->id ? ParticipantRole::Admin : ParticipantRole::Member,
+                    'joined_at' => now(),
+                ]);
+            }
+
+            $conversation->load([
+                'lastMessage.sender',
+                'lastMessage.attachments',
+                'participantRows.user.messagingPresence',
+                'participantRows.user.businessInfo:id,user_id,business_name,logo_path,verified_at',
+            ]);
+
+            Cache::forget($this->participantCacheKey($conversation->uuid));
+
+            return $conversation;
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    public function getConversationsForUser(User $user, array $filters, int $perPage = 30): LengthAwarePaginator
+    {
+        return $this->conversations->paginateForUser($user, $perPage, $filters);
+    }
+
+    public function getConversation(string $uuid, User $user): Conversation
+    {
+        $conversation = $this->conversations->findByUuidForUser($uuid, $user);
+
+        if ($conversation === null) {
+            throw ConversationNotFoundException::forUuid($uuid);
+        }
+
+        $this->cachedParticipants($conversation);
+
+        return $conversation;
+    }
+
+    public function searchConversations(User $user, string $query): Collection
+    {
+        return $this->conversations->searchForUser($user, $query);
+    }
+
+    public function getUnreadCount(User $user): int
+    {
+        return $this->conversations->unreadMessagesCountForUser($user);
+    }
+
+    public function deleteConversation(Conversation $conversation): void
+    {
+        Cache::forget($this->participantCacheKey($conversation->uuid));
+        $this->conversations->delete($conversation);
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, int>
+     */
+    private function cachedParticipants(Conversation $conversation): \Illuminate\Support\Collection
+    {
+        /** @var \Illuminate\Support\Collection<int, int> */
+        return Cache::remember(
+            $this->participantCacheKey($conversation->uuid),
+            300,
+            fn (): \Illuminate\Support\Collection => $conversation->participantRows()
+                ->pluck('user_id')
+                ->unique()
+                ->values()
+        );
+    }
+
+    private function participantCacheKey(string $uuid): string
+    {
+        return sprintf('conversation.%s.participants', $uuid);
+    }
+}
