@@ -12,6 +12,9 @@ return [
     'message_rate_limit_per_minute' => (int) env('MESSAGE_RATE_LIMIT_PER_MINUTE', 60),
     'signed_url_ttl_minutes' => (int) env('MESSAGING_ATTACHMENT_URL_TTL', 60),
     'use_htmlpurifier' => (bool) env('MESSAGING_USE_HTMLPURIFIER', true),
+
+    /** DB "online" older than this is exposed as offline (seconds). */
+    'presence_stale_seconds' => (int) env('MESSAGING_PRESENCE_STALE_SECONDS', 120),
     'allowed_mime_types' => [
         'image/jpeg',
         'image/png',

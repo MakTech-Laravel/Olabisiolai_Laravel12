@@ -204,4 +204,14 @@ final class MessageController extends Controller
             'Typing state broadcast.',
         );
     }
+
+    public function presencePing(Request $request): JsonResponse
+    {
+        return $this->successResponse(null, 'Presence refreshed.');
+    }
+
+    public function presenceOffline(Request $request): JsonResponse
+    {
+        return $this->successResponse(null, 'Marked offline.');
+    }
 }

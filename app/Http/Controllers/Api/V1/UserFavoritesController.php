@@ -50,6 +50,7 @@ class UserFavoritesController extends Controller
                         $query->with([
                             'category:id,name,subcategories',
                             'location:id,lga_name,state_name,city_name,country_name',
+                            'user:id,uuid',
                         ]);
                     },
                 ])

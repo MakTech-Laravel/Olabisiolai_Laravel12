@@ -26,7 +26,7 @@ Route::middleware(['auth:api', 'verified', 'role:user,vendor'])
     ->name('api.v1.')
     ->group(base_path('routes/api/v1/user.php'));
 
-Route::middleware(['auth:api', 'verified', 'role:user,vendor'])
+Route::middleware(['auth:api', 'verified', 'role:user,vendor', 'messaging.presence'])
     ->prefix('v1')
     ->name('api.v1.')
     ->group(base_path('routes/api/v1/messaging.php'));

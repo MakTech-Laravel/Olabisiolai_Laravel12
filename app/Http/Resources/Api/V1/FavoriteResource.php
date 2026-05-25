@@ -44,6 +44,9 @@ class FavoriteResource extends JsonResource
             'phone' => $business->phone,
             'whatsapp' => $business->whatsapp,
             'website' => $business->website,
+            'vendor_user_uuid' => $business->relationLoaded('user') && $business->user !== null
+                ? $business->user->uuid
+                : null,
         ];
     }
 }

@@ -23,7 +23,7 @@ final class MessageSeeder extends Seeder
                 Message::factory()->create([
                     'conversation_id' => $conversation->id,
                     'sender_id' => $participantIds[$i % count($participantIds)],
-                    'body' => 'Seeded message '.($i + 1),
+                    'body' => 'Seeded message ' . ($i + 1),
                 ]);
             }
 

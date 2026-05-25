@@ -100,19 +100,27 @@ final class MessagingHelper
 
         $displayName = self::participantDisplayName($user);
 
+        $businessInfoId = null;
+        if (
+            $user->role === 'vendor'
+            && $user->relationLoaded('businessInfo')
+            && $user->businessInfo !== null
+        ) {
+            $businessInfoId = (int) $user->businessInfo->id;
+        }
+
         return [
             'user_id' => $other->user_id,
             'id' => $user->id,
             'uuid' => $user->uuid,
+            'role' => $user->role,
             'name' => $displayName,
             'display_name' => $displayName,
+            'business_info_id' => $businessInfoId > 0 ? $businessInfoId : null,
             'avatar_url' => self::userAvatarUrl($user),
             'is_verified' => self::isVerifiedVendor($user),
             'presence' => $user->relationLoaded('messagingPresence') && $user->messagingPresence
-                ? [
-                    'status' => $user->messagingPresence->status->value,
-                    'last_seen_at' => $user->messagingPresence->last_seen_at?->toIso8601String(),
-                ]
+                ? app(\App\Services\PresenceService::class)->toPublicPayload($user->messagingPresence)
                 : null,
         ];
     }
@@ -127,8 +135,10 @@ final class MessagingHelper
             return (string) $message->body;
         }
 
-        if ($message->type === MessageType::Attachment
-            || ($message->relationLoaded('attachments') && $message->attachments->isNotEmpty())) {
+        if (
+            $message->type === MessageType::Attachment
+            || ($message->relationLoaded('attachments') && $message->attachments->isNotEmpty())
+        ) {
             $first = $message->relationLoaded('attachments') ? $message->attachments->first() : null;
             $mime = $first?->mime_type ?? '';
 
@@ -164,7 +174,7 @@ final class MessagingHelper
 
         if ($message->relationLoaded('reads')) {
             $readByOther = $message->reads->contains(
-                static fn ($read): bool => (int) $read->user_id !== (int) $viewer->id,
+                static fn($read): bool => (int) $read->user_id !== (int) $viewer->id,
             );
 
             if ($readByOther) {
@@ -230,7 +240,7 @@ final class MessagingHelper
         }
 
         $composed = trim(
-            trim((string) ($user->first_name ?? '')).' '.trim((string) ($user->last_name ?? '')),
+            trim((string) ($user->first_name ?? '')) . ' ' . trim((string) ($user->last_name ?? '')),
         );
 
         if ($composed !== '') {
@@ -254,7 +264,7 @@ final class MessagingHelper
         }
 
         return $conversation->participantRows->first(
-            static fn ($row): bool => (int) $row->user_id !== (int) $viewer->id,
+            static fn($row): bool => (int) $row->user_id !== (int) $viewer->id,
         );
     }
 }

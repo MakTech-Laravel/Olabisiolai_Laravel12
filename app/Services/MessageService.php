@@ -16,6 +16,7 @@ use App\Exceptions\ConversationNotFoundException;
 use App\Jobs\ProcessAttachment;
 use App\Jobs\SendMessageNotification;
 use App\Models\Attachment;
+use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\MessageRead;
 use App\Models\User;
@@ -36,6 +37,7 @@ final class MessageService
         private readonly ConversationRepositoryInterface $conversations,
         private readonly MessageRepositoryInterface $messages,
         private readonly BroadcastService $broadcast,
+        private readonly PresenceService $presence,
     ) {}
 
     public function sendMessage(MessageDTO $dto, User $sender): Message
@@ -83,7 +85,7 @@ final class MessageService
             ]);
         }
 
-        return DB::transaction(function () use ($dto, $sender, $conversation, $body): Message {
+        $result = DB::transaction(function () use ($dto, $sender, $conversation, $body): array {
             $message = new Message([
                 'uuid' => (string) Str::uuid(),
                 'conversation_id' => $conversation->id,
@@ -99,6 +101,9 @@ final class MessageService
 
             $this->messages->save($message);
 
+            $conversation->loadMissing('participantRows');
+            $this->markDeliveredWhenRecipientsOnline($message, $sender, $conversation);
+
             if ($dto->attachmentIds !== []) {
                 Attachment::query()
                     ->whereIn('id', $dto->attachmentIds)
@@ -111,6 +116,8 @@ final class MessageService
 
             Cache::forget(sprintf('conversation.%s.participants', $conversation->uuid));
 
+            $markedAsRead = $this->persistUnreadPeerMessagesAsRead($conversation, $sender, null);
+
             $message->load([
                 'sender.businessInfo:id,user_id,logo_path,verified_at',
                 'attachments',
@@ -118,16 +125,24 @@ final class MessageService
                 'parent.sender',
             ]);
 
-            $this->broadcast->broadcast(new MessageSent($message));
-
-            foreach ($message->attachments as $attachment) {
-                ProcessAttachment::dispatch($attachment->id);
-            }
-
-            SendMessageNotification::dispatch($message->id)->afterCommit();
-
-            return $message;
+            return ['message' => $message, 'marked_as_read' => $markedAsRead];
         });
+
+        foreach ($result['marked_as_read'] as $readMessage) {
+            $this->broadcast->broadcast(new MessageReadBroadcast($readMessage, $sender));
+        }
+
+        $message = $result['message'];
+
+        $this->broadcast->broadcast(new MessageSent($message));
+
+        foreach ($message->attachments as $attachment) {
+            ProcessAttachment::dispatch($attachment->id);
+        }
+
+        SendMessageNotification::dispatch($message->id)->afterCommit();
+
+        return $message;
     }
 
     public function editMessage(string $uuid, string $body, User $user): Message
@@ -211,32 +226,100 @@ final class MessageService
             return;
         }
 
-        DB::transaction(function () use ($message, $user): void {
-            MessageRead::query()->updateOrCreate(
-                [
-                    'message_id' => $message->id,
-                    'user_id' => $user->id,
-                ],
-                [
-                    'read_at' => now(),
-                ]
-            );
+        $conversation = $message->conversation;
+        $markedAsRead = $this->persistUnreadPeerMessagesAsRead($conversation, $user, $message);
 
-            $participant = $message->conversation->participantRows()
-                ->where('user_id', $user->id)
+        foreach ($markedAsRead as $readMessage) {
+            $this->broadcast->broadcast(new MessageReadBroadcast($readMessage, $user));
+        }
+    }
+
+    /**
+     * Mark peer messages as read by $reader (up to $upToMessage when provided).
+     *
+     * @return list<Message>
+     */
+    private function persistUnreadPeerMessagesAsRead(
+        Conversation $conversation,
+        User $reader,
+        ?Message $upToMessage,
+    ): array {
+        $query = Message::query()
+            ->where('conversation_id', $conversation->id)
+            ->where('sender_id', '!=', $reader->id)
+            ->whereDoesntHave('reads', static function ($q) use ($reader): void {
+                $q->where('user_id', $reader->id);
+            });
+
+        if ($upToMessage !== null) {
+            $query->where('created_at', '<=', $upToMessage->created_at);
+        }
+
+        /** @var \Illuminate\Database\Eloquent\Collection<int, Message> $messages */
+        $messages = $query->orderBy('created_at')->get();
+
+        if ($messages->isEmpty()) {
+            return [];
+        }
+
+        $readAt = now();
+        $latest = $messages->last();
+
+        DB::transaction(function () use ($messages, $reader, $conversation, $latest, $readAt): void {
+            foreach ($messages as $msg) {
+                MessageRead::query()->updateOrCreate(
+                    [
+                        'message_id' => $msg->id,
+                        'user_id' => $reader->id,
+                    ],
+                    [
+                        'read_at' => $readAt,
+                    ]
+                );
+            }
+
+            $participant = $conversation->participantRows()
+                ->where('user_id', $reader->id)
                 ->first();
 
-            if ($participant !== null) {
+            if ($participant !== null && $latest !== null) {
                 $current = $participant->last_read_at;
 
-                if ($current === null || $message->created_at->greaterThan($current)) {
-                    $participant->last_read_at = $message->created_at;
+                if ($current === null || $latest->created_at->greaterThan($current)) {
+                    $participant->last_read_at = $latest->created_at;
                     $participant->save();
                 }
             }
         });
 
-        $this->broadcast->broadcast(new MessageReadBroadcast($message, $user));
+        return $messages->all();
+    }
+
+    /**
+     * If any other participant is online, mark the outgoing message as delivered (double tick).
+     */
+    private function markDeliveredWhenRecipientsOnline(
+        Message $message,
+        User $sender,
+        Conversation $conversation,
+    ): void {
+        $recipientIds = $conversation->participantRows()
+            ->where('user_id', '!=', $sender->id)
+            ->pluck('user_id')
+            ->map(static fn($id): int => (int) $id)
+            ->values()
+            ->all();
+
+        if ($recipientIds === []) {
+            return;
+        }
+
+        if ($this->presence->getOnlineUsers($recipientIds)->isEmpty()) {
+            return;
+        }
+
+        $message->forceFill(['status' => MessageStatus::Delivered]);
+        $this->messages->save($message);
     }
 
     public function broadcastTyping(string $conversationUuid, User $user, bool $isTyping): void

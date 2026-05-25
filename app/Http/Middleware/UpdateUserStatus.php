@@ -4,10 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
-use App\Enums\PresenceUserStatus;
-use App\Events\UserPresenceUpdated;
 use App\Models\User;
-use App\Services\BroadcastService;
 use App\Services\PresenceService;
 use Closure;
 use Illuminate\Http\Request;
@@ -18,7 +15,6 @@ final class UpdateUserStatus
 {
     public function __construct(
         private readonly PresenceService $presence,
-        private readonly BroadcastService $broadcast,
     ) {}
 
     /**
@@ -30,10 +26,11 @@ final class UpdateUserStatus
 
         if ($user instanceof User) {
             try {
-                $this->presence->setOnline($user);
-                $this->broadcast->broadcast(
-                    new UserPresenceUpdated($user, PresenceUserStatus::Online, now()),
-                );
+                if ($request->routeIs('api.v1.presence.offline')) {
+                    $this->presence->markOffline($user);
+                } else {
+                    $this->presence->markOnline($user);
+                }
             } catch (\Throwable $exception) {
                 // Presence updates must never block API responses (e.g. messaging list).
                 Log::warning('Presence broadcast failed', [
