@@ -36,10 +36,10 @@ Route::middleware(['auth:api', 'verified', 'role:vendor'])
     ->name('api.v1.')
     ->group(base_path('routes/api/v1/vendor.php'));
 
-Route::middleware(['auth:api'])
-    ->prefix('v1')
-    ->name('api.v1.')
-    ->group(base_path('routes/api/v1/frontend.php'));
+// Route::middleware(['auth:api'])
+//     ->prefix('v1')
+//     ->name('api.v1.')
+//     ->group(base_path('routes/api/v1/frontend.php'));
 
 Route::prefix('v1')
     ->name('api.v1.')
