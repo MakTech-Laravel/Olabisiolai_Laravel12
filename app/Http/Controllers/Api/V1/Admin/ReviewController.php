@@ -141,6 +141,7 @@ class ReviewController extends Controller
     public function statistics(): JsonResponse
     {
         $stats = $this->reviewService->getStatistics();
+        $stats['pending_business_reports'] = app(\App\Services\BusinessReportService::class)->pendingCount();
 
         return response()->json([
             'success' => true,

@@ -3,8 +3,11 @@
 namespace Tests\Feature\Api\V1;
 
 use App\Enums\BusinessStatus;
+use App\Enums\ReviewReportStatus;
 use App\Enums\VerificationStatus;
+use App\Models\Admin;
 use App\Models\BusinessInfo;
+use App\Models\BusinessReport;
 use App\Models\Category;
 use App\Models\Location;
 use App\Models\User;
@@ -68,6 +71,46 @@ class BusinessReportTest extends TestCase
             'business_info_id' => $business->id,
             'user_id' => $reporter->id,
             'reason' => 'spam',
+        ]);
+    }
+
+    public function test_admin_can_list_and_resolve_business_reports(): void
+    {
+        $category = Category::factory()->create();
+        $location = Location::factory()->create();
+        $vendor = User::factory()->create(['role' => 'vendor']);
+        $reporter = User::factory()->create(['role' => 'user']);
+        $admin = Admin::query()->where('email', 'superadmin@dev.com')->firstOrFail();
+
+        $business = BusinessInfo::factory()->create([
+            'user_id' => $vendor->id,
+            'category_id' => $category->id,
+            'location_id' => $location->id,
+            'verification_status' => VerificationStatus::Approved,
+            'business_status' => BusinessStatus::Active,
+        ]);
+
+        $report = BusinessReport::create([
+            'business_info_id' => $business->id,
+            'user_id' => $reporter->id,
+            'reason' => 'spam',
+            'description' => 'Looks like spam listings',
+            'status' => ReviewReportStatus::Pending,
+        ]);
+
+        Passport::actingAs($admin, [], 'admin_api');
+
+        $list = $this->getJson('/api/v1/admin/business-reports');
+        $list->assertOk();
+        $list->assertJsonPath('success', true);
+        $list->assertJsonPath('data.0.id', $report->id);
+        $list->assertJsonPath('data.0.business.business_name', $business->business_name);
+
+        $resolve = $this->postJson("/api/v1/admin/business-reports/{$report->id}/resolve");
+        $resolve->assertOk();
+        $this->assertDatabaseHas('business_reports', [
+            'id' => $report->id,
+            'status' => ReviewReportStatus::Reviewed->value,
         ]);
     }
 }

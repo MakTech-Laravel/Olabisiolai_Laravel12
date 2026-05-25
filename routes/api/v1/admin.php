@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\V1\Admin\DashboardController;
 use App\Http\Controllers\Api\V1\Admin\LocationController;
 use App\Http\Controllers\Api\V1\Admin\PermissionController;
 use App\Http\Controllers\Api\V1\Admin\ReviewController;
+use App\Http\Controllers\Api\V1\Admin\BusinessReportController;
 use App\Http\Controllers\Api\V1\Admin\ReviewReportController;
 use App\Http\Controllers\Api\V1\Admin\RoleController;
 use App\Http\Controllers\Api\V1\Admin\VerificationController;
@@ -162,6 +163,14 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/{reviewReport}', [ReviewReportController::class, 'show'])->name('show');
         Route::post('/{reviewReport}/dismiss', [ReviewReportController::class, 'dismiss'])->name('dismiss');
         Route::post('/{reviewReport}/resolve', [ReviewReportController::class, 'resolve'])->name('resolve');
+    });
+
+    Route::prefix('business-reports')->name('business-reports.')->group(function () {
+        Route::get('/', [BusinessReportController::class, 'index'])->name('index');
+        Route::get('/statistics', [BusinessReportController::class, 'statistics'])->name('statistics');
+        Route::get('/{businessReport}', [BusinessReportController::class, 'show'])->name('show');
+        Route::post('/{businessReport}/dismiss', [BusinessReportController::class, 'dismiss'])->name('dismiss');
+        Route::post('/{businessReport}/resolve', [BusinessReportController::class, 'resolve'])->name('resolve');
     });
 
     Route::middleware(['role_or_permission:super-admin|create admins'])
