@@ -6,6 +6,7 @@ namespace App\Events;
 
 use App\Http\Resources\AttachmentResource;
 use App\Models\Message;
+use App\Support\MessagingHelper;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
@@ -19,7 +20,12 @@ final class MessageSent implements ShouldBroadcastNow
     public function __construct(
         public Message $message,
     ) {
-        $this->message->loadMissing(['sender', 'parent.sender', 'parent.attachments', 'attachments']);
+        $this->message->loadMissing([
+            'sender.businessInfo:id,user_id,logo_path,verified_at',
+            'parent.sender.businessInfo:id,user_id,logo_path,verified_at',
+            'parent.attachments',
+            'attachments',
+        ]);
     }
 
     /**
@@ -27,7 +33,7 @@ final class MessageSent implements ShouldBroadcastNow
      */
     public function broadcastOn(): array
     {
-        return [new PrivateChannel('conversation.'.$this->message->conversation_id)];
+        return [new PrivateChannel('conversation.' . $this->message->conversation_id)];
     }
 
     public function broadcastAs(): string
@@ -62,6 +68,7 @@ final class MessageSent implements ShouldBroadcastNow
                     'sender' => [
                         'id' => $parent->sender?->id,
                         'name' => $parent->sender?->name,
+                        'avatar_url' => MessagingHelper::userAvatarUrl($parent->sender),
                     ],
                     'attachments' => $parent->relationLoaded('attachments')
                         ? AttachmentResource::collection($parent->attachments)->resolve()
@@ -75,6 +82,7 @@ final class MessageSent implements ShouldBroadcastNow
             'sender' => [
                 'id' => $sender?->id,
                 'name' => $sender?->name,
+                'avatar_url' => MessagingHelper::userAvatarUrl($sender),
             ],
             'conversation_id' => $this->message->conversation_id,
         ];

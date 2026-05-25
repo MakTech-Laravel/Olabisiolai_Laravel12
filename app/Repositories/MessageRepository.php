@@ -21,7 +21,7 @@ final class MessageRepository implements MessageRepositoryInterface
                 'sender.businessInfo:id,user_id,logo_path,verified_at',
                 'attachments',
                 'reads',
-                'parent.sender',
+                'parent.sender.businessInfo:id,user_id,logo_path,verified_at',
                 'conversation.participantRows.user:id,name',
             ])
             ->first();
@@ -35,7 +35,7 @@ final class MessageRepository implements MessageRepositoryInterface
                 'sender.businessInfo:id,user_id,logo_path,verified_at',
                 'attachments',
                 'reads',
-                'parent.sender',
+                'parent.sender.businessInfo:id,user_id,logo_path,verified_at',
             ])
             ->orderByDesc('id')
             ->cursorPaginate($perPage, ['*'], 'cursor', $cursor);

@@ -28,10 +28,10 @@ final class MessageResource extends JsonResource
         return [
             'uuid' => $this->uuid,
             'conversation_id' => $this->conversation_id,
-            'sender' => $this->whenLoaded('sender', fn () => [
+            'sender' => $this->whenLoaded('sender', fn() => [
                 'id' => $this->sender?->id,
                 'name' => $this->sender?->name,
-                // 'avatar_url' => MessagingHelper::userAvatarUrl($this->sender),
+                'avatar_url' => MessagingHelper::userAvatarUrl($this->sender),
             ]),
             'parent_uuid' => $this->parent_id !== null
                 ? ($this->relationLoaded('parent') ? $this->parent?->uuid : null)
@@ -50,6 +50,7 @@ final class MessageResource extends JsonResource
                     'sender' => $this->parent->relationLoaded('sender') ? [
                         'id' => $this->parent->sender?->id,
                         'name' => $this->parent->sender?->name,
+                        'avatar_url' => MessagingHelper::userAvatarUrl($this->parent->sender),
                     ] : null,
                     'attachments' => $this->parent->relationLoaded('attachments')
                         ? AttachmentResource::collection($this->parent->attachments)
@@ -65,7 +66,7 @@ final class MessageResource extends JsonResource
             'created_at' => $this->created_at?->toIso8601String(),
             'created_at_formatted' => MessagingHelper::formatMessageTime($this->created_at),
             'attachments' => AttachmentResource::collection($this->whenLoaded('attachments')),
-            'read_by' => $this->whenLoaded('reads', fn () => $this->reads->pluck('user_id')->values()->all()),
+            'read_by' => $this->whenLoaded('reads', fn() => $this->reads->pluck('user_id')->values()->all()),
         ];
     }
 }
