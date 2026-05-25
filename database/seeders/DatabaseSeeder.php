@@ -25,12 +25,12 @@ class DatabaseSeeder extends Seeder
             BusinessHoursSeeder::class,
         ]);
 
-        if (! app()->environment('production')) {
-            $this->call([
-                ConversationSeeder::class,
-                MessageSeeder::class,
-                UserStatusSeeder::class,
-            ]);
-        }
+        // if (! app()->environment('production')) {
+        //     $this->call([
+        //         ConversationSeeder::class,
+        //         MessageSeeder::class,
+        //         UserStatusSeeder::class,
+        //     ]);
+        // }
     }
 }
