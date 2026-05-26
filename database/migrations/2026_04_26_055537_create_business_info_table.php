@@ -21,6 +21,7 @@ return new class extends Migration
             $table->unsignedBigInteger('category_id');
             $table->string('subcategory')->nullable();
             $table->string('business_name');
+            $table->string('street_address')->nullable();
             $table->text('business_description');
             $table->json('services_offered');
             $table->string('phone');

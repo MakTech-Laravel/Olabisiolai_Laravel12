@@ -28,6 +28,7 @@ class BusinessInfo extends Model
         'category_id',
         'subcategory',
         'business_name',
+        'street_address',
         'business_description',
         'services_offered',
         'phone',

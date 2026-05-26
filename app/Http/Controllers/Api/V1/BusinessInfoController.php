@@ -85,6 +85,7 @@ class BusinessInfoController extends Controller
                 isset($validated['subcategory']) ? trim((string) $validated['subcategory']) : null,
                 (int) $validated['location_id'],
                 $validated['business_name'],
+                self::resolveStreetAddress($validated),
                 $validated['business_description'],
                 $validated['services'],
                 $validated['phone'],
@@ -140,12 +141,16 @@ class BusinessInfoController extends Controller
             $logo = $request->file('logo');
             $coverPhotos = array_values($request->file('cover_photos', []));
 
+            $streetAddressProvided = array_key_exists('street_address', $validated)
+                || array_key_exists('full_address', $validated);
+
             $business = $this->businessInfoService->updateForUser(
                 $user,
                 (int) $validated['category_id'],
                 isset($validated['subcategory']) ? trim((string) $validated['subcategory']) : null,
                 (int) $validated['location_id'],
                 $validated['business_name'],
+                $streetAddressProvided ? self::resolveStreetAddress($validated) : null,
                 $validated['business_description'],
                 $validated['services'],
                 $validated['phone'],
@@ -155,6 +160,7 @@ class BusinessInfoController extends Controller
                 $logo,
                 $coverPhotos,
                 array_key_exists('business_hours', $validated) ? $validated['business_hours'] : null,
+                $streetAddressProvided,
             );
 
             $business->load(['category:id,name,subcategories,created_at,updated_at', 'businessHours']);
@@ -210,5 +216,15 @@ class BusinessInfoController extends Controller
 
             return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private static function resolveStreetAddress(array $validated): ?string
+    {
+        $raw = trim((string) ($validated['street_address'] ?? $validated['full_address'] ?? ''));
+
+        return $raw !== '' ? $raw : null;
     }
 }

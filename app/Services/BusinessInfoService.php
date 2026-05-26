@@ -211,7 +211,7 @@ class BusinessInfoService
 
         $business = $businessQuery
             ->where('id', $businessId)
-            ->tap(fn (Builder $query) => $this->applyPublicMarketplaceVisibility($query))
+            ->tap(fn(Builder $query) => $this->applyPublicMarketplaceVisibility($query))
             ->first();
 
         if ($business === null) {
@@ -369,6 +369,7 @@ class BusinessInfoService
         ?string $subcategory,
         int $locationId,
         string $businessName,
+        ?string $streetAddress,
         string $businessDescription,
         array $services,
         string $phone,
@@ -388,17 +389,17 @@ class BusinessInfoService
             throw new \RuntimeException('A business profile already exists for this account.');
         }
 
-        $basePath = 'businesses/'.$user->id;
-        $logoFolder = $basePath.'/logo';
-        $coverFolder = $basePath.'/covers';
+        $basePath = 'businesses/' . $user->id;
+        $logoFolder = $basePath . '/logo';
+        $coverFolder = $basePath . '/covers';
         $logoPath = null;
         $coverPaths = [];
 
         try {
-            $logoPath = $this->handleFileUpload($logo, $logoFolder, $businessName.' logo');
+            $logoPath = $this->handleFileUpload($logo, $logoFolder, $businessName . ' logo');
 
             foreach ($coverPhotos as $file) {
-                $coverPaths[] = $this->handleFileUpload($file, $coverFolder, $businessName.' cover');
+                $coverPaths[] = $this->handleFileUpload($file, $coverFolder, $businessName . ' cover');
             }
 
             $isPremium = $subscriptionPlan === SubscriptionPlan::Premium;
@@ -406,12 +407,17 @@ class BusinessInfoService
             $normalizedHours = $this->businessHoursService->normalizeInput($businessHours);
             $normalizedSocialAccounts = $this->socialAccountService->normalizeInput($socialAccounts);
 
+            $normalizedStreetAddress = $streetAddress !== null && trim($streetAddress) !== ''
+                ? trim($streetAddress)
+                : null;
+
             return DB::transaction(function () use (
                 $user,
                 $categoryId,
                 $subcategory,
                 $locationId,
                 $businessName,
+                $normalizedStreetAddress,
                 $businessDescription,
                 $services,
                 $phone,
@@ -430,6 +436,7 @@ class BusinessInfoService
                     'category_id' => $categoryId,
                     'subcategory' => $subcategory !== null && $subcategory !== '' ? $subcategory : null,
                     'business_name' => $businessName,
+                    'street_address' => $normalizedStreetAddress,
                     'business_description' => $businessDescription,
                     'services_offered' => $services,
                     'phone' => $phone,
@@ -515,6 +522,7 @@ class BusinessInfoService
         ?string $subcategory,
         int $locationId,
         string $businessName,
+        ?string $streetAddress,
         string $businessDescription,
         array $services,
         string $phone,
@@ -524,6 +532,7 @@ class BusinessInfoService
         ?UploadedFile $logo,
         array $coverPhotos,
         ?array $businessHours = null,
+        bool $streetAddressProvided = false,
     ): BusinessInfo {
         if (! Location::where('id', $locationId)->exists()) {
             throw new \InvalidArgumentException('Invalid location ID.');
@@ -534,9 +543,9 @@ class BusinessInfoService
             throw new \RuntimeException('No business profile found for this account.');
         }
 
-        $basePath = 'businesses/'.$user->id;
-        $logoFolder = $basePath.'/logo';
-        $coverFolder = $basePath.'/covers';
+        $basePath = 'businesses/' . $user->id;
+        $logoFolder = $basePath . '/logo';
+        $coverFolder = $basePath . '/covers';
 
         $oldLogoPath = $business->logo_path;
         $oldCoverPaths = is_array($business->cover_photo_paths) ? $business->cover_photo_paths : [];
@@ -547,14 +556,14 @@ class BusinessInfoService
         try {
             $finalLogoPath = $business->logo_path;
             if ($logo !== null) {
-                $newLogoPath = $this->handleFileUpload($logo, $logoFolder, $businessName.' logo');
+                $newLogoPath = $this->handleFileUpload($logo, $logoFolder, $businessName . ' logo');
                 $finalLogoPath = $newLogoPath;
             }
 
             $finalCoverPaths = $oldCoverPaths;
             if ($coverPhotos !== []) {
                 foreach ($coverPhotos as $file) {
-                    $newCoverPaths[] = $this->handleFileUpload($file, $coverFolder, $businessName.' cover');
+                    $newCoverPaths[] = $this->handleFileUpload($file, $coverFolder, $businessName . ' cover');
                 }
                 $finalCoverPaths = $newCoverPaths;
             }
@@ -562,6 +571,9 @@ class BusinessInfoService
             $previousLocationId = (int) $business->location_id;
 
             $normalizedSubcategory = $subcategory !== null && $subcategory !== '' ? $subcategory : null;
+            $normalizedStreetAddress = $streetAddress !== null && trim($streetAddress) !== ''
+                ? trim($streetAddress)
+                : null;
 
             $majorChange = $business->business_name !== $businessName
                 || $business->category_id !== $categoryId
@@ -579,6 +591,8 @@ class BusinessInfoService
                 $normalizedSubcategory,
                 $locationId,
                 $businessName,
+                $normalizedStreetAddress,
+                $streetAddressProvided,
                 $businessDescription,
                 $services,
                 $phone,
@@ -590,7 +604,7 @@ class BusinessInfoService
                 $majorChange,
                 $normalizedHours,
             ): BusinessInfo {
-                $business->update([
+                $payload = [
                     'location_id' => $locationId,
                     'category_id' => $categoryId,
                     'subcategory' => $normalizedSubcategory,
@@ -603,7 +617,13 @@ class BusinessInfoService
                     'social_accounts' => $normalizedSocialAccounts,
                     'logo_path' => $finalLogoPath,
                     'cover_photo_paths' => $finalCoverPaths,
-                ]);
+                ];
+
+                if ($streetAddressProvided) {
+                    $payload['street_address'] = $normalizedStreetAddress;
+                }
+
+                $business->update($payload);
 
                 if ($normalizedHours !== null) {
                     $this->businessHoursService->syncForBusiness($business, $normalizedHours);
@@ -720,7 +740,7 @@ class BusinessInfoService
     public function getAdminBusinessFilterOptions(): array
     {
         $verificationStatuses = array_map(
-            fn (VerificationStatus $status): array => [
+            fn(VerificationStatus $status): array => [
                 'value' => $status->value,
                 'label' => $status->label(),
             ],
@@ -728,7 +748,7 @@ class BusinessInfoService
         );
 
         $businessStatuses = array_map(
-            fn (BusinessStatus $status): array => [
+            fn(BusinessStatus $status): array => [
                 'value' => $status->value,
                 'label' => ucfirst($status->value),
             ],
@@ -738,7 +758,7 @@ class BusinessInfoService
         $categories = Category::query()
             ->orderBy('name')
             ->get(['id', 'name'])
-            ->map(fn (Category $category): array => [
+            ->map(fn(Category $category): array => [
                 'id' => $category->id,
                 'name' => $category->name,
             ])
@@ -818,7 +838,7 @@ class BusinessInfoService
                 'user:id,first_name,last_name,name,email,phone,role',
                 'verifiedBy:id,name,email,phone,role',
                 'boost:id,business_info_id,is_active,activated_at,deactivated_at',
-                'messages' => fn ($query) => $query
+                'messages' => fn($query) => $query
                     ->with(['admin:id,name,email', 'vendor:id,name,email'])
                     ->latest(),
             ])
@@ -918,8 +938,8 @@ class BusinessInfoService
         $cityIds = Location::query()
             ->whereRaw('LOWER(city_name) = ?', [$normalized])
             ->pluck('id')
-            ->map(static fn ($id): int => (int) $id)
-            ->filter(static fn (int $id): bool => $id > 0)
+            ->map(static fn($id): int => (int) $id)
+            ->filter(static fn(int $id): bool => $id > 0)
             ->values()
             ->all();
 

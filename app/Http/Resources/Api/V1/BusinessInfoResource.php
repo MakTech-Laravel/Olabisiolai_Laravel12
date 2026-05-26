@@ -30,9 +30,11 @@ class BusinessInfoResource extends JsonResource
             'id' => $this->id,
             'sort_order' => $this->sort_order,
             'business_name' => $this->business_name,
+            'street_address' => $this->street_address,
+            'full_address' => $this->street_address,
             'vendor' => $this->when(
                 $this->relationLoaded('user') && $this->user !== null,
-                fn () => [
+                fn() => [
                     'id' => $this->user->id,
                     'uuid' => $this->user->uuid,
                     'name' => $this->user->name,
@@ -43,17 +45,18 @@ class BusinessInfoResource extends JsonResource
             ),
             'category' => $this->when(
                 $this->relationLoaded('category') && $this->category !== null,
-                fn () => new CategoryResource($this->category)
+                fn() => new CategoryResource($this->category)
             ),
             'subcategory' => $this->subcategory,
             'location' => $this->when(
                 $this->relationLoaded('location') && $this->location !== null,
-                fn () => [
+                fn() => [
                     'id' => $this->location->id,
                     'name' => $this->location->lga_name,
                     'state' => $this->location->state_name,
                     'city' => $this->location->city_name,
                     'full_name' => $this->location->full_name,
+                    'formatted_address' => $this->location->formatted_address,
                     'latitude' => $this->location->latitude !== null ? (float) $this->location->latitude : null,
                     'longitude' => $this->location->longitude !== null ? (float) $this->location->longitude : null,
                 ]
@@ -66,8 +69,8 @@ class BusinessInfoResource extends JsonResource
             'social_accounts' => is_array($this->social_accounts) ? $this->social_accounts : [],
             'logo_url' => public_media_url($this->logo_path),
             'cover_photo_urls' => collect($coverPaths)
-                ->filter(fn ($path) => is_string($path) && $path !== '')
-                ->map(fn (string $path) => public_media_url($path, null))
+                ->filter(fn($path) => is_string($path) && $path !== '')
+                ->map(fn(string $path) => public_media_url($path, null))
                 ->filter()
                 ->values()
                 ->all(),
@@ -128,9 +131,9 @@ class BusinessInfoResource extends JsonResource
         return $query
             ->orderByRaw(
                 'CASE tier_key
-                    WHEN \'top_1\' THEN '.BoostListingPriorityService::TIER_RANK_TOP_1.'
-                    WHEN \'top_5\' THEN '.BoostListingPriorityService::TIER_RANK_TOP_5.'
-                    WHEN \'top_10\' THEN '.BoostListingPriorityService::TIER_RANK_TOP_10.'
+                    WHEN \'top_1\' THEN ' . BoostListingPriorityService::TIER_RANK_TOP_1 . '
+                    WHEN \'top_5\' THEN ' . BoostListingPriorityService::TIER_RANK_TOP_5 . '
+                    WHEN \'top_10\' THEN ' . BoostListingPriorityService::TIER_RANK_TOP_10 . '
                     ELSE 99
                 END ASC',
             )
