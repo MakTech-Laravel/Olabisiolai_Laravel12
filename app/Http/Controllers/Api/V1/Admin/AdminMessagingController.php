@@ -54,57 +54,62 @@ final class AdminMessagingController extends Controller
 
     public function indexConversations(Request $request): JsonResponse
     {
-        return $this->withMessagingUser($request, fn (Request $req) => $this->conversations->index($req));
+        return $this->withMessagingUser($request, fn(Request $req) => $this->conversations->index($req));
     }
 
     public function showConversation(Request $request, Conversation $conversation): JsonResponse
     {
-        return $this->withMessagingUser($request, fn (Request $req) => $this->conversations->show($req, $conversation));
+        return $this->withMessagingUser($request, fn(Request $req) => $this->conversations->show($req, $conversation));
     }
 
     public function searchConversations(Request $request): JsonResponse
     {
-        return $this->withMessagingUser($request, fn (Request $req) => $this->conversations->search($req));
+        return $this->withMessagingUser($request, fn(Request $req) => $this->conversations->search($req));
+    }
+
+    public function searchRecipients(Request $request): JsonResponse
+    {
+        return $this->withMessagingUser($request, fn(Request $req) => $this->conversations->searchRecipients($req));
     }
 
     public function indexMessages(Request $request, Conversation $conversation): JsonResponse
     {
-        return $this->withMessagingUser($request, fn (Request $req) => $this->messages->index($req, $conversation));
+        return $this->withMessagingUser($request, fn(Request $req) => $this->messages->index($req, $conversation));
     }
 
     public function storeMessage(SendMessageRequest $request, Conversation $conversation): JsonResponse
     {
-        return $this->withMessagingUser($request, fn () => $this->messages->store($request, $conversation));
+        return $this->withMessagingUser($request, fn() => $this->messages->store($request, $conversation));
     }
 
     public function updateMessage(EditMessageRequest $request, Message $message): JsonResponse
     {
-        return $this->withMessagingUser($request, fn () => $this->messages->update($request, $message));
+        return $this->withMessagingUser($request, fn() => $this->messages->update($request, $message));
     }
 
     public function destroyMessage(Request $request, Message $message): JsonResponse
     {
-        return $this->withMessagingUser($request, fn (Request $req) => $this->messages->destroy($req, $message));
+        return $this->withMessagingUser($request, fn(Request $req) => $this->messages->destroy($req, $message));
     }
 
     public function markMessageRead(Request $request, Message $message): JsonResponse
     {
-        return $this->withMessagingUser($request, fn (Request $req) => $this->messages->markRead($req, $message));
+        return $this->withMessagingUser($request, fn(Request $req) => $this->messages->markRead($req, $message));
     }
 
     public function typing(Request $request, Conversation $conversation): JsonResponse
     {
-        return $this->withMessagingUser($request, fn (Request $req) => $this->messages->typing($req, $conversation));
+        return $this->withMessagingUser($request, fn(Request $req) => $this->messages->typing($req, $conversation));
     }
 
     public function storeAttachment(UploadAttachmentRequest $request): JsonResponse
     {
-        return $this->withMessagingUser($request, fn () => $this->attachments->store($request));
+        return $this->withMessagingUser($request, fn() => $this->attachments->store($request));
     }
 
     public function destroyAttachment(Request $request, Attachment $attachment): JsonResponse
     {
-        return $this->withMessagingUser($request, fn (Request $req) => $this->attachments->destroy($req, $attachment));
+        return $this->withMessagingUser($request, fn(Request $req) => $this->attachments->destroy($req, $attachment));
     }
 
     /**
@@ -119,7 +124,7 @@ final class AdminMessagingController extends Controller
         }
 
         $messagingUser = AdminMessagingUserResolver::resolve($admin);
-        $request->setUserResolver(static fn () => $messagingUser);
+        $request->setUserResolver(static fn() => $messagingUser);
 
         $previousDefaultGuard = Auth::getDefaultDriver();
         $previousApiUser = Auth::guard('api')->user();

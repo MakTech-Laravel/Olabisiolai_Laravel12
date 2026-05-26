@@ -11,6 +11,7 @@ Route::post('presence/ping', [MessageController::class, 'presencePing'])->name('
 Route::post('presence/offline', [MessageController::class, 'presenceOffline'])->name('presence.offline');
 
 Route::get('conversations/search', [ConversationController::class, 'search'])->name('conversations.search');
+Route::get('conversations/recipients/search', [ConversationController::class, 'searchRecipients'])->name('conversations.recipients.search');
 
 Route::get('conversations', [ConversationController::class, 'index'])->name('conversations.index');
 Route::post('conversations', [ConversationController::class, 'store'])->name('conversations.store');

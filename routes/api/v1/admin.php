@@ -69,6 +69,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::prefix('messaging')->name('messaging.')->group(function (): void {
         Route::get('/identity', [AdminMessagingController::class, 'identity'])->name('identity');
         Route::get('/conversations/search', [AdminMessagingController::class, 'searchConversations'])->name('conversations.search');
+        Route::get('/conversations/recipients/search', [AdminMessagingController::class, 'searchRecipients'])->name('conversations.recipients.search');
         Route::get('/conversations', [AdminMessagingController::class, 'indexConversations'])->name('conversations.index');
         Route::get('/conversations/{conversation}', [AdminMessagingController::class, 'showConversation'])->name('conversations.show');
         Route::get('/conversations/{conversation}/messages', [AdminMessagingController::class, 'indexMessages'])

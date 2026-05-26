@@ -10,6 +10,7 @@ use App\Enums\ConversationType;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreConversationRequest;
 use App\Http\Resources\ConversationResource;
+use App\Http\Resources\MessageRecipientResource;
 use App\Models\Conversation;
 use App\Models\User;
 use App\Services\ConversationService;
@@ -37,7 +38,7 @@ final class ConversationController extends Controller
             'archived' => $request->boolean('archived') ? true : null,
             'unread' => $request->boolean('unread') ? true : null,
             'verified_only' => $request->boolean('verified_only') ? true : null,
-        ], static fn (mixed $value): bool => $value !== null && $value !== '');
+        ], static fn(mixed $value): bool => $value !== null && $value !== '');
 
         $paginator = $this->conversations->getConversationsForUser($user, $filters, 30);
 
@@ -58,14 +59,14 @@ final class ConversationController extends Controller
 
         /** @var list<string> $participantUuids */
         $participantUuids = array_values(array_unique(array_map(
-            static fn (string $uuid): string => strtoupper(trim($uuid)),
+            static fn(string $uuid): string => strtoupper(trim($uuid)),
             $validated['participants'],
         )));
 
         $participantUserIds = User::query()
             ->whereIn('uuid', $participantUuids)
             ->pluck('id')
-            ->map(static fn ($id): int => (int) $id)
+            ->map(static fn($id): int => (int) $id)
             ->all();
 
         if (count($participantUserIds) !== count($participantUuids)) {
@@ -143,6 +144,23 @@ final class ConversationController extends Controller
         return $this->successResponse(
             ConversationResource::collection($results),
             'Search completed successfully.',
+        );
+    }
+
+    public function searchRecipients(Request $request): JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user('api');
+
+        $validated = $request->validate([
+            'q' => ['required', 'string', 'min:2', 'max:255'],
+        ]);
+
+        $results = $this->conversations->searchRecipients($user, $validated['q']);
+
+        return $this->successResponse(
+            MessageRecipientResource::collection($results),
+            'Recipients retrieved successfully.',
         );
     }
 }

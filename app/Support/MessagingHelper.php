@@ -60,6 +60,34 @@ final class MessagingHelper
     }
 
     /**
+     * Secondary line shown when picking a message recipient (email, category, etc.).
+     */
+    public static function recipientSearchSubtitle(?User $user): string
+    {
+        if ($user === null) {
+            return '';
+        }
+
+        if ($user->role === 'vendor') {
+            if ($user->relationLoaded('businessInfo') && $user->businessInfo !== null) {
+                $category = $user->businessInfo->relationLoaded('category')
+                    ? trim((string) ($user->businessInfo->category?->name ?? ''))
+                    : '';
+
+                if ($category !== '') {
+                    return $category;
+                }
+            }
+
+            return 'Business';
+        }
+
+        $email = trim((string) $user->email);
+
+        return $email !== '' ? $email : 'Member';
+    }
+
+    /**
      * Conversation title for the authenticated viewer (other party in direct chats).
      */
     public static function conversationDisplayName(Conversation $conversation, ?User $viewer = null): string

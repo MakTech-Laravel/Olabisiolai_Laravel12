@@ -7,11 +7,13 @@ namespace App\Services;
 use App\DTOs\Messaging\ConversationDTO;
 use App\Enums\ConversationType;
 use App\Enums\ParticipantRole;
+use App\Enums\UserStatus;
 use App\Exceptions\ConversationNotFoundException;
 use App\Models\Conversation;
 use App\Models\User;
 use App\Repositories\Contracts\ConversationRepositoryInterface;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -98,6 +100,38 @@ final class ConversationService
         return $this->conversations->searchForUser($user, $query);
     }
 
+    /**
+     * Find active users the viewer can start a direct message with.
+     */
+    public function searchRecipients(User $viewer, string $query): Collection
+    {
+        $trimmed = trim($query);
+        $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $trimmed) . '%';
+        $emailLike = '%' . str_replace(['%', '_'], ['\\%', '\\_'], strtolower($trimmed)) . '%';
+
+        return User::query()
+            ->where('id', '!=', $viewer->id)
+            ->where('status', UserStatus::Active->value)
+            ->whereNotNull('uuid')
+            ->where('role', '!=', 'admin')
+            ->with([
+                'businessInfo:id,user_id,business_name,logo_path,verified_at,category_id',
+                'businessInfo.category:id,name',
+            ])
+            ->where(function (Builder $q) use ($like, $emailLike): void {
+                $q->where('name', 'like', $like)
+                    ->orWhere('first_name', 'like', $like)
+                    ->orWhere('last_name', 'like', $like)
+                    ->orWhereRaw('LOWER(email) LIKE ?', [$emailLike])
+                    ->orWhereHas('businessInfo', function (Builder $bq) use ($like): void {
+                        $bq->where('business_name', 'like', $like);
+                    });
+            })
+            ->orderBy('name')
+            ->limit(15)
+            ->get();
+    }
+
     public function getUnreadCount(User $user): int
     {
         return $this->conversations->unreadMessagesCountForUser($user);
@@ -118,7 +152,7 @@ final class ConversationService
         return Cache::remember(
             $this->participantCacheKey($conversation->uuid),
             300,
-            fn (): \Illuminate\Support\Collection => $conversation->participantRows()
+            fn(): \Illuminate\Support\Collection => $conversation->participantRows()
                 ->pluck('user_id')
                 ->unique()
                 ->values()
