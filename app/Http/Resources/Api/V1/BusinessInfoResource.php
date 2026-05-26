@@ -43,11 +43,13 @@ class BusinessInfoResource extends JsonResource
                     'role' => $this->user->role,
                 ]
             ),
+            'category_id' => $this->category_id,
             'category' => $this->when(
                 $this->relationLoaded('category') && $this->category !== null,
                 fn() => new CategoryResource($this->category)
             ),
             'subcategory' => $this->subcategory,
+            'location_id' => $this->location_id,
             'location' => $this->when(
                 $this->relationLoaded('location') && $this->location !== null,
                 fn() => [

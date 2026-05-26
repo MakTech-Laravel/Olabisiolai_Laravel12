@@ -79,6 +79,7 @@ Route::prefix('vendor')->name('vendor.')->group(function () {
     Route::middleware('vendor.subscription')->group(function () {
         Route::get('/business/show', [BusinessInfoController::class, 'show'])->name('business.show');
         Route::put('/business/update', [BusinessInfoController::class, 'update'])->name('business.update');
+        Route::post('/business/update', [BusinessInfoController::class, 'update'])->name('business.update.post');
 
         Route::middleware('vendor.premium')->group(function () {
             Route::post('/business/boost-status', [BusinessInfoController::class, 'updateBoostStatus'])->name('business.boost-status');
