@@ -34,11 +34,8 @@ Route::prefix('vendor')->name('vendor.')->group(function () {
         Route::delete('/', [VendorTwoFactorController::class, 'disable'])->name('disable');
     });
 
-    Route::get('/onboarding/status', [VendorOnboardingController::class, 'status'])->name('onboarding.status');
     Route::get('/dashboard', [VendorDashboardController::class, 'index'])->name('dashboard');
     Route::get('/analytics', [VendorAnalyticsController::class, 'index'])->name('analytics');
-    Route::get('/business/form-options', [BusinessInfoController::class, 'formOptions'])->name('business.form-options');
-    Route::post('/business/create', [BusinessInfoController::class, 'store'])->name('business.create');
 
     Route::prefix('boost')->name('boost.')->group(function () {
         Route::get('/catalog', [VendorBoostController::class, 'catalog'])->name('catalog');
@@ -56,14 +53,6 @@ Route::prefix('vendor')->name('vendor.')->group(function () {
     Route::post('/payment-methods', [VendorPaymentMethodsController::class, 'store'])->name('payment-methods.store');
     Route::patch('/payment-methods/{paymentMethod}/default', [VendorPaymentMethodsController::class, 'setDefault'])->name('payment-methods.default');
     Route::delete('/payment-methods/{paymentMethod}', [VendorPaymentMethodsController::class, 'destroy'])->name('payment-methods.destroy');
-
-    Route::prefix('subscription')->name('subscription.')->group(function () {
-        Route::get('/packages', [VendorSubscriptionController::class, 'packages'])->name('packages');
-        Route::get('/status', [VendorSubscriptionController::class, 'status'])->name('status');
-        Route::post('/payment/init', [VendorSubscriptionController::class, 'initPayment'])->name('payment.init');
-        Route::post('/payment/resume', [VendorSubscriptionController::class, 'resumePayment'])->name('payment.resume');
-        Route::post('/payment/confirm', [VendorSubscriptionController::class, 'confirmPayment'])->name('payment.confirm');
-    });
 
     Route::get('/admin-chat', [VendorAdminChatController::class, 'show'])->name('admin-chat.show');
 

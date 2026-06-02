@@ -5,6 +5,9 @@ use App\Http\Controllers\Api\V1\ReviewReportController;
 use App\Http\Controllers\Api\V1\UserFavoritesController;
 use App\Http\Controllers\Api\V1\UserReviewsController;
 use App\Http\Controllers\Api\V1\UserSettingsController;
+use App\Http\Controllers\Api\V1\Vendor\VendorOnboardingController;
+use App\Http\Controllers\Api\V1\Vendor\VendorSubscriptionController;
+use App\Http\Controllers\Api\V1\BusinessInfoController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -42,4 +45,25 @@ Route::prefix('user')->name('user.')->group(function () {
     Route::post('/businesses/{businessInfo}/report', [BusinessReportController::class, 'store'])
         ->middleware('throttle:5,1')
         ->name('businesses.report');
+});
+
+/**
+ * Vendor onboarding status is used by the public Trade flow.
+ * Allow both customers and vendors to fetch it so a logged-in customer can
+ * choose a plan and begin vendor onboarding without logging out.
+ */
+Route::prefix('vendor')->name('vendor.')->group(function () {
+    Route::get('/onboarding/status', [VendorOnboardingController::class, 'status'])->name('onboarding.status');
+
+    // Onboarding endpoints needed by Trade → Choose plan → Create listing.
+    Route::get('/business/form-options', [BusinessInfoController::class, 'formOptions'])->name('business.form-options');
+    Route::post('/business/create', [BusinessInfoController::class, 'store'])->name('business.create');
+
+    Route::prefix('subscription')->name('subscription.')->group(function () {
+        Route::get('/packages', [VendorSubscriptionController::class, 'packages'])->name('packages');
+        Route::get('/status', [VendorSubscriptionController::class, 'status'])->name('status');
+        Route::post('/payment/init', [VendorSubscriptionController::class, 'initPayment'])->name('payment.init');
+        Route::post('/payment/resume', [VendorSubscriptionController::class, 'resumePayment'])->name('payment.resume');
+        Route::post('/payment/confirm', [VendorSubscriptionController::class, 'confirmPayment'])->name('payment.confirm');
+    });
 });
