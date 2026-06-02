@@ -14,6 +14,7 @@ use App\Models\BusinessInfo;
 use App\Models\Category;
 use App\Models\Location;
 use App\Models\User;
+use App\Support\BusinessSubcategoryResolver;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -411,10 +412,12 @@ class BusinessInfoService
                 ? trim($streetAddress)
                 : null;
 
+            $resolvedSubcategory = BusinessSubcategoryResolver::resolve($subcategory, $categoryId, $services);
+
             return DB::transaction(function () use (
                 $user,
                 $categoryId,
-                $subcategory,
+                $resolvedSubcategory,
                 $locationId,
                 $businessName,
                 $normalizedStreetAddress,
@@ -434,7 +437,7 @@ class BusinessInfoService
                     'location_id' => $locationId,
                     'user_id' => $user->id,
                     'category_id' => $categoryId,
-                    'subcategory' => $subcategory !== null && $subcategory !== '' ? $subcategory : null,
+                    'subcategory' => $resolvedSubcategory,
                     'business_name' => $businessName,
                     'street_address' => $normalizedStreetAddress,
                     'business_description' => $businessDescription,
@@ -533,6 +536,7 @@ class BusinessInfoService
         array $coverPhotos,
         ?array $businessHours = null,
         bool $streetAddressProvided = false,
+        bool $subcategoryProvided = true,
     ): BusinessInfo {
         if (! Location::where('id', $locationId)->exists()) {
             throw new \InvalidArgumentException('Invalid location ID.');
@@ -570,14 +574,24 @@ class BusinessInfoService
 
             $previousLocationId = (int) $business->location_id;
 
-            $normalizedSubcategory = $subcategory !== null && $subcategory !== '' ? $subcategory : null;
+            $resolvedSubcategory = BusinessSubcategoryResolver::resolve($subcategory, $categoryId, $services);
+            if (! $subcategoryProvided) {
+                $resolvedSubcategory = $business->subcategory;
+            } elseif ($resolvedSubcategory === null) {
+                $resolvedSubcategory = BusinessSubcategoryResolver::resolve(
+                    $business->subcategory,
+                    $categoryId,
+                    $services,
+                );
+            }
+
             $normalizedStreetAddress = $streetAddress !== null && trim($streetAddress) !== ''
                 ? trim($streetAddress)
                 : null;
 
             $majorChange = $business->business_name !== $businessName
                 || $business->category_id !== $categoryId
-                || $business->subcategory !== $normalizedSubcategory
+                || $business->subcategory !== $resolvedSubcategory
                 || $business->location_id !== $locationId;
 
             $normalizedHours = $businessHours !== null
@@ -588,7 +602,7 @@ class BusinessInfoService
             $business = DB::transaction(function () use (
                 $business,
                 $categoryId,
-                $normalizedSubcategory,
+                $resolvedSubcategory,
                 $locationId,
                 $businessName,
                 $normalizedStreetAddress,
@@ -607,7 +621,7 @@ class BusinessInfoService
                 $payload = [
                     'location_id' => $locationId,
                     'category_id' => $categoryId,
-                    'subcategory' => $normalizedSubcategory,
+                    'subcategory' => $resolvedSubcategory,
                     'business_name' => $businessName,
                     'business_description' => $businessDescription,
                     'services_offered' => $services,

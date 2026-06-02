@@ -45,8 +45,8 @@ class BusinessInfoController extends Controller
             ->get();
 
         return sendResponse(true, 'Form options retrieved successfully.', [
-            'categories' => CategoryResource::collection($categories),
-            'locations' => LocationResource::collection($locations),
+            'categories' => CategoryResource::collection($categories)->resolve(),
+            'locations' => LocationResource::collection($locations)->resolve(),
         ]);
     }
 
@@ -144,10 +144,12 @@ class BusinessInfoController extends Controller
             $streetAddressProvided = array_key_exists('street_address', $validated)
                 || array_key_exists('full_address', $validated);
 
+            $subcategoryProvided = array_key_exists('subcategory', $validated);
+
             $business = $this->businessInfoService->updateForUser(
                 $user,
                 (int) $validated['category_id'],
-                isset($validated['subcategory']) ? trim((string) $validated['subcategory']) : null,
+                $subcategoryProvided ? trim((string) $validated['subcategory']) : null,
                 (int) $validated['location_id'],
                 $validated['business_name'],
                 $streetAddressProvided ? self::resolveStreetAddress($validated) : null,
@@ -161,6 +163,7 @@ class BusinessInfoController extends Controller
                 $coverPhotos,
                 array_key_exists('business_hours', $validated) ? $validated['business_hours'] : null,
                 $streetAddressProvided,
+                $subcategoryProvided,
             );
 
             $business->load(['category:id,name,subcategories,created_at,updated_at', 'businessHours']);

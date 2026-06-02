@@ -21,7 +21,7 @@ class PublicCategoryCatalogController extends Controller
                 ->get(['id', 'name', 'subcategories', 'created_at', 'updated_at']);
 
             return sendResponse(true, 'Categories retrieved successfully.', [
-                'categories' => CategoryResource::collection($categories),
+                'categories' => CategoryResource::collection($categories)->resolve(),
                 'count' => $categories->count(),
             ]);
         } catch (Throwable $throwable) {
