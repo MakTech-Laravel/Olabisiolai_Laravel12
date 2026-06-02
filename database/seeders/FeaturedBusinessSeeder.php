@@ -8,6 +8,7 @@ use App\Models\BusinessInfo;
 use App\Models\Category;
 use App\Models\Location;
 use App\Models\User;
+use Database\Seeders\Support\SocialAccountSeedCatalog;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -161,6 +162,7 @@ class FeaturedBusinessSeeder extends Seeder
                 'business_name' => $data['name'],
                 'business_description' => $data['description'],
                 'services_offered' => $data['services'],
+                'social_accounts' => SocialAccountSeedCatalog::forBusiness($data['name']),
                 'cover_photo_paths' => [],
                 'phone' => '+234' . rand(7000000000, 9999999999),
                 'logo_path' => $data['image'],

@@ -22,6 +22,7 @@ class DatabaseSeeder extends Seeder
             CategorySeeder::class,
             CmsPageSeeder::class,
             FeaturedBusinessSeeder::class,
+            BusinessSocialAccountsSeeder::class,
             BusinessHoursSeeder::class,
         ]);
 
