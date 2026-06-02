@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1\Vendor;
 
 use App\Enums\BoostPurchaseRequestStatus;
+use App\Enums\PaymentGateway;
 use App\Enums\PaymentPurpose;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V1\BoostPurchaseRequestResource;
@@ -12,6 +13,7 @@ use App\Services\BusinessInfoService;
 use App\Services\PaymentService;
 use App\Services\SubscriptionService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
@@ -123,6 +125,7 @@ class VendorBoostController extends Controller
                 'location_id' => ['nullable', 'integer', 'exists:locations,id'],
                 'renew_type' => ['nullable', 'string', 'in:extend,boost_again'],
                 'source_campaign_id' => ['nullable', 'integer', 'exists:boost_purchase_requests,id'],
+                'gateway' => ['nullable', 'string', Rule::in(PaymentGateway::values())],
             ]);
 
             $vendor = $request->user('api');
@@ -144,6 +147,7 @@ class VendorBoostController extends Controller
                 isset($validated['renew_type']) ? (string) $validated['renew_type'] : null,
                 isset($validated['source_campaign_id']) ? (int) $validated['source_campaign_id'] : null,
                 isset($validated['location_id']) ? (int) $validated['location_id'] : null,
+                isset($validated['gateway']) ? PaymentGateway::from((string) $validated['gateway']) : null,
             );
 
             return sendResponse(true, 'Boost payment initialized successfully.', [
@@ -194,6 +198,7 @@ class VendorBoostController extends Controller
             $validated = $request->validate([
                 'payment_id' => ['required', 'integer', 'exists:payments,id'],
                 'gateway_transaction_id' => ['required', 'string', 'max:255'],
+                'gateway' => ['required', 'string', Rule::in(PaymentGateway::values())],
             ]);
 
             $vendor = $request->user('api');
@@ -206,6 +211,7 @@ class VendorBoostController extends Controller
             $boostRequest = $this->boostPurchaseService->confirmBoostPayment(
                 $payment,
                 trim((string) $validated['gateway_transaction_id']),
+                PaymentGateway::from((string) $validated['gateway']),
             );
 
             $business = $boostRequest->businessInfo ?? $this->businessInfoService->findForUser($vendor);

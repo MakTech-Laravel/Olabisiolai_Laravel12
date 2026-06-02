@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\PaymentGateway;
 use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
 use App\Models\BusinessInfo;
@@ -15,6 +16,7 @@ class PaymentService
     public function __construct(
         private readonly PricingPackageService $pricingPackageService,
         private readonly RealtimeNotificationService $realtimeNotifications,
+        private readonly PaymentGatewayResolver $gatewayResolver,
     ) {}
 
     /**
@@ -52,6 +54,7 @@ class PaymentService
         float $amount,
         array $metadata = [],
         ?string $packageId = null,
+        ?PaymentGateway $gateway = null,
     ): Payment {
         if ($amount <= 0) {
             throw new RuntimeException('Boost amount is invalid.');
@@ -67,6 +70,7 @@ class PaymentService
             'amount' => $amount,
             'currency' => $this->pricingPackageService->boostCurrency(),
             'tx_ref' => $this->generateTxRef(PaymentPurpose::Boost, $user->id),
+            'gateway' => ($gateway ?? PaymentGateway::Flutterwave),
             'status' => PaymentStatus::Pending,
             'metadata' => array_merge([
                 'package_title' => $tierLabel,
@@ -83,6 +87,7 @@ class PaymentService
         string $packageId,
         float $additionalAmount = 0,
         ?array $metadata = null,
+        ?PaymentGateway $gateway = null,
     ): Payment {
         $package = $this->findPackage($purpose, $packageId);
 
@@ -115,12 +120,13 @@ class PaymentService
                 PaymentPurpose::Boost => $this->pricingPackageService->boostCurrency(),
             },
             'tx_ref' => $this->generateTxRef($purpose, $user->id),
+            'gateway' => ($gateway ?? PaymentGateway::Flutterwave),
             'status' => PaymentStatus::Pending,
             'metadata' => array_merge($baseMetadata, $metadata ?? []),
         ]);
     }
 
-    public function confirmPayment(Payment $payment, string $gatewayTransactionId): Payment
+    public function confirmPayment(Payment $payment, string $gatewayTransactionId, PaymentGateway $gateway): Payment
     {
         if ($payment->status === PaymentStatus::Completed) {
             return $payment;
@@ -132,6 +138,7 @@ class PaymentService
 
         $payment->update([
             'status' => PaymentStatus::Completed,
+            'gateway' => $gateway,
             'gateway_transaction_id' => $gatewayTransactionId,
             'paid_at' => now(),
         ]);
@@ -209,6 +216,8 @@ class PaymentService
      */
     public function toArray(Payment $payment): array
     {
+        $gateway = $this->gatewayResolver->resolveForDisplay($payment);
+
         return [
             'id' => $payment->id,
             'purpose' => $payment->purpose->value,
@@ -218,6 +227,7 @@ class PaymentService
             'amount' => (float) $payment->amount,
             'currency' => $payment->currency,
             'tx_ref' => $payment->tx_ref,
+            'gateway' => $gateway?->value,
             'status' => $payment->status->value,
             'is_consumed' => $payment->is_consumed,
             'paid_at' => $payment->paid_at ? humanDateTime($payment->paid_at) : null,
@@ -230,12 +240,12 @@ class PaymentService
      *
      * @return list<Payment>
      */
-    public function confirmBundledPayments(Payment $primaryPayment, string $gatewayTransactionId): array
+    public function confirmBundledPayments(Payment $primaryPayment, string $gatewayTransactionId, PaymentGateway $gateway): array
     {
         $confirmed = [];
 
         if ($primaryPayment->status === PaymentStatus::Pending) {
-            $confirmed[] = $this->confirmPayment($primaryPayment, $gatewayTransactionId);
+            $confirmed[] = $this->confirmPayment($primaryPayment, $gatewayTransactionId, $gateway);
         } else {
             $confirmed[] = $primaryPayment;
         }
@@ -252,7 +262,7 @@ class PaymentService
                 && $boostPayment->user_id === $primaryPayment->user_id
                 && $boostPayment->status === PaymentStatus::Pending
             ) {
-                $confirmed[] = $this->confirmPayment($boostPayment, $gatewayTransactionId);
+                $confirmed[] = $this->confirmPayment($boostPayment, $gatewayTransactionId, $gateway);
             }
         }
 
@@ -264,6 +274,7 @@ class PaymentService
      */
     public function toVendorListItem(Payment $payment): array
     {
+        $gateway = $this->gatewayResolver->resolveForDisplay($payment);
         $meta = $payment->metadata ?? [];
         $title = is_array($meta) ? (string) ($meta['package_title'] ?? $payment->package_id ?? '') : '';
 
@@ -277,6 +288,7 @@ class PaymentService
             'currency' => $payment->currency,
             'status' => $payment->status->value,
             'tx_ref' => $payment->tx_ref,
+            'gateway' => $gateway?->value,
             'paid_at' => $payment->paid_at ? humanDateTime($payment->paid_at) : null,
             'paid_at_iso' => $payment->paid_at?->toIso8601String(),
             'created_at' => $payment->created_at?->toIso8601String(),

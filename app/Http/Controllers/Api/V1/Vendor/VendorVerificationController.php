@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Vendor;
 
+use App\Enums\PaymentGateway;
 use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
 use App\Http\Controllers\Controller;
@@ -54,6 +55,7 @@ class VendorVerificationController extends Controller
 
             $validated = $request->validate([
                 'package_id' => ['required', 'string', Rule::in($this->pricingPackageService->verificationPackageKeys())],
+                'gateway' => ['nullable', 'string', Rule::in(PaymentGateway::values())],
             ]);
 
             $payment = $this->paymentService->initPayment(
@@ -61,6 +63,9 @@ class VendorVerificationController extends Controller
                 $business,
                 PaymentPurpose::Verification,
                 (string) $validated['package_id'],
+                0,
+                null,
+                isset($validated['gateway']) ? PaymentGateway::from((string) $validated['gateway']) : null,
             );
 
             return sendResponse(true, 'Payment initialized successfully.', [
@@ -85,6 +90,7 @@ class VendorVerificationController extends Controller
             $validated = $request->validate([
                 'payment_id' => ['required', 'integer', 'exists:payments,id'],
                 'gateway_transaction_id' => ['required', 'string', 'max:255'],
+                'gateway' => ['required', 'string', Rule::in(PaymentGateway::values())],
             ]);
 
             $payment = $this->paymentService->findOwnedPayment(
@@ -93,11 +99,16 @@ class VendorVerificationController extends Controller
                 PaymentPurpose::Verification,
             );
 
+            $gateway = PaymentGateway::from((string) $validated['gateway']);
             if ($payment->status === PaymentStatus::Pending) {
                 $payment = $this->paymentService->confirmPayment(
                     $payment,
                     trim((string) $validated['gateway_transaction_id']),
+                    $gateway,
                 );
+            } elseif ($payment->gateway === null) {
+                $payment->update(['gateway' => $gateway]);
+                $payment = $payment->fresh();
             }
 
             $business = $this->businessInfoService->findForUser($vendor);

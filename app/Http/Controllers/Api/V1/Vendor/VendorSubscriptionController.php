@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Vendor;
 
+use App\Enums\PaymentGateway;
 use App\Enums\PaymentPurpose;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V1\BusinessInfoResource;
@@ -63,6 +64,7 @@ class VendorSubscriptionController extends Controller
             }
 
             $validated = $request->validate([
+                'gateway' => ['nullable', 'string', Rule::in(PaymentGateway::values())],
                 'boost_tier_key' => ['nullable', 'string', 'max:30'],
                 'boost_duration_days' => ['nullable', 'integer', 'in:7,14,30'],
             ]);
@@ -81,6 +83,7 @@ class VendorSubscriptionController extends Controller
                 $business,
                 $boostTierKey,
                 $boostDurationDays,
+                isset($validated['gateway']) ? PaymentGateway::from((string) $validated['gateway']) : null,
             );
 
             $subscriptionPayment = $checkout['subscription_payment'];
@@ -161,6 +164,7 @@ class VendorSubscriptionController extends Controller
                     }),
                 ],
                 'gateway_transaction_id' => ['required', 'string', 'max:255'],
+                'gateway' => ['required', 'string', Rule::in(PaymentGateway::values())],
             ], [
                 'payment_id.exists' => 'Checkout expired. Tap Pay again to start a new premium payment.',
             ]);
@@ -172,6 +176,7 @@ class VendorSubscriptionController extends Controller
             );
 
             $gatewayTransactionId = trim((string) $validated['gateway_transaction_id']);
+            $gateway = PaymentGateway::from((string) $validated['gateway']);
 
             $business = $this->businessInfoService->findForUser($vendor);
 
@@ -184,10 +189,16 @@ class VendorSubscriptionController extends Controller
             }
 
             if ($payment->status->value === 'pending') {
-                $this->paymentService->confirmBundledPayments($payment, $gatewayTransactionId);
+                $this->paymentService->confirmBundledPayments($payment, $gatewayTransactionId, $gateway);
                 $payment = $payment->fresh();
             } elseif ($payment->gateway_transaction_id === null && $gatewayTransactionId !== '') {
-                $payment->update(['gateway_transaction_id' => $gatewayTransactionId]);
+                $payment->update([
+                    'gateway' => $gateway,
+                    'gateway_transaction_id' => $gatewayTransactionId,
+                ]);
+                $payment = $payment->fresh();
+            } elseif ($payment->gateway === null) {
+                $payment->update(['gateway' => $gateway]);
                 $payment = $payment->fresh();
             }
 

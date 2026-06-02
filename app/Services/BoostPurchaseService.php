@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\BoostPurchaseRequestStatus;
+use App\Enums\PaymentGateway;
 use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
 use Illuminate\Support\Carbon;
@@ -83,6 +84,7 @@ class BoostPurchaseService
         ?string $renewType = null,
         ?int $sourceCampaignId = null,
         ?int $targetLocationId = null,
+        ?PaymentGateway $gateway = null,
     ): array {
         $renewType = in_array($renewType, ['extend', 'boost_again'], true) ? $renewType : null;
         $location = $this->resolveBoostTargetLocation($business, $targetLocationId, $sourceCampaignId, $renewType);
@@ -112,7 +114,7 @@ class BoostPurchaseService
             'renew_type' => $renewType,
             'source_campaign_id' => $sourceCampaignId,
             'location_label' => $location->full_name,
-        ]);
+        ], null, $gateway);
 
         $request = $this->createRequest(
             $user,
@@ -132,14 +134,17 @@ class BoostPurchaseService
         ];
     }
 
-    public function confirmBoostPayment(Payment $payment, string $gatewayTransactionId): BoostPurchaseRequest
+    public function confirmBoostPayment(Payment $payment, string $gatewayTransactionId, PaymentGateway $gateway): BoostPurchaseRequest
     {
         if ($payment->purpose !== PaymentPurpose::Boost) {
             throw new RuntimeException('Invalid payment for boost checkout.');
         }
 
         if ($payment->status === PaymentStatus::Pending) {
-            $payment = $this->paymentService->confirmPayment($payment, $gatewayTransactionId);
+            $payment = $this->paymentService->confirmPayment($payment, $gatewayTransactionId, $gateway);
+        } elseif ($payment->gateway === null) {
+            $payment->update(['gateway' => $gateway]);
+            $payment = $payment->fresh();
         }
 
         $request = $this->markPaidAndQueueForAdmin($payment);

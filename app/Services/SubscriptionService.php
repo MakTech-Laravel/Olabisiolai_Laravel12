@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\BoostPurchaseRequestStatus;
 use App\Enums\BusinessStatus;
+use App\Enums\PaymentGateway;
 use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
 use App\Enums\SubscriptionPlan;
@@ -170,6 +171,7 @@ class SubscriptionService
         BusinessInfo $business,
         ?string $boostTierKey = null,
         ?int $boostDurationDays = null,
+        ?PaymentGateway $gateway = null,
     ): array {
         $business = $this->preparePremiumCheckout($business);
         $checkoutGroupId = (string) Str::uuid();
@@ -184,6 +186,7 @@ class SubscriptionService
                 'checkout_group_id' => $checkoutGroupId,
                 'line_item' => 'subscription',
             ],
+            $gateway,
         );
 
         $boostPayment = null;
@@ -218,6 +221,7 @@ class SubscriptionService
                     'location_label' => $business->location->full_name,
                 ],
                 $boostTierKey,
+                $gateway,
             );
 
             $this->boostPurchaseService->createRequest(

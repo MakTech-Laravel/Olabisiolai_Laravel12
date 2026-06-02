@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1\Admin;
 use App\Enums\BusinessStatus;
 use App\Enums\VerificationStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Resources\AdminVendorMessageResource;
 use App\Http\Resources\Api\V1\BusinessInfoResource;
 use App\Models\BusinessInfo;
 use App\Models\User;

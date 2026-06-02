@@ -15,11 +15,12 @@ return new class extends Migration
             $table->unsignedBigInteger('user_id');
             $table->unsignedBigInteger('business_info_id')->nullable();
             /** verification, boost, subscription, etc. */
-            $table->string('purpose', 64);
-            $table->string('package_id', 64)->nullable();
-            $table->decimal('amount', 12, 2);
-            $table->string('currency', 8)->default('NGN');
+            $table->string('purpose');
+            $table->string('package_id')->nullable();
+            $table->decimal('amount');
+            $table->string('currency')->default('NGN');
             $table->string('tx_ref')->unique();
+            $table->string('gateway')->nullable();
             $table->string('gateway_transaction_id')->nullable();
             $table->string('status')->default(PaymentStatus::Pending->value);
             $table->timestamp('paid_at')->nullable();
@@ -31,6 +32,7 @@ return new class extends Migration
 
             $table->index(['user_id', 'purpose', 'status']);
             $table->index(['business_info_id', 'purpose', 'status']);
+            $table->index(['gateway', 'status']);
         });
     }
 
