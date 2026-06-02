@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
+use App\Enums\PaymentGateway;
 use App\Models\BusinessInfo;
 use App\Models\Payment;
 use App\Models\User;
@@ -27,6 +28,7 @@ class PaymentFactory extends Factory
             'amount' => 2500,
             'currency' => 'NGN',
             'tx_ref' => 'verification_' . Str::lower(Str::random(16)),
+            'gateway' => PaymentGateway::Flutterwave,
             'status' => PaymentStatus::Pending,
             'is_consumed' => false,
         ];

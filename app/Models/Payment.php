@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
+use App\Enums\PaymentGateway;
 use Database\Factories\PaymentFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -24,6 +25,7 @@ class Payment extends Model
         'amount',
         'currency',
         'tx_ref',
+        'gateway',
         'gateway_transaction_id',
         'status',
         'paid_at',
@@ -43,6 +45,7 @@ class Payment extends Model
             'metadata' => 'array',
             'purpose' => PaymentPurpose::class,
             'status' => PaymentStatus::class,
+            'gateway' => PaymentGateway::class,
         ];
     }
 
