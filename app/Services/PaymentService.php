@@ -322,6 +322,7 @@ class PaymentService
             'Currency',
             'Status',
             'TX reference',
+            'Gateway',
             'Paid at',
             'Created at',
             'Gateway transaction ID',
@@ -341,6 +342,8 @@ class PaymentService
         $description = $title !== '' ? $title : $payment->purpose->label();
         $metadataJson = is_array($payment->metadata) ? (string) json_encode($payment->metadata, JSON_UNESCAPED_UNICODE) : '';
 
+        $gateway = $this->gatewayResolver->resolveForDisplay($payment);
+
         return [
             (string) $payment->id,
             $payment->purpose->value,
@@ -350,6 +353,7 @@ class PaymentService
             $payment->currency,
             $payment->status->value,
             $payment->tx_ref,
+            $gateway?->value ?? '',
             $payment->paid_at ? humanDateTime($payment->paid_at) : '',
             $payment->created_at?->toIso8601String() ?? '',
             (string) ($payment->gateway_transaction_id ?? ''),
