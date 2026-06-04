@@ -17,6 +17,7 @@ class DatabaseSeeder extends Seeder
             AdminSeeder::class,
             // Spatie roles + permissions + super-admin assignment (must run after admins exist).
             RolePermissionSeeder::class,
+            LocationSeeder::class,
             PricingPackageSeeder::class,
             UsersSeeder::class,
             CategorySeeder::class,

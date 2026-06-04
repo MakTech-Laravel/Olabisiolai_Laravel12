@@ -2,17 +2,23 @@
 
 namespace App\Services;
 
+use App\Support\NigeriaLocationCatalog;
+
 /**
- * Resolves static business locations from config (no database).
+ * Resolves static business locations from the Nigeria LGA catalog (no database).
  */
 class LocationCatalogService
 {
+    public function __construct(
+        private readonly NigeriaLocationCatalog $nigeriaLocationCatalog,
+    ) {}
+
     /**
      * @return array<string, array<string, list<string>>>
      */
     public function hierarchy(): array
     {
-        return config('business_locations', []);
+        return $this->nigeriaLocationCatalog->businessLocationsConfig();
     }
 
     /**

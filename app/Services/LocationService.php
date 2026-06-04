@@ -114,9 +114,41 @@ class LocationService
                     $subQ->where('enabled', false);
                 })->orWhereDoesntHave('lgaBoost');
             })
-            ->orderBy('created_at', 'desc');
+            ->orderBy('state_name')
+            ->orderBy('lga_name');
 
         return $query->paginate($perPage);
+    }
+
+    /**
+     * Return every location row (admin hierarchy view).
+     *
+     * @return Collection<int, Location>
+     */
+    public function listAllLocations(?string $search = null, ?string $filterBoost = null): Collection
+    {
+        return Location::query()
+            ->with('lgaBoost')
+            ->withCount('businessInfos')
+            ->when($search, function ($q, string $search): void {
+                $q->where('lga_name', 'like', "%{$search}%")
+                    ->orWhere('state_name', 'like', "%{$search}%")
+                    ->orWhere('country_name', 'like', "%{$search}%")
+                    ->orWhere('formatted_address', 'like', "%{$search}%");
+            })
+            ->when($filterBoost === 'enabled', function ($q): void {
+                $q->whereHas('lgaBoost', function ($subQ): void {
+                    $subQ->where('enabled', true);
+                });
+            })
+            ->when($filterBoost === 'disabled', function ($q): void {
+                $q->whereHas('lgaBoost', function ($subQ): void {
+                    $subQ->where('enabled', false);
+                })->orWhereDoesntHave('lgaBoost');
+            })
+            ->orderBy('state_name')
+            ->orderBy('lga_name')
+            ->get();
     }
 
     /**

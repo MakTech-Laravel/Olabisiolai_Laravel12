@@ -34,14 +34,38 @@ class LocationController extends Controller
 
             $validated = $request->validate([
                 'search' => ['nullable', 'string', 'max:255'],
-                'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+                'page' => ['nullable', 'integer', 'min:1'],
+                'per_page' => ['nullable', 'integer', 'min:1', 'max:500'],
                 'filter_boost' => ['nullable', 'string', 'in:enabled,disabled'],
+                'all' => ['nullable', 'boolean'],
             ]);
 
+            $search = isset($validated['search']) ? (string) $validated['search'] : null;
+            $filterBoost = $validated['filter_boost'] ?? null;
+
+            if ($request->boolean('all')) {
+                $locations = $this->locationService->listAllLocations($search, $filterBoost);
+
+                return sendResponse(true, 'Locations retrieved successfully.', [
+                    'filter' => [
+                        'search' => $search !== null && $search !== '' ? trim($search) : null,
+                        'boost' => $filterBoost,
+                    ],
+                    'count' => $locations->count(),
+                    'pagination' => [
+                        'current_page' => 1,
+                        'per_page' => $locations->count(),
+                        'last_page' => 1,
+                        'total' => $locations->count(),
+                    ],
+                    'locations' => LocationListResource::collection($locations),
+                ]);
+            }
+
             $locations = $this->locationService->listLocations(
-                isset($validated['search']) ? (string) $validated['search'] : null,
+                $search,
                 $validated['per_page'] ?? 15,
-                $validated['filter_boost'] ?? null,
+                $filterBoost,
             );
 
             if ($locations->total() === 0) {
