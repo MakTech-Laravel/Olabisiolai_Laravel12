@@ -5,9 +5,9 @@ COPY ./docker/php.ini /usr/local/etc/php/conf.d/custom.ini
 # Install dependencies
 RUN apt-get update && apt-get install -y \
     nano nginx git unzip curl libpng-dev libonig-dev libxml2-dev libzip-dev \
-    libjpeg62-turbo-dev libfreetype6-dev supervisor \
+    libjpeg62-turbo-dev libfreetype6-dev libicu-dev supervisor \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install pdo_mysql mbstring zip gd pcntl sockets \
+    && docker-php-ext-install pdo_mysql mbstring zip gd pcntl sockets intl \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
