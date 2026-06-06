@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Enums\BusinessStatus;
+use App\Enums\UserStatus;
 use App\Enums\VerificationStatus;
 use App\Models\BusinessInfo;
 use App\Models\Category;
@@ -11,6 +12,7 @@ use App\Models\User;
 use Database\Seeders\Support\SocialAccountSeedCatalog;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -148,12 +150,21 @@ class FeaturedBusinessSeeder extends Seeder
                 'city_name' => $cityLgaName,
             ]);
 
-            $vendor = User::factory()->create([
-                'first_name' => explode(' ', $data['name'])[0],
-                'last_name' => 'Vendor',
-                'email' => Str::slug($data['name']) . '-' . Str::random(5) . '@example.com',
-                'role' => 'vendor',
-            ]);
+            $vendorEmail = Str::slug($data['name']) . '-vendor-' . Str::lower(Str::random(5)) . '@example.com';
+            $vendor = User::query()->updateOrCreate(
+                ['email' => $vendorEmail],
+                [
+                    'first_name' => explode(' ', $data['name'])[0],
+                    'last_name' => 'Vendor',
+                    'name' => $data['name'] . ' Vendor',
+                    'phone' => '+234' . rand(7000000000, 9999999999),
+                    'role' => 'vendor',
+                    'status' => UserStatus::Active->value,
+                    'wants_marketing_emails' => false,
+                    'email_verified_at' => now(),
+                    'password' => Hash::make('password'),
+                ],
+            );
 
             $business = BusinessInfo::create([
                 'user_id' => $vendor->id,
@@ -174,21 +185,32 @@ class FeaturedBusinessSeeder extends Seeder
 
             for ($i = 0; $i < 2; $i++) {
                 $rating = $this->generateRating($data['rating']);
+                $reviewerName = $this->sampleReviewerName($i);
+                $reviewerEmail = Str::slug($data['name']) . '-reviewer-' . $i . '-' . Str::lower(Str::random(4)) . '@example.com';
 
-                $reviewer = User::factory()->create([
-                    'name' => fake()->name(),
-                    'email' => fake()->unique()->safeEmail(),
-                    'email_verified_at' => now(),
-                ]);
+                $reviewer = User::query()->updateOrCreate(
+                    ['email' => $reviewerEmail],
+                    [
+                        'first_name' => explode(' ', $reviewerName)[0],
+                        'last_name' => explode(' ', $reviewerName)[1] ?? 'User',
+                        'name' => $reviewerName,
+                        'phone' => '+234' . rand(7000000000, 9999999999),
+                        'role' => 'user',
+                        'status' => UserStatus::Active->value,
+                        'wants_marketing_emails' => false,
+                        'email_verified_at' => now(),
+                        'password' => Hash::make('password'),
+                    ],
+                );
 
                 $business->reviews()->create([
                     'business_id' => $business->id,
                     'user_id' => $reviewer->id,
                     'full_name' => $reviewer->name,
                     'rating' => $rating,
-                    'review_text' => fake()->paragraph(rand(2, 5)),
+                    'review_text' => $this->sampleReviewText($data['name'], $i),
                     'is_approved' => true,
-                    'created_at' => fake()->dateTimeBetween('-6 months', 'now'),
+                    'created_at' => now()->subDays(rand(7, 180)),
                 ]);
             }
         }
@@ -246,5 +268,29 @@ class FeaturedBusinessSeeder extends Seeder
         $max = min(5, ceil($target));
 
         return (rand(0, 100) > 70) ? (int) $min : (int) $max;
+    }
+
+    private function sampleReviewerName(int $index): string
+    {
+        $names = [
+            'Ada Okafor',
+            'Chidi Bello',
+            'Fatima Yusuf',
+            'Grace Eze',
+            'Ibrahim Musa',
+        ];
+
+        return $names[$index % count($names)];
+    }
+
+    private function sampleReviewText(string $businessName, int $index): string
+    {
+        $templates = [
+            "Great experience with {$businessName}. Professional team and reliable service.",
+            "I would recommend {$businessName} to anyone looking for quality work in the area.",
+            "{$businessName} delivered exactly what was promised. Will use again.",
+        ];
+
+        return $templates[$index % count($templates)];
     }
 }
