@@ -35,9 +35,10 @@ COPY ./docker/nginx.conf /etc/nginx/nginx.conf
 COPY ./docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 # supervisorctl defaults to /etc/supervisord.conf; supervisord is started with -c conf.d/...
 RUN ln -sf /etc/supervisor/conf.d/supervisord.conf /etc/supervisord.conf
+COPY ./docker/ensure-passport.sh /usr/local/bin/ensure-passport.sh
 COPY ./docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY ./docker/start-reverb.sh /usr/local/bin/start-reverb.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/start-reverb.sh
+RUN chmod +x /usr/local/bin/ensure-passport.sh /usr/local/bin/entrypoint.sh /usr/local/bin/start-reverb.sh
 
 # Public: 80 (nginx + WebSocket /app). Internal Reverb: 8089 (not published on Coolify).
 EXPOSE 80

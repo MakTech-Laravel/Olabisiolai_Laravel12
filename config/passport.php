@@ -28,9 +28,14 @@ return [
     |
     */
 
-    'private_key' => env('PASSPORT_PRIVATE_KEY'),
+    // Leave unset in production .env — Docker entrypoint writes storage/oauth-*.key on start.
+    'private_key' => filled(trim((string) env('PASSPORT_PRIVATE_KEY', '')))
+        ? str_replace('\\n', "\n", (string) env('PASSPORT_PRIVATE_KEY'))
+        : null,
 
-    'public_key' => env('PASSPORT_PUBLIC_KEY'),
+    'public_key' => filled(trim((string) env('PASSPORT_PUBLIC_KEY', '')))
+        ? str_replace('\\n', "\n", (string) env('PASSPORT_PUBLIC_KEY'))
+        : null,
 
     /*
     |--------------------------------------------------------------------------

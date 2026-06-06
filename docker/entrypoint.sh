@@ -3,6 +3,12 @@ set -euo pipefail
 
 cd /var/www
 
+# Passport: file-based RSA keys + oauth clients (no PASSPORT_* env vars required).
+# shellcheck source=/dev/null
+source /usr/local/bin/ensure-passport.sh
+ensure_passport_keys
+ensure_passport_clients
+
 php artisan config:clear --ansi 2>/dev/null || true
 php artisan route:clear --ansi 2>/dev/null || true
 
