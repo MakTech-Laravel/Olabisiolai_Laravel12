@@ -1,4 +1,0 @@
-[mcp_servers.laravel-boost]
-command = "php"
-args = ["artisan", "boost:mcp"]
-cwd = "D:\\Laravel_Projects\\2026 Project\\2nd Quatar\\Olabisiolai_Laravel12"
