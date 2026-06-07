@@ -36,8 +36,8 @@ class AuthLoginTest extends TestCase
         $this->postJson('/api/v1/auth/register', [
             'first_name' => 'Jane',
             'last_name' => 'Doe',
+            'verification_channel' => 'email',
             'email' => 'jane@example.com',
-            'phone' => '+2348011111111',
             'role' => 'user',
             'password' => 'Secret12!',
             'password_confirmation' => 'Secret12!',

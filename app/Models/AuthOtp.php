@@ -10,6 +10,7 @@ class AuthOtp extends Model
     protected $fillable = [
         'user_id',
         'admin_id',
+        'purpose',
         'code',
         'expires_at',
         'consumed_at',

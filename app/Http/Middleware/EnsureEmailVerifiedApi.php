@@ -19,7 +19,7 @@ class EnsureEmailVerifiedApi
     {
         $user = $request->user('api') ?? $request->user('admin_api');
 
-        if (($user instanceof User || $user instanceof Admin) && ! $user->email_verified_at) {
+        if (($user instanceof User || $user instanceof Admin) && ! $user->isAccountVerified()) {
             return response()->json([
                 'message' => 'Please verify your account before continuing.',
                 'verification_status' => 'unverified',

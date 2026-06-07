@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\ForgotPasswordRequest;
 use App\Http\Requests\Api\V1\LoginRequest;
+use App\Http\Requests\Api\V1\PhoneLoginRequestOtpRequest;
+use App\Http\Requests\Api\V1\PhoneVerifyOtpRequest;
 use App\Http\Requests\Api\V1\RegisterRequest;
 use App\Http\Requests\Api\V1\ResendForgotPasswordOtpRequest;
 use App\Http\Requests\Api\V1\ResetPasswordRequest;
@@ -32,10 +34,11 @@ class AuthController extends Controller
     public function register(RegisterRequest $request)
     {
         try {
-            ['user' => $user, 'otp' => $otp, 'token' => $token] = $this->authService->register($request->validated());
+            ['user' => $user, 'otp' => $otp, 'token' => $token, 'verification_channel' => $channel] = $this->authService->register($request->validated());
 
             return sendResponse(true, 'Registration successful. You are logged in. Verify OTP to activate your account.', [
                 'verification_status' => 'unverified',
+                'verification_channel' => $channel,
                 'otp' => $otp->code,
                 'token' => $token,
             ], Response::HTTP_CREATED);
@@ -71,7 +74,13 @@ class AuthController extends Controller
     public function verifyOtp(VerifyOtpRequest $request)
     {
         try {
-            $result = $this->authService->verifyOtp((string) $request->validated()['code']);
+            $validated = $request->validated();
+            $authUser = $request->user('api');
+            $result = $this->authService->verifyOtp(
+                (string) $validated['code'],
+                isset($validated['phone']) ? (string) $validated['phone'] : null,
+                $authUser instanceof User ? $authUser : null,
+            );
 
             if (! $result) {
                 return sendResponse(false, 'Invalid or expired OTP.', null, Response::HTTP_UNPROCESSABLE_ENTITY);
@@ -87,13 +96,114 @@ class AuthController extends Controller
         }
     }
 
+    public function requestPhoneLoginOtp(PhoneLoginRequestOtpRequest $request)
+    {
+        try {
+            $validated = $request->validated();
+
+            $result = $this->authService->requestPhoneLoginOtp(
+                $validated['phone'],
+                $validated['role'] ?? null,
+            );
+
+            $message = ($result['sms_delivered'] ?? true)
+                ? 'OTP sent successfully to your phone number.'
+                : 'OTP generated. SMS could not be delivered — verify your Termii sender ID or check Laravel logs in local dev.';
+
+            return sendResponse(true, $message, [
+                'masked_phone' => $result['masked_phone'],
+                'sms_delivered' => $result['sms_delivered'] ?? true,
+                'otp' => $result['otp']->code,
+            ]);
+        } catch (ValidationException $exception) {
+            return sendResponse(
+                false,
+                $exception->validator->errors()->first(),
+                ['errors' => $exception->validator->errors()->toArray()],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    public function verifyPhoneLoginOtp(PhoneVerifyOtpRequest $request)
+    {
+        try {
+            $validated = $request->validated();
+
+            $result = $this->authService->verifyPhoneLoginOtp(
+                $validated['phone'],
+                $validated['code'],
+                $validated['role'] ?? null,
+            );
+
+            if ($result['two_factor_required']) {
+                return sendResponse(true, 'Two-factor authentication required.', [
+                    'two_factor_required' => true,
+                    'two_factor_token' => $result['two_factor_token'],
+                    'verification_status' => 'two_factor_required',
+                ]);
+            }
+
+            return sendResponse(true, 'Login successful.', [
+                'token' => $result['token'],
+                'verification_status' => 'verified',
+                'user' => UserResource::make($result['user']),
+            ]);
+        } catch (ValidationException $exception) {
+            return sendResponse(
+                false,
+                $exception->validator->errors()->first(),
+                ['errors' => $exception->validator->errors()->toArray()],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    public function resendPhoneLoginOtp(PhoneLoginRequestOtpRequest $request)
+    {
+        try {
+            $validated = $request->validated();
+            $otp = $this->authService->resendPhoneLoginOtp(
+                $validated['phone'],
+                $validated['role'] ?? null,
+            );
+
+            return sendResponse(true, 'A new OTP has been sent to your phone number.', [
+                'otp' => $otp->code,
+            ]);
+        } catch (ValidationException $exception) {
+            return sendResponse(
+                false,
+                $exception->validator->errors()->first(),
+                ['errors' => $exception->validator->errors()->toArray()],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
     public function login(LoginRequest $request)
     {
         try {
             $validated = $request->validated();
 
             try {
-                $user = $this->authService->resolveLoginUser($validated['email'], $validated['password']);
+                $user = $this->authService->resolveLoginUserByCredentials(
+                    $validated['email'] ?? null,
+                    $validated['phone'] ?? null,
+                    $validated['password'],
+                );
             } catch (\Exception $e) {
                 return sendResponse(false, $e->getMessage(), null, Response::HTTP_UNAUTHORIZED);
             }
@@ -106,7 +216,7 @@ class AuthController extends Controller
                 return sendResponse(false, "This account is registered as a {$user->role}. Please log in with role: {$user->role}.", null, Response::HTTP_FORBIDDEN);
             }
 
-            if (! $user->email_verified_at) {
+            if (! $user->isAccountVerified()) {
                 return sendResponse(false, 'Please verify your account via OTP before logging in.', [
                     'verification_status' => 'unverified',
                 ], Response::HTTP_FORBIDDEN);
@@ -313,7 +423,7 @@ class AuthController extends Controller
                 return sendResponse(false, 'Authentication is required to resend OTP.', null, Response::HTTP_UNAUTHORIZED);
             }
 
-            if ($user->email_verified_at) {
+            if ($user->isAccountVerified()) {
                 return sendResponse(true, 'Account already verified.', [
                     'verification_status' => 'verified',
                 ]);

@@ -77,6 +77,7 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
+            'phone_verified_at' => 'datetime',
             'password' => 'hashed',
             'wants_marketing_emails' => 'boolean',
             'settings' => 'array',
@@ -91,6 +92,21 @@ class User extends Authenticatable
     {
         return $this->two_factor_confirmed_at !== null
             && filled($this->two_factor_secret);
+    }
+
+    public function isAccountVerified(): bool
+    {
+        return $this->email_verified_at !== null || $this->phone_verified_at !== null;
+    }
+
+    public function registrationVerificationChannel(): ?string
+    {
+        $settings = is_array($this->settings) ? $this->settings : [];
+        $channel = $settings['registration_verification_channel'] ?? null;
+
+        return is_string($channel) && in_array($channel, ['email', 'phone'], true)
+            ? $channel
+            : null;
     }
 
     public function isAdmin(): bool

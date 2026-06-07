@@ -10,6 +10,9 @@ Route::controller(AuthController::class)->group(function () {
         Route::post('/register', 'register');
         Route::post('/otp/verify', 'verifyOtp');
         Route::post('/login', 'login');
+        Route::post('/phone/request-otp', 'requestPhoneLoginOtp')->middleware('throttle:5,1');
+        Route::post('/phone/verify-otp', 'verifyPhoneLoginOtp')->middleware('throttle:10,1');
+        Route::post('/phone/resend-otp', 'resendPhoneLoginOtp')->middleware('throttle:3,1');
         Route::post('/two-factor/verify', 'verifyTwoFactorLogin');
         Route::post('/admin/login', 'adminLogin');
         Route::post('/forgot-password', 'forgotPassword')->withoutMiddleware([ValidateCsrfToken::class]);

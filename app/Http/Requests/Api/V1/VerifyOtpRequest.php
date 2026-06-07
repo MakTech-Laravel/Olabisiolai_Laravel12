@@ -24,6 +24,7 @@ class VerifyOtpRequest extends FormRequest
     {
         return [
             'code' => ['required', 'digits:6'],
+            'phone' => ['nullable', 'string', 'min:10', 'max:20'],
         ];
     }
 }

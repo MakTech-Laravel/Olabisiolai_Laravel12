@@ -26,8 +26,8 @@ class AuthRegistrationTest extends TestCase
         $registerResponse = $this->postJson('/api/v1/auth/register', [
             'first_name' => 'Test',
             'last_name' => 'User',
+            'verification_channel' => 'email',
             'email' => 'newuser@example.com',
-            'phone' => '+2348011112233',
             'role' => 'user',
             'password' => 'Secret12!',
             'password_confirmation' => 'Secret12!',
@@ -35,18 +35,20 @@ class AuthRegistrationTest extends TestCase
         ]);
 
         $registerResponse->assertCreated();
-        $registerResponse->assertJsonStructure(['token', 'verification_status', 'otp']);
-        $registerResponse->assertJsonPath('verification_status', 'unverified');
-        $this->assertNotEmpty($registerResponse->json('token'));
-        $this->assertSame('pending', User::where('email', 'newuser@example.com')->value('status'));
+        $registerResponse->assertJsonStructure([
+            'data' => ['token', 'verification_status', 'otp', 'verification_channel'],
+        ]);
+        $registerResponse->assertJsonPath('data.verification_status', 'unverified');
+        $registerResponse->assertJsonPath('data.verification_channel', 'email');
+        $this->assertNotEmpty($registerResponse->json('data.token'));
+        $this->assertSame('pending', User::where('email', 'newuser@example.com')->first()?->status->value);
 
         $verifyResponse = $this->postJson('/api/v1/auth/otp/verify', [
-            'code' => $registerResponse->json('otp'),
+            'code' => $registerResponse->json('data.otp'),
         ]);
 
         $verifyResponse->assertOk();
-        $verifyResponse->assertJsonStructure(['verification_status', 'message']);
-        $verifyResponse->assertJsonPath('verification_status', 'verified');
+        $verifyResponse->assertJsonPath('data.verification_status', 'verified');
         $this->assertDatabaseHas('users', [
             'email' => 'newuser@example.com',
             'role' => 'user',
@@ -61,7 +63,7 @@ class AuthRegistrationTest extends TestCase
         $response = $this->postJson('/api/v1/auth/register', []);
 
         $response->assertUnprocessable();
-        $response->assertJsonValidationErrors(['first_name', 'last_name', 'email', 'phone', 'role', 'password']);
+        $response->assertJsonValidationErrors(['first_name', 'last_name', 'verification_channel', 'role', 'password']);
     }
 
     public function test_marketplace_login_rejects_admin_user(): void
