@@ -58,9 +58,9 @@ class BusinessInfoResource extends JsonResource
                     'state' => $this->location->state_name,
                     'city' => $this->location->city_name,
                     'full_name' => $this->location->full_name,
-                    'formatted_address' => $this->location->formatted_address,
-                    'latitude' => $this->location->latitude !== null ? (float) $this->location->latitude : null,
-                    'longitude' => $this->location->longitude !== null ? (float) $this->location->longitude : null,
+                    'formatted_address' => $this->location->displayFormattedAddress(),
+                    'latitude' => $this->location->resolvedLatitude(),
+                    'longitude' => $this->location->resolvedLongitude(),
                 ]
             ),
             'business_description' => $this->business_description,

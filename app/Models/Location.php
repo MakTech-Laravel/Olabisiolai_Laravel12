@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\NigeriaLocationCatalog;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -85,6 +86,41 @@ class Location extends Model
         ]);
 
         return implode(', ', $parts);
+    }
+
+    public function displayFormattedAddress(): string
+    {
+        return filled($this->formatted_address) ? (string) $this->formatted_address : $this->full_name;
+    }
+
+    public function resolvedLatitude(): ?float
+    {
+        if ($this->latitude !== null) {
+            return (float) $this->latitude;
+        }
+
+        if (! filled($this->state_name)) {
+            return null;
+        }
+
+        [$latitude] = app(NigeriaLocationCatalog::class)->coordinatesForState((string) $this->state_name);
+
+        return $latitude;
+    }
+
+    public function resolvedLongitude(): ?float
+    {
+        if ($this->longitude !== null) {
+            return (float) $this->longitude;
+        }
+
+        if (! filled($this->state_name)) {
+            return null;
+        }
+
+        [, $longitude] = app(NigeriaLocationCatalog::class)->coordinatesForState((string) $this->state_name);
+
+        return $longitude;
     }
 
     /**
