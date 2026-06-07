@@ -99,6 +99,16 @@ class User extends Authenticatable
         return $this->email_verified_at !== null || $this->phone_verified_at !== null;
     }
 
+    public function hasUnverifiedEmail(): bool
+    {
+        return filled($this->email) && $this->email_verified_at === null;
+    }
+
+    public function canMakePurchases(): bool
+    {
+        return ! $this->hasUnverifiedEmail();
+    }
+
     public function registrationVerificationChannel(): ?string
     {
         $settings = is_array($this->settings) ? $this->settings : [];

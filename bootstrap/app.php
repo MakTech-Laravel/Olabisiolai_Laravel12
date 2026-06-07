@@ -3,6 +3,7 @@
 use App\Http\Middleware\AuthenticateApiOptional;
 use App\Http\Middleware\EnsureAdminApi;
 use App\Http\Middleware\EnsureEmailVerifiedApi;
+use App\Http\Middleware\EnsurePurchasesEmailVerified;
 use App\Http\Middleware\EnsureRole;
 use App\Http\Middleware\EnsureVendorPremiumActive;
 use App\Http\Middleware\EnsureVendorSubscriptionActive;
@@ -26,7 +27,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withBroadcasting(
-        __DIR__.'/../routes/channels.php',
+        __DIR__ . '/../routes/channels.php',
         ['middleware' => ['auth:api,admin_api']],
     )
     ->withMiddleware(function (Middleware $middleware) {
@@ -34,6 +35,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'auth.api.optional' => AuthenticateApiOptional::class,
             'verified' => EnsureEmailVerifiedApi::class,
+            'purchase.email_verified' => EnsurePurchasesEmailVerified::class,
             'role' => EnsureRole::class,
             'admin' => EnsureAdminApi::class,
             'permission' => PermissionMiddleware::class,

@@ -207,7 +207,7 @@ class AuthService
             $user->forceFill(['phone_verified_at' => now()])->save();
         }
 
-        if (! $user->email_verified_at) {
+        if (! $user->email_verified_at && filled($user->email)) {
             $user->forceFill([
                 'email_verified_at' => now(),
                 'status' => UserStatus::Active->value,
@@ -493,6 +493,100 @@ class AuthService
             $this->deliverRegistrationOtp($subject, $otp->code, $channel);
         } else {
             $this->deliverOtpMail($subject, $otp->code, false);
+        }
+
+        return $otp;
+    }
+
+    public function setUserEmailAndSendVerificationOtp(User $user, string $email): AuthOtp
+    {
+        $normalizedEmail = Str::lower(trim($email));
+
+        if ($user->email === $normalizedEmail && $user->email_verified_at !== null) {
+            throw ValidationException::withMessages([
+                'email' => ['This email is already verified on your account.'],
+            ]);
+        }
+
+        $user->forceFill([
+            'email' => $normalizedEmail,
+            'email_verified_at' => null,
+        ])->save();
+
+        $otp = $this->issueOtp($user, OtpPurpose::EmailVerify);
+
+        try {
+            $this->deliverOtpMail($user, $otp->code, false);
+        } catch (\Throwable $throwable) {
+            Log::error('Profile email verification OTP delivery failed.', [
+                'user_id' => $user->id,
+                'email' => $normalizedEmail,
+                'error' => $throwable->getMessage(),
+            ]);
+        }
+
+        return $otp;
+    }
+
+    public function verifyUserEmailOtp(User $user, string $code): User
+    {
+        if (! filled($user->email)) {
+            throw ValidationException::withMessages([
+                'email' => ['Add an email address before verifying.'],
+            ]);
+        }
+
+        /** @var AuthOtp|null $otp */
+        $otp = AuthOtp::query()
+            ->where('user_id', $user->id)
+            ->where('purpose', OtpPurpose::EmailVerify->value)
+            ->whereNull('consumed_at')
+            ->latest()
+            ->first();
+
+        if (! $otp instanceof AuthOtp || $otp->expires_at->isPast()) {
+            throw ValidationException::withMessages([
+                'code' => ['Invalid or expired OTP.'],
+            ]);
+        }
+
+        if (! hash_equals((string) $otp->code, hash('sha256', $code))) {
+            throw ValidationException::withMessages([
+                'code' => ['Invalid or expired OTP.'],
+            ]);
+        }
+
+        $otp->update(['consumed_at' => now()]);
+
+        $user->forceFill(['email_verified_at' => now()])->save();
+
+        return $user->refresh();
+    }
+
+    public function resendUserEmailVerificationOtp(User $user): AuthOtp
+    {
+        if (! filled($user->email)) {
+            throw ValidationException::withMessages([
+                'email' => ['Add an email address before requesting a verification code.'],
+            ]);
+        }
+
+        if ($user->email_verified_at !== null) {
+            throw ValidationException::withMessages([
+                'email' => ['This email is already verified.'],
+            ]);
+        }
+
+        $otp = $this->issueOtp($user, OtpPurpose::EmailVerify);
+
+        try {
+            $this->deliverOtpMail($user, $otp->code, false);
+        } catch (\Throwable $throwable) {
+            Log::error('Profile email verification OTP resend failed.', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'error' => $throwable->getMessage(),
+            ]);
         }
 
         return $otp;

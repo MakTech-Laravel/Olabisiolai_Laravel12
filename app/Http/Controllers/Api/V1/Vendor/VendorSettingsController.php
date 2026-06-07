@@ -207,6 +207,11 @@ class VendorSettingsController extends Controller
                 'phone' => $business?->phone ?? $user->phone,
                 'business_name' => $business?->business_name,
                 'logo_url' => $business !== null ? public_media_url($business->logo_path) : null,
+                'email_verified_at' => humanDateTime($user->email_verified_at),
+                'phone_verified_at' => humanDateTime($user->phone_verified_at),
+                'email_verified' => $user->email_verified_at !== null,
+                'email_verification_required' => $user->hasUnverifiedEmail(),
+                'can_make_purchases' => $user->canMakePurchases(),
             ],
             'business' => $businessPayload,
             'security' => [

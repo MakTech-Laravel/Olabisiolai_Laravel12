@@ -4,10 +4,13 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\ChangeUserPasswordRequest;
+use App\Http\Requests\Api\V1\UpdateUserEmailRequest;
 use App\Http\Requests\Api\V1\UpdateUserProfileRequest;
 use App\Http\Requests\Api\V1\UpdateUserSettingsRequest;
+use App\Http\Requests\Api\V1\VerifyUserEmailOtpRequest;
 use App\Http\Traits\FileManagementTrait;
 use App\Models\User;
+use App\Services\AuthService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
@@ -18,6 +21,10 @@ use Throwable;
 class UserSettingsController extends Controller
 {
     use FileManagementTrait;
+
+    public function __construct(
+        private readonly AuthService $authService,
+    ) {}
 
     public function profileShow(Request $request): Response
     {
@@ -232,6 +239,93 @@ class UserSettingsController extends Controller
         }
     }
 
+    public function updateEmail(UpdateUserEmailRequest $request): Response
+    {
+        /** @var User $user */
+        $user = $request->user('api');
+
+        if (! $this->canAccessAccountSettings($user)) {
+            return sendResponse(false, 'Access denied.', null, Response::HTTP_FORBIDDEN);
+        }
+
+        try {
+            $this->authService->setUserEmailAndSendVerificationOtp($user, $request->validated('email'));
+            $user->refresh();
+
+            return sendResponse(
+                true,
+                'Verification code sent to your email. Enter it below to activate this address.',
+                $this->payload($user),
+            );
+        } catch (ValidationException $exception) {
+            return sendResponse(
+                false,
+                $exception->validator->errors()->first(),
+                ['errors' => $exception->validator->errors()->toArray()],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    public function verifyEmailOtp(VerifyUserEmailOtpRequest $request): Response
+    {
+        /** @var User $user */
+        $user = $request->user('api');
+
+        if (! $this->canAccessAccountSettings($user)) {
+            return sendResponse(false, 'Access denied.', null, Response::HTTP_FORBIDDEN);
+        }
+
+        try {
+            $this->authService->verifyUserEmailOtp($user, $request->validated('code'));
+            $user->refresh();
+
+            return sendResponse(true, 'Email verified successfully.', $this->payload($user));
+        } catch (ValidationException $exception) {
+            return sendResponse(
+                false,
+                $exception->validator->errors()->first(),
+                ['errors' => $exception->validator->errors()->toArray()],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    public function resendEmailOtp(Request $request): Response
+    {
+        /** @var User $user */
+        $user = $request->user('api');
+
+        if (! $this->canAccessAccountSettings($user)) {
+            return sendResponse(false, 'Access denied.', null, Response::HTTP_FORBIDDEN);
+        }
+
+        try {
+            $this->authService->resendUserEmailVerificationOtp($user);
+
+            return sendResponse(true, 'A new verification code has been sent to your email.', null);
+        } catch (ValidationException $exception) {
+            return sendResponse(
+                false,
+                $exception->validator->errors()->first(),
+                ['errors' => $exception->validator->errors()->toArray()],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
     private function canAccessAccountSettings(?User $user): bool
     {
         return $user !== null && ($user->isUser() || $user->isVendor());
@@ -265,6 +359,11 @@ class UserSettingsController extends Controller
             'location' => $user->location,
             'image_path' => $user->image,
             'image_url' => $user->image_url,
+            'email_verified_at' => humanDateTime($user->email_verified_at),
+            'phone_verified_at' => humanDateTime($user->phone_verified_at),
+            'email_verified' => $user->email_verified_at !== null,
+            'email_verification_required' => $user->hasUnverifiedEmail(),
+            'can_make_purchases' => $user->canMakePurchases(),
         ];
     }
 }

@@ -7,6 +7,7 @@ enum OtpPurpose: string
     case Register = 'register';
     case Login = 'login';
     case ForgotPassword = 'forgot_password';
+    case EmailVerify = 'email_verify';
 
     public static function values(): array
     {

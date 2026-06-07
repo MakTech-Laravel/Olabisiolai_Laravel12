@@ -29,6 +29,12 @@ Route::prefix('user')->name('user.')->group(function () {
 
     Route::post('/password', [UserSettingsController::class, 'changePassword'])->name('password.change');
 
+    Route::prefix('email')->name('email.')->group(function () {
+        Route::post('/', [UserSettingsController::class, 'updateEmail'])->middleware('throttle:6,1')->name('update');
+        Route::post('/verify-otp', [UserSettingsController::class, 'verifyEmailOtp'])->middleware('throttle:10,1')->name('verify-otp');
+        Route::post('/resend-otp', [UserSettingsController::class, 'resendEmailOtp'])->middleware('throttle:6,1')->name('resend-otp');
+    });
+
     Route::prefix('favorites')->name('favorites.')->group(function () {
         Route::get('/', [UserFavoritesController::class, 'index'])->name('index');
         Route::post('/toggle', [UserFavoritesController::class, 'toggle'])->name('toggle');
@@ -62,8 +68,10 @@ Route::prefix('vendor')->name('vendor.')->group(function () {
     Route::prefix('subscription')->name('subscription.')->group(function () {
         Route::get('/packages', [VendorSubscriptionController::class, 'packages'])->name('packages');
         Route::get('/status', [VendorSubscriptionController::class, 'status'])->name('status');
-        Route::post('/payment/init', [VendorSubscriptionController::class, 'initPayment'])->name('payment.init');
-        Route::post('/payment/resume', [VendorSubscriptionController::class, 'resumePayment'])->name('payment.resume');
-        Route::post('/payment/confirm', [VendorSubscriptionController::class, 'confirmPayment'])->name('payment.confirm');
+        Route::middleware('purchase.email_verified')->group(function () {
+            Route::post('/payment/init', [VendorSubscriptionController::class, 'initPayment'])->name('payment.init');
+            Route::post('/payment/resume', [VendorSubscriptionController::class, 'resumePayment'])->name('payment.resume');
+            Route::post('/payment/confirm', [VendorSubscriptionController::class, 'confirmPayment'])->name('payment.confirm');
+        });
     });
 });

@@ -30,6 +30,10 @@ class UserResource extends JsonResource
             'wants_marketing_emails' => $this->wants_marketing_emails,
             'settings' => is_array($this->settings) ? $this->settings : [],
             'email_verified_at' => humanDateTime($this->email_verified_at),
+            'phone_verified_at' => humanDateTime($this->phone_verified_at),
+            'email_verified' => $this->email_verified_at !== null,
+            'email_verification_required' => filled($this->email) && $this->email_verified_at === null,
+            'can_make_purchases' => ! (filled($this->email) && $this->email_verified_at === null),
             'created_at' => humanDateTime($this->created_at),
         ];
     }

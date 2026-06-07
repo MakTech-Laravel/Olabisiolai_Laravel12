@@ -40,9 +40,11 @@ Route::prefix('vendor')->name('vendor.')->group(function () {
     Route::prefix('boost')->name('boost.')->group(function () {
         Route::get('/catalog', [VendorBoostController::class, 'catalog'])->name('catalog');
         Route::post('/request', [VendorBoostController::class, 'submitRequest'])->name('request');
-        Route::post('/payment/init', [VendorBoostController::class, 'initPayment'])->name('payment.init');
-        Route::post('/payment/resume', [VendorBoostController::class, 'resumePayment'])->name('payment.resume');
-        Route::post('/payment/confirm', [VendorBoostController::class, 'confirmPayment'])->name('payment.confirm');
+        Route::middleware('purchase.email_verified')->group(function () {
+            Route::post('/payment/init', [VendorBoostController::class, 'initPayment'])->name('payment.init');
+            Route::post('/payment/resume', [VendorBoostController::class, 'resumePayment'])->name('payment.resume');
+            Route::post('/payment/confirm', [VendorBoostController::class, 'confirmPayment'])->name('payment.confirm');
+        });
     });
 
     Route::get('/payments/export', [VendorPaymentsController::class, 'export'])->name('payments.export');
@@ -50,7 +52,9 @@ Route::prefix('vendor')->name('vendor.')->group(function () {
     Route::get('/payments/{payment}', [VendorPaymentsController::class, 'show'])->name('payments.show');
 
     Route::get('/payment-methods', [VendorPaymentMethodsController::class, 'index'])->name('payment-methods.index');
-    Route::post('/payment-methods', [VendorPaymentMethodsController::class, 'store'])->name('payment-methods.store');
+    Route::middleware('purchase.email_verified')->group(function () {
+        Route::post('/payment-methods', [VendorPaymentMethodsController::class, 'store'])->name('payment-methods.store');
+    });
     Route::patch('/payment-methods/{paymentMethod}/default', [VendorPaymentMethodsController::class, 'setDefault'])->name('payment-methods.default');
     Route::delete('/payment-methods/{paymentMethod}', [VendorPaymentMethodsController::class, 'destroy'])->name('payment-methods.destroy');
 
@@ -58,8 +62,10 @@ Route::prefix('vendor')->name('vendor.')->group(function () {
 
     Route::prefix('verification')->name('verification.')->group(function () {
         Route::get('/packages', [VendorVerificationController::class, 'packages'])->name('packages');
-        Route::post('/payment/init', [VendorVerificationController::class, 'initPayment'])->name('payment.init');
-        Route::post('/payment/confirm', [VendorVerificationController::class, 'confirmPayment'])->name('payment.confirm');
+        Route::middleware('purchase.email_verified')->group(function () {
+            Route::post('/payment/init', [VendorVerificationController::class, 'initPayment'])->name('payment.init');
+            Route::post('/payment/confirm', [VendorVerificationController::class, 'confirmPayment'])->name('payment.confirm');
+        });
         Route::post('/apply', [VendorVerificationController::class, 'apply'])->name('apply');
         Route::post('/documents/upload', [VendorVerificationController::class, 'uploadDocument'])->name('documents.upload');
         Route::get('/status', [VendorVerificationController::class, 'status'])->name('status');
