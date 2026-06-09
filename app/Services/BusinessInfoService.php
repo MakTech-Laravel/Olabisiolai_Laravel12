@@ -46,6 +46,7 @@ class BusinessInfoService
         private readonly BoostListingPriorityService $boostListingPriority,
         private readonly BusinessHoursService $businessHoursService,
         private readonly SocialAccountService $socialAccountService,
+        private readonly PublicSearchQueryParser $publicSearchQueryParser,
     ) {}
 
     /*
@@ -307,20 +308,56 @@ class BusinessInfoService
             return;
         }
 
-        $query->where(function ($innerQuery) use ($searchTerm): void {
-            $innerQuery->where('business_name', 'like', "%{$searchTerm}%")
-                ->orWhere('business_description', 'like', "%{$searchTerm}%")
-                ->orWhereRaw('CAST(services_offered AS CHAR) LIKE ?', ["%{$searchTerm}%"])
-                ->orWhereHas('category', function ($categoryQuery) use ($searchTerm): void {
-                    $categoryQuery->where('name', 'like', "%{$searchTerm}%");
-                })
-                ->orWhereHas('location', function ($locationQuery) use ($searchTerm): void {
-                    $locationQuery->where('lga_name', 'like', "%{$searchTerm}%")
-                        ->orWhere('state_name', 'like', "%{$searchTerm}%")
-                        ->orWhere('city_name', 'like', "%{$searchTerm}%")
-                        ->orWhere('country_name', 'like', "%{$searchTerm}%");
+        $parsed = $this->publicSearchQueryParser->parse($searchTerm);
+
+        if ($parsed->hasLocationOnly()) {
+            return;
+        }
+
+        if ($parsed->serviceTermGroups !== []) {
+            foreach ($parsed->serviceTermGroups as $termGroup) {
+                $query->where(function (Builder $groupQuery) use ($termGroup): void {
+                    foreach ($termGroup as $term) {
+                        $groupQuery->orWhere(function (Builder $termQuery) use ($term): void {
+                            $this->appendPublicSearchTermClauses($termQuery, $term, includeLocationFields: false);
+                        });
+                    }
                 });
-        });
+            }
+
+            return;
+        }
+
+        if (! $parsed->hasParsedIntent()) {
+            $query->where(function (Builder $innerQuery) use ($searchTerm): void {
+                $this->appendPublicSearchTermClauses($innerQuery, $searchTerm, includeLocationFields: true);
+            });
+        }
+    }
+
+    private function appendPublicSearchTermClauses(
+        Builder $query,
+        string $term,
+        bool $includeLocationFields,
+    ): void {
+        $like = '%' . $term . '%';
+
+        $query->where('business_name', 'like', $like)
+            ->orWhere('business_description', 'like', $like)
+            ->orWhere('subcategory', 'like', $like)
+            ->orWhereRaw('CAST(services_offered AS CHAR) LIKE ?', [$like])
+            ->orWhereHas('category', function (Builder $categoryQuery) use ($like): void {
+                $categoryQuery->where('name', 'like', $like);
+            });
+
+        if ($includeLocationFields) {
+            $query->orWhereHas('location', function (Builder $locationQuery) use ($like): void {
+                $locationQuery->where('lga_name', 'like', $like)
+                    ->orWhere('state_name', 'like', $like)
+                    ->orWhere('city_name', 'like', $like)
+                    ->orWhere('country_name', 'like', $like);
+            });
+        }
     }
 
     private function applyPublicApprovedReviewStats(Builder $query): void
@@ -936,40 +973,20 @@ class BusinessInfoService
             return [];
         }
 
-        $normalized = mb_strtolower($search);
-
-        $lgaId = Location::query()
-            ->whereRaw('LOWER(lga_name) = ?', [$normalized])
-            ->value('id');
-
-        if ($lgaId !== null) {
-            return [
-                'location_id' => (int) $lgaId,
-                'resolved_from_search' => true,
-            ];
-        }
-
-        $cityIds = Location::query()
-            ->whereRaw('LOWER(city_name) = ?', [$normalized])
-            ->pluck('id')
-            ->map(static fn($id): int => (int) $id)
-            ->filter(static fn(int $id): bool => $id > 0)
-            ->values()
-            ->all();
-
-        if ($cityIds === []) {
+        $parsed = $this->publicSearchQueryParser->parse($search);
+        if ($parsed->locationIds === []) {
             return [];
         }
 
-        if (count($cityIds) === 1) {
+        if (count($parsed->locationIds) === 1) {
             return [
-                'location_id' => $cityIds[0],
+                'location_id' => $parsed->locationIds[0],
                 'resolved_from_search' => true,
             ];
         }
 
         return [
-            'location_ids' => $cityIds,
+            'location_ids' => $parsed->locationIds,
             'resolved_from_search' => true,
         ];
     }
