@@ -1,0 +1,302 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Category;
+use App\Models\Location;
+use App\Support\ParsedPublicSearchQuery;
+
+class PublicSearchQueryParser
+{
+    /** @var list<array{id: int, names: list<string>}>|null */
+    private ?array $locationCandidates = null;
+
+    /** @var list<array{id: int, name: string, subcategories: list<string>}>|null */
+    private ?array $categoryCandidates = null;
+
+    /**
+     * @var list<string>
+     */
+    private const STOP_WORDS = [
+        'in',
+        'at',
+        'near',
+        'around',
+        'for',
+        'the',
+        'a',
+        'an',
+        'and',
+        'or',
+        'of',
+        'by',
+    ];
+
+    public function parse(string $rawQuery): ParsedPublicSearchQuery
+    {
+        $original = trim($rawQuery);
+        if ($original === '') {
+            return new ParsedPublicSearchQuery($original);
+        }
+
+        $normalized = mb_strtolower(preg_replace('/\s+/u', ' ', $original) ?? $original);
+
+        [$locationIds, $remaining] = $this->extractLocationIds($normalized);
+        $serviceTermGroups = $this->buildServiceTermGroups($remaining);
+
+        return new ParsedPublicSearchQuery(
+            originalQuery: $original,
+            locationIds: $locationIds,
+            serviceTermGroups: $serviceTermGroups,
+            resolvedLocationFromSearch: $locationIds !== [],
+        );
+    }
+
+    /**
+     * @return array{0: list<int>, 1: string}
+     */
+    private function extractLocationIds(string $normalized): array
+    {
+        $remaining = $normalized;
+        $locationIds = [];
+
+        foreach ($this->locationCandidatesSorted() as $candidate) {
+            foreach ($candidate['names'] as $name) {
+                if ($name === '' || ! $this->containsWholePhrase($remaining, $name)) {
+                    continue;
+                }
+
+                $locationIds[] = $candidate['id'];
+                $remaining = $this->stripLocationPhrase($remaining, $name);
+                break;
+            }
+        }
+
+        return [array_values(array_unique($locationIds)), trim(preg_replace('/\s+/u', ' ', $remaining) ?? $remaining)];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function tokenizeServiceTerms(string $remaining): array
+    {
+        if ($remaining === '') {
+            return [];
+        }
+
+        $tokens = preg_split('/\s+/u', $remaining, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        return array_values(array_filter(
+            $tokens,
+            static fn(string $token): bool => $token !== '' && ! in_array($token, self::STOP_WORDS, true),
+        ));
+    }
+
+    /**
+     * @return list<list<string>>
+     */
+    private function buildServiceTermGroups(string $remaining): array
+    {
+        $groups = [];
+        $remaining = trim(preg_replace('/\s+/u', ' ', $remaining) ?? $remaining);
+
+        foreach ($this->knownServicePhrasesSorted() as $phrase) {
+            if (! $this->containsWholePhrase($remaining, $phrase)) {
+                continue;
+            }
+
+            $group = $this->expandToken($phrase);
+            if ($group !== []) {
+                $groups[] = $group;
+            }
+
+            $remaining = $this->stripLocationPhrase($remaining, $phrase);
+        }
+
+        foreach ($this->tokenizeServiceTerms($remaining) as $token) {
+            $group = $this->expandToken($token);
+            if ($group !== []) {
+                $groups[] = $group;
+            }
+        }
+
+        return $groups;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function knownServicePhrasesSorted(): array
+    {
+        $phrases = [];
+
+        foreach ($this->categoryCandidates() as $category) {
+            if ($category['name'] !== '') {
+                $phrases[] = $category['name'];
+            }
+
+            foreach ($category['subcategories'] as $subcategory) {
+                $phrases[] = $subcategory;
+            }
+        }
+
+        $phrases = array_values(array_unique(array_filter($phrases, static fn(string $phrase): bool => $phrase !== '')));
+
+        usort($phrases, static fn(string $left, string $right): int => mb_strlen($right) <=> mb_strlen($left));
+
+        return $phrases;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function expandToken(string $token): array
+    {
+        $token = mb_strtolower(trim($token));
+        if ($token === '') {
+            return [];
+        }
+
+        $terms = [$token];
+
+        /** @var list<string> $synonyms */
+        $synonyms = config('search_synonyms.' . $token, []);
+        foreach ($synonyms as $synonym) {
+            $synonym = mb_strtolower(trim((string) $synonym));
+            if ($synonym !== '') {
+                $terms[] = $synonym;
+            }
+        }
+
+        foreach ($this->categoryCandidates() as $category) {
+            $categoryName = mb_strtolower($category['name']);
+            if ($this->termsOverlap($token, $categoryName)) {
+                $terms[] = $categoryName;
+            }
+
+            foreach ($category['subcategories'] as $subcategory) {
+                if ($this->termsOverlap($token, $subcategory)) {
+                    $terms[] = $subcategory;
+                }
+            }
+        }
+
+        return array_values(array_unique(array_filter($terms, static fn(string $term): bool => $term !== '')));
+    }
+
+    private function termsOverlap(string $token, string $candidate): bool
+    {
+        if ($token === '' || $candidate === '') {
+            return false;
+        }
+
+        return str_contains($candidate, $token) || str_contains($token, $candidate);
+    }
+
+    private function containsWholePhrase(string $haystack, string $phrase): bool
+    {
+        $pattern = '/(?<!\p{L})' . preg_quote($phrase, '/') . '(?!\p{L})/u';
+
+        return preg_match($pattern, $haystack) === 1;
+    }
+
+    private function stripLocationPhrase(string $haystack, string $phrase): string
+    {
+        $quoted = preg_quote($phrase, '/');
+        $haystack = preg_replace('/(?<!\p{L})(?:in|at|near|around)\s+' . $quoted . '(?!\p{L})/u', ' ', $haystack) ?? $haystack;
+        $haystack = preg_replace('/(?<!\p{L})' . $quoted . '(?!\p{L})/u', ' ', $haystack) ?? $haystack;
+
+        return trim(preg_replace('/\s+/u', ' ', $haystack) ?? $haystack);
+    }
+
+    /**
+     * @return list<array{id: int, names: list<string>}>
+     */
+    private function locationCandidatesSorted(): array
+    {
+        $candidates = $this->locationCandidates();
+
+        usort(
+            $candidates,
+            static function (array $left, array $right): int {
+                $leftMax = max(array_map(static fn(string $name): int => mb_strlen($name), $left['names']));
+                $rightMax = max(array_map(static fn(string $name): int => mb_strlen($name), $right['names']));
+
+                return $rightMax <=> $leftMax;
+            },
+        );
+
+        return $candidates;
+    }
+
+    /**
+     * @return list<array{id: int, names: list<string>}>
+     */
+    private function locationCandidates(): array
+    {
+        if ($this->locationCandidates !== null) {
+            return $this->locationCandidates;
+        }
+
+        $this->locationCandidates = Location::query()
+            ->select(['id', 'lga_name', 'city_name', 'state_name'])
+            ->get()
+            ->map(static function (Location $location): array {
+                $names = array_values(array_unique(array_filter([
+                    mb_strtolower(trim((string) $location->lga_name)),
+                    mb_strtolower(trim((string) $location->city_name)),
+                    mb_strtolower(trim((string) $location->state_name)),
+                ], static fn(string $name): bool => $name !== '')));
+
+                return [
+                    'id' => (int) $location->id,
+                    'names' => $names,
+                ];
+            })
+            ->filter(static fn(array $candidate): bool => $candidate['names'] !== [])
+            ->values()
+            ->all();
+
+        return $this->locationCandidates;
+    }
+
+    /**
+     * @return list<array{id: int, name: string, subcategories: list<string>}>
+     */
+    private function categoryCandidates(): array
+    {
+        if ($this->categoryCandidates !== null) {
+            return $this->categoryCandidates;
+        }
+
+        $this->categoryCandidates = Category::query()
+            ->select(['id', 'name', 'subcategories'])
+            ->get()
+            ->map(static function (Category $category): array {
+                $subcategories = is_array($category->subcategories) ? $category->subcategories : [];
+                $normalizedSubcategories = [];
+
+                foreach ($subcategories as $subcategory) {
+                    if (! is_string($subcategory)) {
+                        continue;
+                    }
+
+                    $normalized = mb_strtolower(trim($subcategory));
+                    if ($normalized !== '') {
+                        $normalizedSubcategories[] = $normalized;
+                    }
+                }
+
+                return [
+                    'id' => (int) $category->id,
+                    'name' => mb_strtolower(trim((string) $category->name)),
+                    'subcategories' => $normalizedSubcategories,
+                ];
+            })
+            ->filter(static fn(array $category): bool => $category['name'] !== '')
+            ->values()
+            ->all();
+
+        return $this->categoryCandidates;
+    }
+}
