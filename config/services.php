@@ -44,9 +44,11 @@ return [
     'termii' => [
         'api_key' => env('TERMII_API_KEY'),
         'sender_id' => env('TERMII_SENDER_ID', 'N-Alert'),
-        'base_url' => env('TERMII_BASE_URL', 'https://v3.api.termii.com'),
+        'base_url' => env('TERMII_BASE_URL', 'https://api.ng.termii.com'),
         'channel' => env('TERMII_CHANNEL', 'dnd'),
         'timeout' => (int) env('TERMII_TIMEOUT', 15),
+        // Must match Termii-approved OTP wording exactly (case-sensitive brand name).
+        'otp_brand' => env('TERMII_OTP_BRAND', 'Gidira'),
     ],
 
 ];

@@ -53,7 +53,7 @@ class TermiiService
                     'from' => config('services.termii.sender_id'),
                     'sms' => $message,
                     'type' => 'plain',
-                    'channel' => config('services.termii.channel', 'generic'),
+                    'channel' => config('services.termii.channel', 'dnd'),
                 ]);
 
             $response->throw();
@@ -65,7 +65,9 @@ class TermiiService
                 'context' => $context,
                 'status' => $exception->response?->status(),
                 'body' => $exception->response?->json(),
+                'base_url' => config('services.termii.base_url'),
                 'sender_id' => config('services.termii.sender_id'),
+                'channel' => config('services.termii.channel', 'dnd'),
             ]);
 
             if (app()->environment('local', 'testing')) {
@@ -80,15 +82,15 @@ class TermiiService
         }
     }
 
-    private function buildMessage(string $code, string $context): string
+    /**
+     * Must match the message format approved on the Termii account (N-Alert / DND).
+     * Example: "Your Gidira OTP is 482910. Do not share with anyone."
+     */
+    private function buildMessage(string $code, string $_context): string
     {
-        $appName = (string) config('app.name', 'GIDIRA');
+        $brand = (string) config('services.termii.otp_brand', 'Gidira');
 
-        return match ($context) {
-            'login' => "Your {$appName} login code is {$code}. It expires in 10 minutes. Do not share this code.",
-            'forgot_password' => "Your {$appName} password reset code is {$code}. It expires in 10 minutes.",
-            default => "Your {$appName} verification code is {$code}. It expires in 10 minutes.",
-        };
+        return "Your {$brand} OTP is {$code}. Do not share with anyone.";
     }
 
     private function endpoint(string $path): string
