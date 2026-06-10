@@ -113,4 +113,15 @@ return [
         'name' => env('MAIL_FROM_NAME', 'Example'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Brand Logo (Markdown Emails)
+    |--------------------------------------------------------------------------
+    |
+    | Absolute URL used in email headers. Defaults to APP_URL + branding asset.
+    |
+    */
+
+    'logo_url' => env('MAIL_LOGO_URL'),
+
 ];

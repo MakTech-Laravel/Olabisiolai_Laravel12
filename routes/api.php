@@ -21,7 +21,7 @@ Route::middleware(['auth:admin_api', 'admin', 'verified'])
     ->name('api.v1.')
     ->group(base_path('routes/api/v1/admin.php'));
 
-Route::middleware(['auth:api', 'verified', 'role:user,vendor'])
+Route::middleware(['auth:api', 'role:user,vendor'])
     ->prefix('v1')
     ->name('api.v1.')
     ->group(base_path('routes/api/v1/user.php'));
@@ -31,7 +31,7 @@ Route::middleware(['auth:api', 'verified', 'role:user,vendor', 'messaging.presen
     ->name('api.v1.')
     ->group(base_path('routes/api/v1/messaging.php'));
 
-Route::middleware(['auth:api', 'verified', 'role:vendor'])
+Route::middleware(['auth:api', 'role:vendor'])
     ->prefix('v1')
     ->name('api.v1.')
     ->group(base_path('routes/api/v1/vendor.php'));

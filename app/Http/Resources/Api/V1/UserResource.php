@@ -34,6 +34,8 @@ class UserResource extends JsonResource
             'email_verified' => $this->email_verified_at !== null,
             'email_verification_required' => filled($this->email) && $this->email_verified_at === null,
             'can_make_purchases' => ! (filled($this->email) && $this->email_verified_at === null),
+            'account_verified' => $this->isAccountVerified(),
+            'verification_channel' => $this->registrationVerificationChannel(),
             'created_at' => humanDateTime($this->created_at),
         ];
     }

@@ -18,15 +18,17 @@ use Illuminate\Support\Facades\Route;
 /*
 |--------------------------------------------------------------------------
 | Vendor API Routes
-| Middleware: auth:api, verified, role:vendor
+| Middleware: auth:api, role:vendor (verified applied per-route below)
 |--------------------------------------------------------------------------
 */
 
 Route::prefix('vendor')->name('vendor.')->group(function () {
+    // Account setup — available before registration OTP is confirmed.
     Route::get('/settings', [VendorSettingsController::class, 'show'])->name('settings.show');
     Route::patch('/settings', [VendorSettingsController::class, 'update'])->name('settings.update');
     Route::post('/password', [VendorSettingsController::class, 'changePassword'])->name('password.change');
 
+    Route::middleware('verified')->group(function (): void {
     Route::prefix('two-factor')->name('two-factor.')->group(function () {
         Route::get('/', [VendorTwoFactorController::class, 'status'])->name('status');
         Route::post('/enable', [VendorTwoFactorController::class, 'enable'])->name('enable');
@@ -90,5 +92,6 @@ Route::prefix('vendor')->name('vendor.')->group(function () {
             Route::put('/replies/{reply}', [VendorReviewController::class, 'updateReply'])->name('update-reply');
             Route::delete('/replies/{reply}', [VendorReviewController::class, 'deleteReply'])->name('delete-reply');
         });
+    });
     });
 });
