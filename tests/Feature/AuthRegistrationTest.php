@@ -103,8 +103,9 @@ class AuthRegistrationTest extends TestCase
             'portal' => 'marketplace',
         ]);
 
-        $marketplaceResponse->assertForbidden();
-        $marketplaceResponse->assertJsonPath('verification_status', 'unverified');
+        $marketplaceResponse->assertOk();
+        $marketplaceResponse->assertJsonPath('data.verification_status', 'unverified');
+        $marketplaceResponse->assertJsonStructure(['data' => ['token', 'otp']]);
 
         $adminResponse = $this->postJson('/api/v1/auth/admin/login', [
             'email' => 'admin-unverified@example.com',

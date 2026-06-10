@@ -90,12 +90,15 @@ class AuthLoginTest extends TestCase
         $response->assertJsonPath('user.role', 'vendor');
     }
 
-    public function test_unverified_user_cannot_login(): void
+    public function test_unverified_user_login_sends_otp_and_returns_verification_token(): void
     {
+        Mail::fake();
+
         User::factory()->unverified()->create([
             'email' => 'unverified@example.com',
             'password' => 'Secret12!',
             'role' => 'user',
+            'settings' => ['registration_verification_channel' => 'email'],
         ]);
 
         $response = $this->postJson('/api/v1/auth/login', [
@@ -103,8 +106,12 @@ class AuthLoginTest extends TestCase
             'password' => 'Secret12!',
         ]);
 
-        $response->assertForbidden();
-        $response->assertJsonPath('verification_status', 'unverified');
+        $response->assertOk();
+        $response->assertJsonPath('data.verification_status', 'unverified');
+        $response->assertJsonPath('data.verification_channel', 'email');
+        $response->assertJsonStructure(['data' => ['token', 'otp', 'user']]);
+
+        Mail::assertQueued(OtpVerificationMail::class, fn ($mail) => $mail->hasTo('unverified@example.com'));
     }
 
     public function test_login_rejects_wrong_password(): void

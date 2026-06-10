@@ -241,9 +241,22 @@ class AuthController extends Controller
             }
 
             if (! $user->isAccountVerified()) {
-                return sendResponse(false, 'Please verify your account via OTP before logging in.', [
+                [
+                    'user' => $user,
+                    'otp' => $otp,
+                    'token' => $token,
+                    'verification_channel' => $channel,
+                ] = $this->authService->initiateLoginVerification($user);
+
+                $destination = $channel === 'phone' ? 'phone number' : 'email';
+
+                return sendResponse(true, "Please verify the OTP sent to your {$destination} to complete login.", [
                     'verification_status' => 'unverified',
-                ], Response::HTTP_FORBIDDEN);
+                    'verification_channel' => $channel,
+                    'token' => $token,
+                    'otp' => $otp->code,
+                    'user' => UserResource::make($user),
+                ]);
             }
 
             if ($this->twoFactor->isEnabled($user)) {

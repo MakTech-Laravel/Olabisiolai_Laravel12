@@ -67,6 +67,26 @@ class AuthService
         ];
     }
 
+    /**
+     * Correct credentials but account not yet verified — send registration OTP and
+     * issue a session token so the client can complete verification.
+     *
+     * @return array{user: User, otp: AuthOtp, token: string, verification_channel: string}
+     */
+    public function initiateLoginVerification(User $user): array
+    {
+        $otp = $this->resendOtp($user);
+        $channel = $user->registrationVerificationChannel()
+            ?? ($user->phone && ! $user->email ? 'phone' : 'email');
+
+        return [
+            'user' => $user,
+            'otp' => $otp,
+            'token' => $this->issueAccessToken($user),
+            'verification_channel' => $channel,
+        ];
+    }
+
     public function verifyOtp(string $code, ?string $phone = null, ?User $authenticatedUser = null): ?array
     {
         $query = AuthOtp::query()
