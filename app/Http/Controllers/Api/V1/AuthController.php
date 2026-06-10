@@ -20,6 +20,7 @@ use App\Models\User;
 use App\Services\AuthService;
 use App\Services\TwoFactorAuthenticationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
@@ -30,6 +31,29 @@ class AuthController extends Controller
         private readonly AuthService $authService,
         private readonly TwoFactorAuthenticationService $twoFactor,
     ) {}
+
+    public function testTermii(Request $request)
+    {
+        $otp = rand(100000, 999999);
+
+        $response = Http::post(env('TERMII_BASE_URL') . '/api/sms/send', [
+            'api_key' => env('TERMII_API_KEY'),
+            'to'      => '2348153353131',
+            'from'    => 'N-Alert',
+            'sms'     => "Your Gidira OTP is {$otp}. Do not share with anyone.",
+            'type'    => 'plain',
+            'channel' => 'dnd',
+        ]);
+
+
+        if ($response->successful()) {
+            cache()->put('otp_' . '01792973431', $otp, now()->addMinutes(5));
+            return sendResponse(true, 'OTP sent', null, Response::HTTP_OK);
+        }
+
+
+        return sendResponse(false, 'Failed to send OTP', null, Response::HTTP_INTERNAL_SERVER_ERROR, ['errors' => $response->json()]);
+    }
 
     public function register(RegisterRequest $request)
     {
