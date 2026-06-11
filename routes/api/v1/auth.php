@@ -9,6 +9,7 @@ Route::controller(AuthController::class)->group(function () {
     Route::prefix('auth')->group(function () {
         Route::post('/register', 'register');
         Route::post('/otp/verify', 'verifyOtp');
+        Route::post('/register/resend-otp', 'resendRegistrationOtp')->middleware('throttle:5,1');
         Route::post('/login', 'login');
         Route::post('/phone/request-otp', 'requestPhoneLoginOtp')->middleware('throttle:5,1');
         Route::post('/phone/verify-otp', 'verifyPhoneLoginOtp')->middleware('throttle:10,1');

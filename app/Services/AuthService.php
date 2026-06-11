@@ -87,8 +87,12 @@ class AuthService
         ];
     }
 
-    public function verifyOtp(string $code, ?string $phone = null, ?User $authenticatedUser = null): ?array
-    {
+    public function verifyOtp(
+        string $code,
+        ?string $phone = null,
+        ?User $authenticatedUser = null,
+        ?string $email = null,
+    ): ?array {
         $query = AuthOtp::query()
             ->where('code', hash('sha256', $code))
             ->whereNull('consumed_at')
@@ -104,6 +108,15 @@ class AuthService
             }
             $query->where('user_id', $user->id)
                 ->where('purpose', OtpPurpose::Register->value);
+        } elseif ($email !== null) {
+            $user = $this->resolveUserByEmail($email);
+            if (! $user instanceof User) {
+                return null;
+            }
+            $query->where('user_id', $user->id)
+                ->where('purpose', OtpPurpose::Register->value);
+        } else {
+            return null;
         }
 
         /** @var AuthOtp|null $otp */
@@ -503,6 +516,23 @@ class AuthService
         return $otp;
     }
 
+    public function resendRegistrationOtpForContact(?string $email, ?string $phone): ?AuthOtp
+    {
+        $user = null;
+
+        if (filled($email)) {
+            $user = $this->resolveUserByEmail($email);
+        } elseif (filled($phone)) {
+            $user = $this->resolveUserByPhone($phone);
+        }
+
+        if (! $user instanceof User || $user->isAccountVerified()) {
+            return null;
+        }
+
+        return $this->resendOtp($user);
+    }
+
     public function resendOtp(User|Admin $subject): AuthOtp
     {
         $otp = $this->issueOtp($subject, OtpPurpose::Register);
@@ -649,7 +679,7 @@ class AuthService
             'admin_id' => $subject instanceof Admin ? $subject->id : null,
             'purpose' => $purpose->value,
             'code' => hash('sha256', $plainCode),
-            'expires_at' => now()->addMinutes(10),
+            'expires_at' => now()->addMinutes($this->otpExpireMinutes()),
             'consumed_at' => null,
         ])->forceFill(['code' => $plainCode]);
     }
@@ -803,6 +833,18 @@ class AuthService
         ]);
 
         return false;
+    }
+
+    private function otpExpireMinutes(): int
+    {
+        return max(5, (int) Config::get('auth.otp_expire_minutes', 15));
+    }
+
+    private function resolveUserByEmail(string $email): ?User
+    {
+        return User::query()
+            ->where('email', Str::lower(trim($email)))
+            ->first();
     }
 
     private function resolveUserByPhone(string $phone): ?User
