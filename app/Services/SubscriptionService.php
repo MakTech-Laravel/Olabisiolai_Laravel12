@@ -409,7 +409,7 @@ class SubscriptionService
             return [
                 'has_business' => false,
                 'can_access_onboarding' => true,
-                'redirect_to' => '/vendor/choose-your-plan',
+                'redirect_to' => '/vendor/plan-form',
                 'subscription' => null,
             ];
         }

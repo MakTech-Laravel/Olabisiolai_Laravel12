@@ -137,4 +137,12 @@ return [
 
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
 
+    /*
+    |--------------------------------------------------------------------------
+    | OTP Expiration (minutes)
+    |--------------------------------------------------------------------------
+    */
+
+    'otp_expire_minutes' => (int) env('AUTH_OTP_EXPIRE_MINUTES', 15),
+
 ];

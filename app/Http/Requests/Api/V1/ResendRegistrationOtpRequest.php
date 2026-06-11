@@ -5,27 +5,21 @@ namespace App\Http\Requests\Api\V1;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
-class VerifyOtpRequest extends FormRequest
+class ResendRegistrationOtpRequest extends FormRequest
 {
-    /**
-     * Determine if the user is authorized to make this request.
-     */
     public function authorize(): bool
     {
         return true;
     }
 
     /**
-     * Get the validation rules that apply to the request.
-     *
      * @return array<string, array<int, ValidationRule|string>>
      */
     public function rules(): array
     {
         return [
-            'code' => ['required', 'digits:6'],
-            'email' => ['nullable', 'string', 'email', 'max:255'],
-            'phone' => ['nullable', 'string', 'min:10', 'max:20'],
+            'email' => ['nullable', 'string', 'email', 'max:255', 'required_without:phone'],
+            'phone' => ['nullable', 'string', 'min:10', 'max:20', 'required_without:email'],
         ];
     }
 }

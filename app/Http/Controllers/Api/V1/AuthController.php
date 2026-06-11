@@ -9,6 +9,7 @@ use App\Http\Requests\Api\V1\PhoneLoginRequestOtpRequest;
 use App\Http\Requests\Api\V1\PhoneVerifyOtpRequest;
 use App\Http\Requests\Api\V1\RegisterRequest;
 use App\Http\Requests\Api\V1\ResendForgotPasswordOtpRequest;
+use App\Http\Requests\Api\V1\ResendRegistrationOtpRequest;
 use App\Http\Requests\Api\V1\ResetPasswordRequest;
 use App\Http\Requests\Api\V1\VerifyForgotPasswordTokenRequest;
 use App\Http\Requests\Api\V1\VerifyOtpRequest;
@@ -104,14 +105,21 @@ class AuthController extends Controller
                 (string) $validated['code'],
                 isset($validated['phone']) ? (string) $validated['phone'] : null,
                 $authUser instanceof User ? $authUser : null,
+                isset($validated['email']) ? (string) $validated['email'] : null,
             );
 
             if (! $result) {
                 return sendResponse(false, 'Invalid or expired OTP.', null, Response::HTTP_UNPROCESSABLE_ENTITY);
             }
 
+            $verifiedUser = $result['user'] ?? null;
+
             return sendResponse(true, 'OTP verified successfully. You are logged in.', [
                 'verification_status' => 'verified',
+                'token' => $result['token'] ?? null,
+                'user' => $verifiedUser instanceof User
+                    ? UserResource::make($verifiedUser)
+                    : ($verifiedUser instanceof Admin ? AdminResource::make($verifiedUser) : null),
             ]);
         } catch (Throwable $throwable) {
             report($throwable);
@@ -444,6 +452,35 @@ class AuthController extends Controller
             }
 
             return sendResponse(true, 'Password reset successful. You can now log in with your new password.');
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    public function resendRegistrationOtp(ResendRegistrationOtpRequest $request)
+    {
+        try {
+            $validated = $request->validated();
+            $otp = $this->authService->resendRegistrationOtpForContact(
+                isset($validated['email']) ? (string) $validated['email'] : null,
+                isset($validated['phone']) ? (string) $validated['phone'] : null,
+            );
+
+            if (! $otp) {
+                return sendResponse(
+                    false,
+                    'We could not resend a verification code for this account. Check your details or register again.',
+                    null,
+                    Response::HTTP_UNPROCESSABLE_ENTITY,
+                );
+            }
+
+            return sendResponse(true, 'OTP resent successfully.', [
+                'verification_status' => 'unverified',
+                'otp' => $otp->code,
+            ]);
         } catch (Throwable $throwable) {
             report($throwable);
 

@@ -9,7 +9,7 @@ Thank you for registering. Use the OTP below to verify your account.
 # {{ $otpCode }}
 @endcomponent
 
-This code expires in **10 minutes**. Do not share it with anyone.
+This code expires in **{{ config('auth.otp_expire_minutes', 15) }} minutes**. Do not share it with anyone.
 
 If you did not create an account, no further action is required.
 
