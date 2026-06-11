@@ -35,7 +35,7 @@ class VendorOnboardingStatusTest extends TestCase
         $response->assertOk();
         $response->assertJsonPath('data.has_business', false);
         $response->assertJsonPath('data.can_access_onboarding', true);
-        $response->assertJsonPath('data.redirect_to', '/vendor/choose-your-plan');
+        $response->assertJsonPath('data.redirect_to', '/vendor/plan-form');
     }
 
     public function test_vendor_with_free_business_goes_to_dashboard_and_can_pay_premium(): void
