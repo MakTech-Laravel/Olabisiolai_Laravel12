@@ -41,6 +41,12 @@ return [
         'base_url' => env('PAYSTACK_BASE_URL', 'https://api.paystack.co'),
     ],
 
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        'redirect' => env('GOOGLE_REDIRECT_URI', env('APP_URL').'/api/v1/auth/social/google/callback'),
+    ],
+
     'termii' => [
         'api_key' => env('TERMII_API_KEY'),
         'sender_id' => env('TERMII_SENDER_ID', 'N-Alert'),

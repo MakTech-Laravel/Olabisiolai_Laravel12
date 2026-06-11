@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\Admin\AuthController as AdminAuthController;
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\SocialAuthController;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Support\Facades\Route;
 
@@ -24,6 +25,13 @@ Route::controller(AuthController::class)->group(function () {
             ->withoutMiddleware([ValidateCsrfToken::class]);
         Route::post('/reset-password', 'resetPassword')
             ->withoutMiddleware([ValidateCsrfToken::class]);
+
+        Route::prefix('social')->name('social.')->controller(SocialAuthController::class)->group(function () {
+            Route::get('/providers', 'providers')->name('providers');
+            Route::get('/{provider}/redirect', 'redirect')->name('redirect');
+            Route::post('/{provider}/login', 'login')->middleware('throttle:10,1')->name('login');
+            Route::get('/{provider}/callback', 'callback')->name('callback');
+        });
     });
 });
 
