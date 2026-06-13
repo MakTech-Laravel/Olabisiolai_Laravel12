@@ -9,7 +9,6 @@ use App\Models\BusinessInfo;
 use App\Models\BusinessProfileView;
 use App\Models\Review;
 use App\Models\User;
-use App\Models\VendorPaymentMethod;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
@@ -44,7 +43,7 @@ class VendorDashboardService
         $reviewStats = $this->reviewReplyService->getVendorReviewStats($vendor);
         $profileViews = $this->profileViewMetrics($business->id);
         $enquiries = $this->enquiryMetrics($vendor->id);
-        $profileCompletion = $this->profileCompletion($business, $vendor);
+        $profileCompletion = $this->profileCompletion($business);
         $trust = $this->trustMetrics($business, $subscription, $verification, $reviewStats, $profileCompletion['percent']);
 
         return [
@@ -318,10 +317,8 @@ class VendorDashboardService
     /**
      * @return array{percent: int, items: list<array{key: string, label: string, done: bool}>, next_step_key: string|null, next_step_label: string|null}
      */
-    private function profileCompletion(BusinessInfo $business, User $vendor): array
+    private function profileCompletion(BusinessInfo $business): array
     {
-        $hasBank = VendorPaymentMethod::query()->where('user_id', $vendor->id)->exists();
-
         $items = [
             [
                 'key' => 'business_info',
@@ -335,11 +332,6 @@ class VendorDashboardService
                 'key' => 'verified_id',
                 'label' => 'Verified ID',
                 'done' => $business->verification_status === VerificationStatus::Approved,
-            ],
-            [
-                'key' => 'bank_linked',
-                'label' => 'Bank Linked',
-                'done' => $hasBank,
             ],
             [
                 'key' => 'profile_photo',
