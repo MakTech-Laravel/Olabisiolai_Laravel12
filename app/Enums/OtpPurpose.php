@@ -6,6 +6,7 @@ enum OtpPurpose: string
 {
     case Register = 'register';
     case Login = 'login';
+    case NewDevice = 'new_device';
     case ForgotPassword = 'forgot_password';
     case EmailVerify = 'email_verify';
 

@@ -42,6 +42,8 @@ class LoginRequest extends FormRequest
             'password' => ['required', 'string', 'min:8'],
             'role' => ['nullable', Rule::in(['user', 'vendor'])],
             'portal' => ['nullable', Rule::in(['marketplace'])],
+            'device_id' => ['nullable', 'uuid'],
+            'device_name' => ['nullable', 'string', 'max:255'],
         ];
     }
 

@@ -9,9 +9,11 @@ use App\Http\Requests\Api\V1\PhoneLoginRequestOtpRequest;
 use App\Http\Requests\Api\V1\PhoneVerifyOtpRequest;
 use App\Http\Requests\Api\V1\RegisterRequest;
 use App\Http\Requests\Api\V1\ResendForgotPasswordOtpRequest;
+use App\Http\Requests\Api\V1\ResendNewDeviceOtpRequest;
 use App\Http\Requests\Api\V1\ResendRegistrationOtpRequest;
 use App\Http\Requests\Api\V1\ResetPasswordRequest;
 use App\Http\Requests\Api\V1\VerifyForgotPasswordTokenRequest;
+use App\Http\Requests\Api\V1\VerifyNewDeviceOtpRequest;
 use App\Http\Requests\Api\V1\VerifyOtpRequest;
 use App\Http\Requests\Api\V1\VerifyTwoFactorLoginRequest;
 use App\Http\Resources\Api\V1\AdminResource;
@@ -79,7 +81,8 @@ class AuthController extends Controller
         try {
             $validated = $request->validated();
             $isValid = $this->authService->verifyForgotPasswordToken(
-                $validated['email'],
+                $validated['email'] ?? null,
+                $validated['phone'] ?? null,
                 $validated['token'],
                 $validated['role'] ?? null,
             );
@@ -113,6 +116,14 @@ class AuthController extends Controller
             }
 
             $verifiedUser = $result['user'] ?? null;
+
+            if ($verifiedUser instanceof User) {
+                $this->authService->rememberTrustedDevice(
+                    $verifiedUser,
+                    isset($validated['device_id']) ? (string) $validated['device_id'] : null,
+                    isset($validated['device_name']) ? (string) $validated['device_name'] : null,
+                );
+            }
 
             return sendResponse(true, 'OTP verified successfully. You are logged in.', [
                 'verification_status' => 'verified',
@@ -179,6 +190,12 @@ class AuthController extends Controller
                     'verification_status' => 'two_factor_required',
                 ]);
             }
+
+            $this->authService->rememberTrustedDevice(
+                $result['user'],
+                isset($validated['device_id']) ? (string) $validated['device_id'] : null,
+                isset($validated['device_name']) ? (string) $validated['device_name'] : null,
+            );
 
             return sendResponse(true, 'Login successful.', [
                 'token' => $result['token'],
@@ -266,6 +283,31 @@ class AuthController extends Controller
                 );
             }
 
+            $deviceId = isset($validated['device_id']) ? (string) $validated['device_id'] : null;
+            $deviceName = isset($validated['device_name']) ? (string) $validated['device_name'] : null;
+
+            if (! $this->authService->isTrustedDevice($user, $deviceId)) {
+                $verificationChannel = filled($validated['phone']) ? 'phone' : 'email';
+                $challenge = $this->authService->initiateNewDeviceLogin(
+                    $user,
+                    (string) $deviceId,
+                    $deviceName,
+                    $validated['role'] ?? null,
+                    $verificationChannel,
+                );
+
+                return sendResponse(true, 'Please verify this device to continue.', [
+                    'device_verification_required' => true,
+                    'device_verification_token' => $challenge['token'],
+                    'verification_channel' => $challenge['channel'],
+                    'verification_status' => 'device_verification_required',
+                    'masked_email' => $challenge['masked_email'],
+                    'masked_phone' => $challenge['masked_phone'],
+                    'otp' => $challenge['otp']->code,
+                    'user' => UserResource::make($user),
+                ]);
+            }
+
             if ($this->twoFactor->isEnabled($user)) {
                 $challengeToken = $this->authService->initiateTwoFactorLogin(
                     $user,
@@ -280,6 +322,7 @@ class AuthController extends Controller
             }
 
             $token = $this->authService->issueAccessToken($user);
+            $this->authService->touchTrustedDevice($user, $deviceId);
 
             return sendResponse(true, 'Login successful.', [
                 'token' => $token,
@@ -317,11 +360,92 @@ class AuthController extends Controller
             }
 
             $token = $this->authService->issueAccessToken($user);
+            $this->authService->rememberTrustedDevice(
+                $user,
+                isset($validated['device_id']) ? (string) $validated['device_id'] : null,
+                isset($validated['device_name']) ? (string) $validated['device_name'] : null,
+            );
 
             return sendResponse(true, 'Login successful.', [
                 'token' => $token,
                 'verification_status' => 'verified',
                 'user' => UserResource::make($user),
+            ]);
+        } catch (ValidationException $exception) {
+            return sendResponse(
+                false,
+                $exception->validator->errors()->first(),
+                ['errors' => $exception->validator->errors()->toArray()],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    public function verifyNewDeviceLogin(VerifyNewDeviceOtpRequest $request)
+    {
+        try {
+            $validated = $request->validated();
+
+            $result = $this->authService->completeNewDeviceLogin(
+                $validated['device_verification_token'],
+                $validated['code'],
+                $validated['role'] ?? null,
+            );
+
+            $user = $result['user'];
+
+            if ($user->role === 'admin') {
+                return sendResponse(false, 'Admins must use the admin login URL.', null, Response::HTTP_FORBIDDEN);
+            }
+
+            if (isset($validated['role']) && $user->role !== $validated['role']) {
+                return sendResponse(
+                    false,
+                    "This account is registered as a {$user->role}. Please log in with role: {$user->role}.",
+                    null,
+                    Response::HTTP_FORBIDDEN,
+                );
+            }
+
+            if ($result['two_factor_required']) {
+                return sendResponse(true, 'Two-factor authentication required.', [
+                    'two_factor_required' => true,
+                    'two_factor_token' => $result['two_factor_token'],
+                    'verification_status' => 'two_factor_required',
+                ]);
+            }
+
+            return sendResponse(true, 'Login successful.', [
+                'token' => $result['token'],
+                'verification_status' => 'verified',
+                'user' => UserResource::make($user),
+            ]);
+        } catch (ValidationException $exception) {
+            return sendResponse(
+                false,
+                $exception->validator->errors()->first(),
+                ['errors' => $exception->validator->errors()->toArray()],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    public function resendNewDeviceLoginOtp(ResendNewDeviceOtpRequest $request)
+    {
+        try {
+            $validated = $request->validated();
+            $otp = $this->authService->resendNewDeviceLoginOtp($validated['device_verification_token']);
+
+            return sendResponse(true, 'A new verification code has been sent.', [
+                'otp' => $otp->code,
             ]);
         } catch (ValidationException $exception) {
             return sendResponse(
@@ -371,17 +495,27 @@ class AuthController extends Controller
         try {
             $validated = $request->validated();
             $result = $this->authService->forgotPassword(
-                $validated['email'],
+                $validated['email'] ?? null,
+                $validated['phone'] ?? null,
                 $validated['role'] ?? null,
             );
 
             if (! isset($result)) {
-                return sendResponse(false, 'No account was found with this email address.', null, Response::HTTP_NOT_FOUND);
+                $message = filled($validated['phone'] ?? null)
+                    ? 'No account was found with this phone number.'
+                    : 'No account was found with this email address.';
+
+                return sendResponse(false, $message, null, Response::HTTP_NOT_FOUND);
             }
 
-            return sendResponse(true, 'Reset OTP sent successfully. Verify OTP and use the reset token to set a new password.', [
+            $deliveryMessage = ($result['verification_channel'] ?? 'email') === 'phone'
+                ? 'Reset OTP sent successfully to your phone number.'
+                : 'Reset OTP sent successfully to your email address.';
+
+            return sendResponse(true, $deliveryMessage, [
                 'Otp' => ! isset($result) ? null : $result['otp']->code,
                 'Token' => ! isset($result) ? null : $result['token'],
+                'verification_channel' => $result['verification_channel'] ?? 'email',
             ]);
         } catch (Throwable $throwable) {
             report($throwable);
@@ -395,7 +529,8 @@ class AuthController extends Controller
         try {
             $validated = $request->validated();
             $otp = $this->authService->resendForgotPasswordOtp(
-                $validated['email'],
+                $validated['email'] ?? null,
+                $validated['phone'] ?? null,
                 $validated['token'],
                 $validated['role'] ?? null,
             );
@@ -404,7 +539,11 @@ class AuthController extends Controller
                 return sendResponse(false, 'Invalid or expired reset token. Please request a new password reset.', null, Response::HTTP_UNPROCESSABLE_ENTITY);
             }
 
-            return sendResponse(true, 'A new OTP has been sent to your email address.', [
+            $message = filled($validated['phone'] ?? null)
+                ? 'A new OTP has been sent to your phone number.'
+                : 'A new OTP has been sent to your email address.';
+
+            return sendResponse(true, $message, [
                 'Otp' => $otp->code,
             ]);
         } catch (Throwable $throwable) {
@@ -419,7 +558,8 @@ class AuthController extends Controller
         try {
             $validated = $request->validated();
             $isValid = $this->authService->verifyForgotPasswordOtp(
-                $validated['email'],
+                $validated['email'] ?? null,
+                $validated['phone'] ?? null,
                 $validated['code'],
                 $validated['token'],
                 $validated['role'] ?? null,
@@ -442,12 +582,13 @@ class AuthController extends Controller
         try {
             $validated = $request->validated();
             if (! $this->authService->resetPasswordByEmail(
-                $validated['email'],
+                $validated['email'] ?? null,
+                $validated['phone'] ?? null,
                 $validated['password'],
                 $validated['token'],
                 $validated['role'] ?? null,
             )) {
-                return sendResponse(false, 'Unable to reset password. The reset token is invalid, expired, or does not match the email.', null, Response::HTTP_UNPROCESSABLE_ENTITY);
+                return sendResponse(false, 'Unable to reset password. The reset token is invalid, expired, or does not match your account.', null, Response::HTTP_UNPROCESSABLE_ENTITY);
             }
 
             return sendResponse(true, 'Password reset successful. You can now log in with your new password.');

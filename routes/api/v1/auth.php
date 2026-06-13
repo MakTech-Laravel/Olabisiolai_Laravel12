@@ -16,6 +16,8 @@ Route::controller(AuthController::class)->group(function () {
         Route::post('/phone/verify-otp', 'verifyPhoneLoginOtp')->middleware('throttle:10,1');
         Route::post('/phone/resend-otp', 'resendPhoneLoginOtp')->middleware('throttle:3,1');
         Route::post('/two-factor/verify', 'verifyTwoFactorLogin');
+        Route::post('/device/verify-otp', 'verifyNewDeviceLogin')->middleware('throttle:10,1');
+        Route::post('/device/resend-otp', 'resendNewDeviceLoginOtp')->middleware('throttle:5,1');
         Route::post('/admin/login', 'adminLogin');
         Route::post('/forgot-password', 'forgotPassword')->withoutMiddleware([ValidateCsrfToken::class]);
         Route::post('/forgot-password/resend-otp', 'resendForgotPasswordOtp')

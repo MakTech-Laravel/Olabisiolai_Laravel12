@@ -20,6 +20,8 @@ class VerifyTwoFactorLoginRequest extends FormRequest
             'two_factor_token' => ['required', 'string', 'min:32', 'max:128'],
             'code' => ['required', 'string', 'max:32'],
             'role' => ['sometimes', 'nullable', 'string', 'in:user,vendor'],
+            'device_id' => ['nullable', 'uuid'],
+            'device_name' => ['nullable', 'string', 'max:255'],
         ];
     }
 }

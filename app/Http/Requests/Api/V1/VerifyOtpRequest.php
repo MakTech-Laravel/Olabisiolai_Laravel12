@@ -35,6 +35,8 @@ class VerifyOtpRequest extends FormRequest
             'code' => ['required', 'digits:6'],
             'email' => ['nullable', 'string', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'min:13', 'max:20'],
+            'device_id' => ['nullable', 'uuid'],
+            'device_name' => ['nullable', 'string', 'max:255'],
         ];
     }
 }

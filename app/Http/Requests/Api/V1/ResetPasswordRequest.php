@@ -2,29 +2,34 @@
 
 namespace App\Http\Requests\Api\V1;
 
+use App\Http\Requests\Api\V1\Concerns\NormalizesPasswordResetContact;
+use App\Rules\NigerianPhoneNumber;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 class ResetPasswordRequest extends FormRequest
 {
-    /**
-     * Determine if the user is authorized to make this request.
-     */
+    use NormalizesPasswordResetContact;
+
     public function authorize(): bool
     {
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $this->preparePasswordResetContactValidation();
+    }
+
     /**
-     * Get the validation rules that apply to the request.
-     *
      * @return array<string, array<int, ValidationRule|string>>
      */
     public function rules(): array
     {
         return [
-            'email' => ['required', 'string', 'email', 'max:255'],
+            ...$this->passwordResetContactRules(),
+            'phone' => ['nullable', 'string', new NigerianPhoneNumber(), 'required_without:email'],
             'token' => ['required', 'string', 'size:64'],
             'role' => ['nullable', Rule::in(['user', 'vendor', 'admin'])],
             'password' => [

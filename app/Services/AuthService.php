@@ -26,10 +26,13 @@ class AuthService
 {
     private const TWO_FACTOR_LOGIN_TTL_MINUTES = 5;
 
+    private const NEW_DEVICE_LOGIN_TTL_MINUTES = 10;
+
     public function __construct(
         private readonly TwoFactorAuthenticationService $twoFactor,
         private readonly TermiiService $termii,
         private readonly WelcomeEmailService $welcomeEmail,
+        private readonly TrustedDeviceService $trustedDevices,
     ) {}
 
     public function register(array $validated): array
@@ -365,6 +368,193 @@ class AuthService
         return $user;
     }
 
+    /**
+     * @return array{
+     *     token: string,
+     *     channel: string,
+     *     otp: AuthOtp,
+     *     masked_email: string|null,
+     *     masked_phone: string|null,
+     * }
+     */
+    public function initiateNewDeviceLogin(
+        User $user,
+        string $deviceId,
+        ?string $deviceName,
+        ?string $expectedRole,
+        string $verificationChannel,
+    ): array {
+        $otp = $this->issueOtp($user, OtpPurpose::NewDevice);
+
+        if ($verificationChannel === 'phone') {
+            $this->deliverOtpSms($user, $otp->code, OtpPurpose::NewDevice, allowEmailFallback: true);
+        } elseif (filled($user->email)) {
+            $this->deliverOtpMail($user, $otp->code, false);
+        } elseif ($user->phone) {
+            $this->deliverOtpSms($user, $otp->code, OtpPurpose::NewDevice, allowEmailFallback: false);
+            $verificationChannel = 'phone';
+        }
+
+        $token = Str::random(64);
+
+        Cache::put($this->newDeviceLoginCacheKey($token), [
+            'user_id' => $user->id,
+            'expected_role' => $expectedRole,
+            'device_id' => trim($deviceId),
+            'device_name' => $deviceName,
+            'verification_channel' => $verificationChannel,
+        ], now()->addMinutes(self::NEW_DEVICE_LOGIN_TTL_MINUTES));
+
+        return [
+            'token' => $token,
+            'channel' => $verificationChannel,
+            'otp' => $otp,
+            'masked_email' => filled($user->email) ? $this->maskEmail($user->email) : null,
+            'masked_phone' => $user->phone ? PhoneNormalizer::mask($user->phone) : null,
+        ];
+    }
+
+    /**
+     * @return array{
+     *     user: User,
+     *     token?: string,
+     *     two_factor_required: bool,
+     *     two_factor_token?: string,
+     * }
+     */
+    public function completeNewDeviceLogin(string $token, string $code, ?string $expectedRole = null): array
+    {
+        $cacheKey = $this->newDeviceLoginCacheKey($token);
+        /** @var array{
+         *     user_id: int,
+         *     expected_role?: string|null,
+         *     device_id: string,
+         *     device_name?: string|null,
+         *     verification_channel?: string|null
+         * }|null $payload */
+        $payload = Cache::get($cacheKey);
+
+        if (! is_array($payload) || ! isset($payload['user_id'], $payload['device_id'])) {
+            throw ValidationException::withMessages([
+                'device_verification_token' => ['Your verification session has expired. Please sign in again.'],
+            ]);
+        }
+
+        $user = User::query()->find($payload['user_id']);
+        if (! $user instanceof User) {
+            Cache::forget($cacheKey);
+            throw ValidationException::withMessages([
+                'device_verification_token' => ['Your verification session has expired. Please sign in again.'],
+            ]);
+        }
+
+        $resolvedRole = $expectedRole ?? ($payload['expected_role'] ?? null);
+        if (is_string($resolvedRole) && $resolvedRole !== '' && $user->role !== $resolvedRole) {
+            throw ValidationException::withMessages([
+                'code' => ["This account is registered as a {$user->role}. Please log in with the correct account type."],
+            ]);
+        }
+
+        /** @var AuthOtp|null $otp */
+        $otp = AuthOtp::query()
+            ->where('user_id', $user->id)
+            ->where('purpose', OtpPurpose::NewDevice->value)
+            ->where('code', hash('sha256', $code))
+            ->whereNull('consumed_at')
+            ->latest()
+            ->first();
+
+        if (! $otp instanceof AuthOtp || $otp->expires_at->isPast()) {
+            throw ValidationException::withMessages([
+                'code' => ['Invalid or expired OTP.'],
+            ]);
+        }
+
+        $otp->update(['consumed_at' => now()]);
+        Cache::forget($cacheKey);
+
+        $this->trustedDevices->remember(
+            $user,
+            (string) $payload['device_id'],
+            isset($payload['device_name']) ? (string) $payload['device_name'] : null,
+        );
+
+        if ($this->twoFactor->isEnabled($user)) {
+            return [
+                'user' => $user,
+                'two_factor_required' => true,
+                'two_factor_token' => $this->initiateTwoFactorLogin($user, $resolvedRole),
+            ];
+        }
+
+        return [
+            'user' => $user,
+            'token' => $this->issueAccessToken($user),
+            'two_factor_required' => false,
+        ];
+    }
+
+    public function resendNewDeviceLoginOtp(string $token): AuthOtp
+    {
+        $cacheKey = $this->newDeviceLoginCacheKey($token);
+        /** @var array{user_id: int, verification_channel?: string|null}|null $payload */
+        $payload = Cache::get($cacheKey);
+
+        if (! is_array($payload) || ! isset($payload['user_id'])) {
+            throw ValidationException::withMessages([
+                'device_verification_token' => ['Your verification session has expired. Please sign in again.'],
+            ]);
+        }
+
+        $user = User::query()->find($payload['user_id']);
+        if (! $user instanceof User) {
+            Cache::forget($cacheKey);
+            throw ValidationException::withMessages([
+                'device_verification_token' => ['Your verification session has expired. Please sign in again.'],
+            ]);
+        }
+
+        $channel = (string) ($payload['verification_channel'] ?? 'email');
+        $otp = $this->issueOtp($user, OtpPurpose::NewDevice);
+
+        if ($channel === 'phone') {
+            $this->deliverOtpSms($user, $otp->code, OtpPurpose::NewDevice, allowEmailFallback: true);
+        } elseif (filled($user->email)) {
+            $this->deliverOtpMail($user, $otp->code, false);
+        } elseif ($user->phone) {
+            $this->deliverOtpSms($user, $otp->code, OtpPurpose::NewDevice, allowEmailFallback: false);
+        }
+
+        return $otp;
+    }
+
+    public function rememberTrustedDevice(User $user, ?string $deviceId, ?string $deviceName = null): void
+    {
+        if (! filled($deviceId)) {
+            return;
+        }
+
+        $this->trustedDevices->remember($user, (string) $deviceId, $deviceName);
+    }
+
+    public function touchTrustedDevice(User $user, ?string $deviceId): void
+    {
+        if (! filled($deviceId)) {
+            return;
+        }
+
+        $this->trustedDevices->touch($user, (string) $deviceId);
+    }
+
+    public function isTrustedDevice(User $user, ?string $deviceId): bool
+    {
+        if (! filled($deviceId)) {
+            return true;
+        }
+
+        return $this->trustedDevices->isTrusted($user, (string) $deviceId);
+    }
+
     public function resolveAdminLoginUser(string $email, string $password): Admin
     {
 
@@ -382,9 +572,9 @@ class AuthService
         return $admin;
     }
 
-    public function forgotPassword(string $email, ?string $role = null): ?array
+    public function forgotPassword(?string $email, ?string $phone, ?string $role = null): ?array
     {
-        $subject = $this->resolvePasswordResetSubject($email, $role);
+        $subject = $this->resolvePasswordResetSubject($email, $phone, $role);
 
         if (! $subject instanceof User && ! $subject instanceof Admin) {
             return null;
@@ -393,39 +583,39 @@ class AuthService
         $otp = $this->issueOtp($subject, OtpPurpose::ForgotPassword);
         $plainToken = Str::random(64);
         $passwordBroker = $subject instanceof Admin ? 'admins' : 'users';
+        $identifier = $this->passwordResetIdentifier($subject);
+        $verificationChannel = filled($phone) ? 'phone' : 'email';
 
         DB::table($this->passwordResetTable($passwordBroker))->updateOrInsert(
-            ['email' => $subject->email],
+            ['email' => $identifier],
             [
                 'token' => hash('sha256', $plainToken),
                 'created_at' => now(),
             ]
         );
 
-        $this->deliverOtpMail($subject, $otp->code, true);
-
-        if ($subject instanceof User && $subject->phone) {
-            try {
-                $this->deliverOtpSms($subject, $otp->code, OtpPurpose::ForgotPassword);
-            } catch (\Throwable) {
-                // Email delivery already attempted above.
-            }
-        }
+        $this->deliverPasswordResetOtp($subject, $otp->code, $verificationChannel);
 
         return [
             'otp' => $otp,
             'token' => $plainToken,
+            'verification_channel' => $verificationChannel,
         ];
     }
 
-    public function verifyForgotPasswordOtp(string $email, string $code, string $token, ?string $role = null): bool
-    {
-        $subject = $this->resolvePasswordResetSubject($email, $role);
+    public function verifyForgotPasswordOtp(
+        ?string $email,
+        ?string $phone,
+        string $code,
+        string $token,
+        ?string $role = null,
+    ): bool {
+        $subject = $this->resolvePasswordResetSubject($email, $phone, $role);
 
         if (
             (! $subject instanceof User && ! $subject instanceof Admin)
             || ! $this->isValidPasswordResetToken(
-                $subject->email,
+                $this->passwordResetIdentifier($subject),
                 $token,
                 $subject instanceof Admin ? 'admins' : 'users',
             )
@@ -457,47 +647,60 @@ class AuthService
         return true;
     }
 
-    public function verifyForgotPasswordToken(string $email, string $token, ?string $role = null): bool
+    public function verifyForgotPasswordToken(?string $email, ?string $phone, string $token, ?string $role = null): bool
     {
-        $subject = $this->resolvePasswordResetSubject($email, $role);
+        $subject = $this->resolvePasswordResetSubject($email, $phone, $role);
 
         if (! $subject instanceof User && ! $subject instanceof Admin) {
             return false;
         }
 
         return $this->isValidPasswordResetToken(
-            $subject->email,
+            $this->passwordResetIdentifier($subject),
             $token,
             $subject instanceof Admin ? 'admins' : 'users',
         );
     }
 
-    public function resetPasswordByEmail(string $email, string $password, string $token, ?string $role = null): bool
-    {
-        $subject = $this->resolvePasswordResetSubject($email, $role);
+    public function resetPasswordByEmail(
+        ?string $email,
+        ?string $phone,
+        string $password,
+        string $token,
+        ?string $role = null,
+    ): bool {
+        $subject = $this->resolvePasswordResetSubject($email, $phone, $role);
         $passwordBroker = $subject instanceof Admin ? 'admins' : 'users';
+        $identifier = $subject instanceof User || $subject instanceof Admin
+            ? $this->passwordResetIdentifier($subject)
+            : null;
 
         if (
             (! $subject instanceof User && ! $subject instanceof Admin)
-            || ! $this->isValidPasswordResetToken($subject->email, $token, $passwordBroker)
+            || ! is_string($identifier)
+            || ! $this->isValidPasswordResetToken($identifier, $token, $passwordBroker)
         ) {
             return false;
         }
 
         $subject->update(['password' => $password]);
-        DB::table($this->passwordResetTable($passwordBroker))->where('email', $subject->email)->delete();
+        DB::table($this->passwordResetTable($passwordBroker))->where('email', $identifier)->delete();
 
         return true;
     }
 
-    public function resendForgotPasswordOtp(string $email, string $token, ?string $role = null): ?AuthOtp
-    {
-        $subject = $this->resolvePasswordResetSubject($email, $role);
+    public function resendForgotPasswordOtp(
+        ?string $email,
+        ?string $phone,
+        string $token,
+        ?string $role = null,
+    ): ?AuthOtp {
+        $subject = $this->resolvePasswordResetSubject($email, $phone, $role);
 
         if (
             (! $subject instanceof User && ! $subject instanceof Admin)
             || ! $this->isValidPasswordResetToken(
-                $subject->email,
+                $this->passwordResetIdentifier($subject),
                 $token,
                 $subject instanceof Admin ? 'admins' : 'users',
             )
@@ -506,16 +709,8 @@ class AuthService
         }
 
         $otp = $this->issueOtp($subject, OtpPurpose::ForgotPassword);
-
-        $this->deliverOtpMail($subject, $otp->code, true);
-
-        if ($subject instanceof User && $subject->phone) {
-            try {
-                $this->deliverOtpSms($subject, $otp->code, OtpPurpose::ForgotPassword);
-            } catch (\Throwable) {
-                // Email delivery already attempted above.
-            }
-        }
+        $verificationChannel = filled($phone) ? 'phone' : 'email';
+        $this->deliverPasswordResetOtp($subject, $otp->code, $verificationChannel);
 
         return $otp;
     }
@@ -654,6 +849,27 @@ class AuthService
     private function twoFactorLoginCacheKey(string $token): string
     {
         return 'two_factor_login:' . hash('sha256', $token);
+    }
+
+    private function newDeviceLoginCacheKey(string $token): string
+    {
+        return 'new_device_login:' . hash('sha256', $token);
+    }
+
+    private function maskEmail(string $email): string
+    {
+        $email = Str::lower(trim($email));
+        $parts = explode('@', $email, 2);
+        if (count($parts) !== 2) {
+            return '***';
+        }
+
+        [$local, $domain] = $parts;
+        if (strlen($local) <= 2) {
+            return '***@' . $domain;
+        }
+
+        return substr($local, 0, 1) . '***' . substr($local, -1) . '@' . $domain;
     }
 
     public function issueAdminAccessToken(Admin $admin): string
@@ -796,7 +1012,7 @@ class AuthService
         }
 
         $context = match ($purpose) {
-            OtpPurpose::Login => 'login',
+            OtpPurpose::Login, OtpPurpose::NewDevice => 'login',
             OtpPurpose::ForgotPassword => 'forgot_password',
             default => 'verification',
         };
@@ -914,15 +1130,65 @@ class AuthService
         }
     }
 
-    private function resolvePasswordResetSubject(string $email, ?string $role): User|Admin|null
+    private function resolvePasswordResetSubject(?string $email, ?string $phone, ?string $role): User|Admin|null
     {
-        $normalizedEmail = Str::lower($email);
-
         if ($role === 'admin') {
-            return Admin::query()->where('email', $normalizedEmail)->first();
+            if (! filled($email)) {
+                return null;
+            }
+
+            return Admin::query()->where('email', Str::lower($email))->first();
         }
 
-        return User::query()->where('email', $normalizedEmail)->first();
+        if (filled($phone)) {
+            return $this->resolveUserByPhone($phone);
+        }
+
+        if (filled($email)) {
+            return User::query()->where('email', Str::lower($email))->first();
+        }
+
+        return null;
+    }
+
+    private function passwordResetIdentifier(User|Admin $subject): string
+    {
+        if ($subject instanceof Admin) {
+            return Str::lower($subject->email);
+        }
+
+        if (filled($subject->email)) {
+            return Str::lower($subject->email);
+        }
+
+        return (string) $subject->phone;
+    }
+
+    private function deliverPasswordResetOtp(User|Admin $subject, string $otpCode, string $verificationChannel): void
+    {
+        if ($verificationChannel === 'phone' && $subject instanceof User && $subject->phone) {
+            $this->deliverOtpSms($subject, $otpCode, OtpPurpose::ForgotPassword, allowEmailFallback: true);
+
+            return;
+        }
+
+        if (filled($subject->email)) {
+            $this->deliverOtpMail($subject, $otpCode, true);
+
+            if ($subject instanceof User && $subject->phone) {
+                try {
+                    $this->deliverOtpSms($subject, $otpCode, OtpPurpose::ForgotPassword);
+                } catch (\Throwable) {
+                    // Email delivery already attempted above.
+                }
+            }
+
+            return;
+        }
+
+        if ($subject instanceof User && $subject->phone) {
+            $this->deliverOtpSms($subject, $otpCode, OtpPurpose::ForgotPassword, allowEmailFallback: false);
+        }
     }
 
     private function passwordResetTable(string $passwordBroker): string
