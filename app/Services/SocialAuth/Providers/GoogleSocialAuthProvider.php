@@ -38,15 +38,26 @@ class GoogleSocialAuthProvider implements SocialAuthProviderContract
     public function profileFromAuthorizationCode(string $code, ?string $redirectUri = null): SocialAuthProfile
     {
         $driver = Socialite::driver('google')->stateless();
+        $callbackUri = filled($redirectUri)
+            ? (string) $redirectUri
+            : (string) config('services.google.redirect');
 
-        if ($redirectUri !== null && $redirectUri !== '') {
-            $driver->redirectUrl($redirectUri);
+        if ($callbackUri !== '') {
+            $driver->redirectUrl($callbackUri);
         }
 
-        $request = Request::create('/', 'GET', ['code' => $code]);
-        $user = $driver->setRequest($request)->user();
+        try {
+            $request = Request::create('/', 'GET', ['code' => $code]);
+            $user = $driver->setRequest($request)->user();
 
-        return $this->mapSocialiteUser($user);
+            return $this->mapSocialiteUser($user);
+        } catch (\Throwable $throwable) {
+            throw ValidationException::withMessages([
+                'code' => [
+                    'Google authorization code is invalid or expired. Request a new code from the redirect URL and exchange it immediately via POST /auth/social/google/login.',
+                ],
+            ]);
+        }
     }
 
     public function profileFromIdToken(string $idToken): SocialAuthProfile

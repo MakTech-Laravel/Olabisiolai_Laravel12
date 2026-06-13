@@ -22,13 +22,14 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Frontend callback (optional web redirect flow)
+    | Frontend callback (optional — web SPA redirect flow only)
     |--------------------------------------------------------------------------
+    |
+    | Leave unset for API/mobile: GET /auth/social/{provider}/callback returns JSON
+    | with the authorization code. Set only when a browser SPA handles the callback.
+    |
     */
 
-    'frontend_callback_url' => env(
-        'SOCIAL_AUTH_FRONTEND_CALLBACK_URL',
-        rtrim((string) env('FRONTEND_URL', ''), '/').'/auth/social/callback',
-    ),
+    'frontend_callback_url' => env('SOCIAL_AUTH_FRONTEND_CALLBACK_URL'),
 
 ];

@@ -31,7 +31,6 @@ class SocialAuthController extends Controller
 
     public function redirect(Request $request, string $provider)
     {
-
         try {
             $driver = $this->socialAuthManager->driver($provider);
             $state = $request->query('state');
@@ -55,8 +54,7 @@ class SocialAuthController extends Controller
         try {
             $driver = $this->socialAuthManager->driver($provider);
             $validated = $request->validated();
-
-            $profile = $this->resolveProfile($driver, $validated);
+            $profile = $this->resolveProfile($driver, $validated, $provider);
             $result = $this->socialAuthService->loginOrRegister($profile, (string) $validated['role']);
 
             if (($result['two_factor_required'] ?? false) === true) {
@@ -95,62 +93,41 @@ class SocialAuthController extends Controller
 
     public function callback(Request $request, string $provider)
     {
-        // dd($request->all());
         try {
-            $driver = $this->socialAuthManager->driver($provider);
+            $this->socialAuthManager->driver($provider);
+
             $code = (string) $request->query('code', '');
 
             if ($code === '') {
                 return sendResponse(false, 'Missing authorization code.', null, Response::HTTP_UNPROCESSABLE_ENTITY);
             }
 
+            $redirectUri = $this->socialCallbackRedirectUri($provider);
             $role = (string) $request->query('role', 'user');
             if (! in_array($role, ['user', 'vendor'], true)) {
                 $role = 'user';
             }
 
-            $profile = $driver->profileFromAuthorizationCode(
-                $code,
-                is_string($request->query('redirect_uri')) ? $request->query('redirect_uri') : null,
-            );
+            // Single-use code: client must POST /auth/social/{provider}/login immediately.
+            $frontendCallback = config('social_auth.frontend_callback_url');
 
-            $result = $this->socialAuthService->loginOrRegister($profile, $role);
-            $frontendCallback = config('social_auth.frontend_callback_url') ?: config('app.frontend_url');
-
-            if (! is_string($frontendCallback) || $frontendCallback === '') {
-                return sendResponse(true, 'Social login successful.', [
+            if (is_string($frontendCallback) && $frontendCallback !== '') {
+                $query = http_build_query([
                     'provider' => $provider,
-                    'token' => $result['token'] ?? null,
-                    'two_factor_required' => $result['two_factor_required'] ?? false,
-                    'two_factor_token' => $result['two_factor_token'] ?? null,
-                    'is_new_user' => $result['is_new_user'],
-                    'user' => UserResource::make($result['user']),
+                    'code' => $code,
+                    'redirect_uri' => $redirectUri,
+                    'role' => $role,
                 ]);
+
+                return redirect()->away(rtrim($frontendCallback, '/').'?'.$query);
             }
 
-            $query = http_build_query(array_filter([
+            return sendResponse(true, 'Authorization code received. Exchange it via POST /api/v1/auth/social/'.$provider.'/login.', [
                 'provider' => $provider,
-                'token' => $result['token'] ?? null,
-                'two_factor_required' => ($result['two_factor_required'] ?? false) ? '1' : '0',
-                'two_factor_token' => $result['two_factor_token'] ?? null,
-                'is_new_user' => $result['is_new_user'] ? '1' : '0',
-            ]));
-
-            // return redirect()->away(rtrim($frontendCallback, '/').'?'.$query);
-            return sendResponse(true, 'Social login successful.', [
-                'query' => $query,
-                // 'provider' => $provider,
-                // 'code' => $code,
-                // 'token' => $result['token'] ?? null,
-                // 'role' => $role,
-                // 'profile' => $profile,
-                // 'result' => $result,
-                // 'frontendCallback' => $frontendCallback,
-                // 'query' => $query,
-                // 'two_factor_required' => $result['two_factor_required'] ?? false,
-                // 'two_factor_token' => $result['two_factor_token'] ?? null,
-                // 'is_new_user' => $result['is_new_user'],
-                // 'user' => UserResource::make($result['user']),
+                'code' => $code,
+                'redirect_uri' => $redirectUri,
+                'role' => $role,
+                'exchange_endpoint' => url('/api/v1/auth/social/'.$provider.'/login'),
             ]);
         } catch (ValidationException $exception) {
             return sendResponse(
@@ -168,11 +145,23 @@ class SocialAuthController extends Controller
         }
     }
 
+    private function socialCallbackRedirectUri(string $provider): string
+    {
+        if ($provider === 'google') {
+            return (string) config('services.google.redirect');
+        }
+
+        return url('/api/v1/auth/social/'.$provider.'/callback');
+    }
+
     /**
      * @param  array<string, mixed>  $validated
      */
-    private function resolveProfile(SocialAuthProviderContract $driver, array $validated): SocialAuthProfile
-    {
+    private function resolveProfile(
+        SocialAuthProviderContract $driver,
+        array $validated,
+        string $provider,
+    ): SocialAuthProfile {
         if (filled($validated['id_token'] ?? null)) {
             return $driver->profileFromIdToken((string) $validated['id_token']);
         }
@@ -181,9 +170,13 @@ class SocialAuthController extends Controller
             return $driver->profileFromAccessToken((string) $validated['access_token']);
         }
 
+        $redirectUri = filled($validated['redirect_uri'] ?? null)
+            ? (string) $validated['redirect_uri']
+            : $this->socialCallbackRedirectUri($provider);
+
         return $driver->profileFromAuthorizationCode(
             (string) $validated['code'],
-            isset($validated['redirect_uri']) ? (string) $validated['redirect_uri'] : null,
+            $redirectUri,
         );
     }
 }
