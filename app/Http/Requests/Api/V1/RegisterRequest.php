@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Api\V1;
 
+use App\Rules\NigerianPhoneNumber;
 use App\Support\PhoneNormalizer;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -55,8 +56,7 @@ class RegisterRequest extends FormRequest
             'phone' => [
                 'nullable',
                 'string',
-                'min:10',
-                'max:20',
+                new NigerianPhoneNumber(),
                 'unique:users,phone',
                 Rule::requiredIf(fn(): bool => $this->input('verification_channel') === 'phone'),
                 Rule::prohibitedIf(fn(): bool => $this->input('verification_channel') === 'email'),

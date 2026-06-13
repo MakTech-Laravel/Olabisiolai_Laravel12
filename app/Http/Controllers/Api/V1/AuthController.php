@@ -59,13 +59,13 @@ class AuthController extends Controller
     public function register(RegisterRequest $request)
     {
         try {
-            ['user' => $user, 'otp' => $otp, 'token' => $token, 'verification_channel' => $channel] = $this->authService->register($request->validated());
+            ['user' => $user, 'otp' => $otp, 'verification_channel' => $channel] = $this->authService->register($request->validated());
 
-            return sendResponse(true, 'Registration successful. You are logged in. Verify OTP to activate your account.', [
+            return sendResponse(true, 'Registration successful. Verify OTP to activate your account.', [
                 'verification_status' => 'unverified',
                 'verification_channel' => $channel,
                 'otp' => $otp->code,
-                'token' => $token,
+                'user' => UserResource::make($user),
             ], Response::HTTP_CREATED);
         } catch (Throwable $throwable) {
             report($throwable);
@@ -249,22 +249,21 @@ class AuthController extends Controller
             }
 
             if (! $user->isAccountVerified()) {
-                [
-                    'user' => $user,
-                    'otp' => $otp,
-                    'token' => $token,
-                    'verification_channel' => $channel,
-                ] = $this->authService->initiateLoginVerification($user);
-
+                $channel = $user->registrationVerificationChannel()
+                    ?? ($user->phone && ! $user->email ? 'phone' : 'email');
                 $destination = $channel === 'phone' ? 'phone number' : 'email';
 
-                return sendResponse(true, "Please verify the OTP sent to your {$destination} to complete login.", [
-                    'verification_status' => 'unverified',
-                    'verification_channel' => $channel,
-                    'token' => $token,
-                    'otp' => $otp->code,
-                    'user' => UserResource::make($user),
-                ]);
+                return sendResponse(
+                    false,
+                    "Please verify your account to continue. Use the signup verification code sent to your {$destination}, or request a new code on the verification page.",
+                    [
+                        'verification_status' => 'unverified',
+                        'verification_required' => true,
+                        'verification_channel' => $channel,
+                        'user' => UserResource::make($user),
+                    ],
+                    Response::HTTP_FORBIDDEN,
+                );
             }
 
             if ($this->twoFactor->isEnabled($user)) {

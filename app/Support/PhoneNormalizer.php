@@ -35,6 +35,37 @@ class PhoneNormalizer
         return $digits;
     }
 
+    /** E.164 digits without + — must be 234 followed by 10 digits (7/8/9 lead). */
+    public static function isValidNigerian(?string $phone): bool
+    {
+        $normalized = self::normalize($phone);
+
+        if ($normalized === null) {
+            return false;
+        }
+
+        return (bool) preg_match('/^234[789]\d{9}$/', $normalized);
+    }
+
+    /** Human display: +234 812 345 6789 */
+    public static function formatInternational(?string $phone): ?string
+    {
+        $normalized = self::normalize($phone);
+
+        if ($normalized === null || ! self::isValidNigerian($normalized)) {
+            return null;
+        }
+
+        $national = substr($normalized, 3);
+
+        return sprintf(
+            '+234 %s %s %s',
+            substr($national, 0, 3),
+            substr($national, 3, 3),
+            substr($national, 6),
+        );
+    }
+
     public static function mask(?string $phone): string
     {
         $normalized = self::normalize($phone);

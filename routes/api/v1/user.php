@@ -63,17 +63,19 @@ Route::prefix('user')->name('user.')->group(function () {
 Route::prefix('vendor')->name('vendor.')->group(function () {
     Route::get('/onboarding/status', [VendorOnboardingController::class, 'status'])->name('onboarding.status');
 
-    // Onboarding endpoints needed by Trade → Choose plan → Create listing.
-    Route::get('/business/form-options', [BusinessInfoController::class, 'formOptions'])->name('business.form-options');
-    Route::post('/business/create', [BusinessInfoController::class, 'store'])->name('business.create');
+    Route::middleware('verified')->group(function (): void {
+        // Onboarding endpoints — verified account required (signup OTP must be completed).
+        Route::get('/business/form-options', [BusinessInfoController::class, 'formOptions'])->name('business.form-options');
+        Route::post('/business/create', [BusinessInfoController::class, 'store'])->name('business.create');
 
-    Route::prefix('subscription')->name('subscription.')->group(function () {
-        Route::get('/packages', [VendorSubscriptionController::class, 'packages'])->name('packages');
-        Route::get('/status', [VendorSubscriptionController::class, 'status'])->name('status');
-        Route::middleware('purchase.email_verified')->group(function () {
-            Route::post('/payment/init', [VendorSubscriptionController::class, 'initPayment'])->name('payment.init');
-            Route::post('/payment/resume', [VendorSubscriptionController::class, 'resumePayment'])->name('payment.resume');
-            Route::post('/payment/confirm', [VendorSubscriptionController::class, 'confirmPayment'])->name('payment.confirm');
+        Route::prefix('subscription')->name('subscription.')->group(function () {
+            Route::get('/packages', [VendorSubscriptionController::class, 'packages'])->name('packages');
+            Route::get('/status', [VendorSubscriptionController::class, 'status'])->name('status');
+            Route::middleware('purchase.email_verified')->group(function () {
+                Route::post('/payment/init', [VendorSubscriptionController::class, 'initPayment'])->name('payment.init');
+                Route::post('/payment/resume', [VendorSubscriptionController::class, 'resumePayment'])->name('payment.resume');
+                Route::post('/payment/confirm', [VendorSubscriptionController::class, 'confirmPayment'])->name('payment.confirm');
+            });
         });
     });
 });

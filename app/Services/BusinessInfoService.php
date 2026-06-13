@@ -500,6 +500,10 @@ class BusinessInfoService
 
                 $this->locationService->refreshVendorCount($locationId);
 
+                if ($user->role !== 'vendor') {
+                    $user->forceFill(['role' => 'vendor'])->save();
+                }
+
                 return $business->load(['subscription', 'businessHours']);
             });
         } catch (Throwable $e) {

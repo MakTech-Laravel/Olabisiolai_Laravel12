@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Api\V1;
 
+use App\Rules\NigerianPhoneNumber;
 use App\Support\PhoneNormalizer;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
@@ -37,7 +38,7 @@ class LoginRequest extends FormRequest
     {
         return [
             'email' => ['nullable', 'string', 'email', 'max:255', 'required_without:phone'],
-            'phone' => ['nullable', 'string', 'min:10', 'max:20', 'required_without:email'],
+            'phone' => ['nullable', 'string', new NigerianPhoneNumber(), 'required_without:email'],
             'password' => ['required', 'string', 'min:8'],
             'role' => ['nullable', Rule::in(['user', 'vendor'])],
             'portal' => ['nullable', Rule::in(['marketplace'])],

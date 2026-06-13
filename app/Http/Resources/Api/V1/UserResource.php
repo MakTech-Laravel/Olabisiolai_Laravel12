@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api\V1;
 
+use App\Support\PhoneNormalizer;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -22,6 +23,7 @@ class UserResource extends JsonResource
             'name' => $this->name,
             'email' => $this->email,
             'phone' => $this->phone,
+            'phone_formatted' => PhoneNormalizer::formatInternational($this->phone) ?? $this->phone,
             'location' => $this->location,
             'image_path' => $this->image,
             'image_url' => $this->image_url,

@@ -8,6 +8,7 @@ use App\Models\SocialAccount;
 use App\Models\User;
 use App\Services\AuthService;
 use App\Services\TwoFactorAuthenticationService;
+use App\Services\WelcomeEmailService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -18,6 +19,7 @@ class SocialAuthService
         private readonly SocialAuthManager $manager,
         private readonly AuthService $authService,
         private readonly TwoFactorAuthenticationService $twoFactor,
+        private readonly WelcomeEmailService $welcomeEmail,
     ) {}
 
     /**
@@ -78,6 +80,12 @@ class SocialAuthService
             $this->assertUserCanAuthenticate($user, $role);
             $this->syncVerifiedEmail($user, $profile);
             $this->syncProfileBasics($user, $profile);
+
+            $user = $user->fresh();
+
+            if ($isNewUser && filled($user->email) && $user->isAccountVerified()) {
+                $this->welcomeEmail->sendAfterRegistration($user);
+            }
 
             if ($this->twoFactor->isEnabled($user)) {
                 $challengeToken = $this->authService->initiateTwoFactorLogin($user, $role);

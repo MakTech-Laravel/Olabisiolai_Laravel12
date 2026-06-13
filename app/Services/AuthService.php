@@ -29,6 +29,7 @@ class AuthService
     public function __construct(
         private readonly TwoFactorAuthenticationService $twoFactor,
         private readonly TermiiService $termii,
+        private readonly WelcomeEmailService $welcomeEmail,
     ) {}
 
     public function register(array $validated): array
@@ -55,21 +56,18 @@ class AuthService
         ]);
 
         $otp = $this->issueOtp($user, OtpPurpose::Register);
-        $token = $this->issueAccessToken($user);
 
         $this->deliverRegistrationOtp($user, $otp->code, $channel);
 
         return [
             'user' => $user,
             'otp' => $otp,
-            'token' => $token,
             'verification_channel' => $channel,
         ];
     }
 
     /**
-     * Correct credentials but account not yet verified — send registration OTP and
-     * issue a session token so the client can complete verification.
+     * @deprecated Login no longer sends OTP. Unverified users must complete signup verification.
      *
      * @return array{user: User, otp: AuthOtp, token: string, verification_channel: string}
      */
@@ -171,6 +169,12 @@ class AuthService
         if ($role !== null && $role !== '' && $user->role !== $role) {
             throw ValidationException::withMessages([
                 'phone' => ["This account is registered as a {$user->role}. Please log in with the correct account type."],
+            ]);
+        }
+
+        if (! $user->isAccountVerified()) {
+            throw ValidationException::withMessages([
+                'phone' => ['Please verify your account first. Use the signup verification code sent to your email or phone.'],
             ]);
         }
 
@@ -750,6 +754,8 @@ class AuthService
             return;
         }
 
+        $wasUnverified = ! $subject->isAccountVerified();
+
         $channel = $subject->registrationVerificationChannel();
         $payload = ['status' => UserStatus::Active->value];
 
@@ -767,6 +773,10 @@ class AuthService
         }
 
         $subject->forceFill($payload)->save();
+
+        if ($wasUnverified && $subject instanceof User) {
+            $this->welcomeEmail->sendAfterRegistration($subject->fresh());
+        }
     }
 
     private function deliverOtpSms(

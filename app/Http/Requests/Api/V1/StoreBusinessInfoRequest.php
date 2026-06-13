@@ -5,7 +5,9 @@ namespace App\Http\Requests\Api\V1;
 use App\Http\Requests\Concerns\ValidatesBusinessHours;
 use App\Http\Requests\Concerns\ValidatesBusinessSubcategory;
 use App\Http\Requests\Concerns\ValidatesSocialAccounts;
+use App\Rules\NigerianPhoneNumber;
 use App\Services\LocationCatalogService;
+use App\Support\PhoneNormalizer;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -30,6 +32,15 @@ class StoreBusinessInfoRequest extends FormRequest
     {
         $this->prepareBusinessHoursFromRequest();
         $this->prepareSocialAccountsFromRequest();
+
+        foreach (['phone', 'whatsapp'] as $field) {
+            $value = $this->input($field);
+            if (is_string($value) && trim($value) !== '') {
+                $this->merge([
+                    $field => PhoneNormalizer::normalize($value) ?? trim($value),
+                ]);
+            }
+        }
     }
 
     /**
@@ -50,8 +61,8 @@ class StoreBusinessInfoRequest extends FormRequest
             'business_description' => ['required', 'string', 'max:10000'],
             'services' => ['required', 'array', 'min:1'],
             'services.*' => ['required', 'string', 'max:255'],
-            'phone' => ['required', 'string', 'max:30'],
-            'whatsapp' => ['nullable', 'string', 'max:30'],
+            'phone' => ['required', 'string', new NigerianPhoneNumber()],
+            'whatsapp' => ['nullable', 'string', new NigerianPhoneNumber()],
             'website' => ['nullable', 'string', 'max:2048', 'url'],
             ...$this->socialAccountsRules(),
             'logo' => ['required', File::image()->max(10 * 1024)],

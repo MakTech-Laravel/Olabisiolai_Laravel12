@@ -8,6 +8,7 @@ use App\Services\BoostListingPriorityService;
 use App\Services\BusinessHoursService;
 use App\Services\SubscriptionService;
 use App\Services\VerificationService;
+use App\Support\PhoneNormalizer;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -40,6 +41,7 @@ class BusinessInfoResource extends JsonResource
                     'name' => $this->user->name,
                     'email' => $this->user->email,
                     'phone' => $this->user->phone,
+                    'phone_formatted' => PhoneNormalizer::formatInternational($this->user->phone) ?? $this->user->phone,
                     'role' => $this->user->role,
                 ]
             ),
@@ -66,7 +68,9 @@ class BusinessInfoResource extends JsonResource
             'business_description' => $this->business_description,
             'services_offered' => $this->services_offered ?? [],
             'phone' => $this->phone,
+            'phone_formatted' => PhoneNormalizer::formatInternational($this->phone) ?? $this->phone,
             'whatsapp' => $this->whatsapp,
+            'whatsapp_formatted' => PhoneNormalizer::formatInternational($this->whatsapp) ?? $this->whatsapp,
             'website' => $this->website,
             'social_accounts' => is_array($this->social_accounts) ? $this->social_accounts : [],
             'logo_url' => public_media_url($this->logo_path),
