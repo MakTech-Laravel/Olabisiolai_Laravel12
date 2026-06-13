@@ -39,7 +39,10 @@ class UserSettingsImageLocationTest extends TestCase
         $response->assertJsonPath('success', true);
         $response->assertJsonPath('data.profile.location', 'Lagos');
         $response->assertJsonPath('data.profile.image_path', null);
-        $response->assertJsonPath('data.profile.image_url', null);
+        $this->assertStringContainsString(
+            'default-header-avatar',
+            (string) $response->json('data.profile.image_url'),
+        );
     }
 
     public function test_settings_update_stores_location_and_image(): void
@@ -97,7 +100,31 @@ class UserSettingsImageLocationTest extends TestCase
         $second->assertOk();
         $secondPath = $second->json('data.profile.image_path');
         $this->assertNotSame($firstPath, $secondPath);
-        Storage::disk('public')->assertMissing($firstPath);
-        Storage::disk('public')->assertExists($secondPath);
+        $this->assertFalse(Storage::disk('public')->exists($firstPath));
+        $this->assertTrue(Storage::disk('public')->exists($secondPath));
+    }
+
+    public function test_settings_update_accepts_post_multipart_image_upload(): void
+    {
+        Storage::fake('public');
+
+        $user = User::factory()->create([
+            'role' => 'user',
+            'image' => null,
+        ]);
+        $token = $user->createToken('test')->accessToken;
+
+        $file = UploadedFile::fake()->image('avatar.png', 100, 100);
+
+        $response = $this->withToken($token)->post('/api/v1/user/settings', [
+            'image' => $file,
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('success', true);
+
+        $storedPath = $response->json('data.profile.image_path');
+        $this->assertIsString($storedPath);
+        Storage::disk('public')->assertExists($storedPath);
     }
 }

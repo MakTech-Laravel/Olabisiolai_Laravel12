@@ -18,6 +18,47 @@ class UpdateUserSettingsRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('wants_marketing_emails')) {
+            $parsed = filter_var(
+                $this->input('wants_marketing_emails'),
+                FILTER_VALIDATE_BOOLEAN,
+                FILTER_NULL_ON_FAILURE,
+            );
+            if ($parsed !== null) {
+                $this->merge(['wants_marketing_emails' => $parsed]);
+            }
+        }
+
+        $notifications = $this->input('settings.notifications');
+        if (! is_array($notifications)) {
+            return;
+        }
+
+        $normalized = [];
+        foreach (['email', 'push', 'sms', 'whatsapp'] as $key) {
+            if (! array_key_exists($key, $notifications)) {
+                continue;
+            }
+            $value = $notifications[$key];
+            if ($value === '1' || $value === 1 || $value === true || $value === 'true') {
+                $normalized[$key] = true;
+            } elseif ($value === '0' || $value === 0 || $value === false || $value === 'false') {
+                $normalized[$key] = false;
+            }
+        }
+
+        if ($normalized !== []) {
+            $this->merge([
+                'settings' => array_replace_recursive(
+                    is_array($this->input('settings')) ? $this->input('settings') : [],
+                    ['notifications' => array_replace($notifications, $normalized)],
+                ),
+            ]);
+        }
+    }
+
     /**
      * @return array<string, array<int, ValidationRule|string|\Closure>>
      */
@@ -40,7 +81,11 @@ class UpdateUserSettingsRequest extends FormRequest
             'location' => ['sometimes', 'nullable', 'string', 'max:255'],
             'image' => ['sometimes', 'nullable', File::image()->max(10 * 1024)],
             'settings' => ['sometimes', 'array'],
-            'settings.*' => ['nullable'],
+            'settings.notifications' => ['sometimes', 'array'],
+            'settings.notifications.email' => ['sometimes', 'boolean'],
+            'settings.notifications.push' => ['sometimes', 'boolean'],
+            'settings.notifications.sms' => ['sometimes', 'boolean'],
+            'settings.notifications.whatsapp' => ['sometimes', 'boolean'],
         ];
     }
 

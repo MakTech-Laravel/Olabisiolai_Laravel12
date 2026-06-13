@@ -54,7 +54,9 @@ class UpdateBusinessInfoRequest extends FormRequest
             'website' => ['nullable', 'string', 'max:2048', 'url'],
             ...$this->socialAccountsRules(),
             'logo' => ['nullable', File::image()->max(10 * 1024)],
-            'cover_photos' => ['nullable', 'array', 'min:1', 'max:5'],
+            'keep_cover_paths' => ['nullable', 'array', 'max:5'],
+            'keep_cover_paths.*' => ['required', 'string', 'max:500'],
+            'cover_photos' => ['nullable', 'array', 'max:5'],
             'cover_photos.*' => ['required', File::image()->max(10 * 1024)],
         ];
     }
@@ -62,5 +64,28 @@ class UpdateBusinessInfoRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $this->validateBusinessSubcategory($validator, requiredWhenAvailable: true);
+
+        $validator->after(function (Validator $validator): void {
+            $keepPaths = $this->input('keep_cover_paths');
+            $newPhotos = $this->file('cover_photos', []);
+            $hasKeep = is_array($keepPaths);
+            $hasNew = is_array($newPhotos) && count($newPhotos) > 0;
+
+            if (! $hasKeep && ! $hasNew) {
+                return;
+            }
+
+            $keepCount = $hasKeep ? count($keepPaths) : 0;
+            $newCount = $hasNew ? count($newPhotos) : 0;
+            $total = $keepCount + $newCount;
+
+            if ($total < 1) {
+                $validator->errors()->add('cover_photos', 'Please keep or upload at least one gallery photo.');
+            }
+
+            if ($total > 5) {
+                $validator->errors()->add('cover_photos', 'You can have up to 5 gallery photos.');
+            }
+        });
     }
 }

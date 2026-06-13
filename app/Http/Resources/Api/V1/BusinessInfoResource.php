@@ -80,6 +80,10 @@ class BusinessInfoResource extends JsonResource
                 ->filter()
                 ->values()
                 ->all(),
+            'cover_photo_paths' => collect($coverPaths)
+                ->filter(fn($path) => is_string($path) && $path !== '')
+                ->values()
+                ->all(),
             'verification_status' => $this->verification_status->value,
             'is_flagged' => (bool) $this->is_flagged,
             'is_approved' => $this->verification_status->value === 'approved',

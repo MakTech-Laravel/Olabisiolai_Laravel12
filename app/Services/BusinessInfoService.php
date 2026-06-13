@@ -559,6 +559,7 @@ class BusinessInfoService
      * @param  list<string>  $services
      * @param  array<int, UploadedFile>  $coverPhotos
      * @param  array<int, array<string, mixed>>|null  $businessHours
+     * @param  list<string>|null  $keepCoverPaths
      */
     public function updateForUser(
         User $user,
@@ -578,6 +579,7 @@ class BusinessInfoService
         ?array $businessHours = null,
         bool $streetAddressProvided = false,
         bool $subcategoryProvided = true,
+        ?array $keepCoverPaths = null,
     ): BusinessInfo {
         if (! Location::where('id', $locationId)->exists()) {
             throw new \InvalidArgumentException('Invalid location ID.');
@@ -606,11 +608,29 @@ class BusinessInfoService
             }
 
             $finalCoverPaths = $oldCoverPaths;
-            if ($coverPhotos !== []) {
+            $coverGalleryUpdated = $keepCoverPaths !== null || $coverPhotos !== [];
+
+            if ($coverGalleryUpdated) {
+                $keptPaths = [];
+                if ($keepCoverPaths !== null) {
+                    foreach ($keepCoverPaths as $path) {
+                        if (! is_string($path) || trim($path) === '') {
+                            continue;
+                        }
+                        $normalizedPath = trim($path);
+                        if (in_array($normalizedPath, $oldCoverPaths, true)) {
+                            $keptPaths[] = $normalizedPath;
+                        }
+                    }
+                } elseif ($coverPhotos === []) {
+                    $keptPaths = $oldCoverPaths;
+                }
+
                 foreach ($coverPhotos as $file) {
                     $newCoverPaths[] = $this->handleFileUpload($file, $coverFolder, $businessName . ' cover');
                 }
-                $finalCoverPaths = $newCoverPaths;
+
+                $finalCoverPaths = array_values(array_merge($keptPaths, $newCoverPaths));
             }
 
             $previousLocationId = (int) $business->location_id;
@@ -702,9 +722,12 @@ class BusinessInfoService
                 $this->fileDelete($oldLogoPath);
             }
 
-            if ($newCoverPaths !== []) {
+            if ($coverGalleryUpdated) {
                 foreach ($oldCoverPaths as $path) {
-                    if (is_string($path) && $path !== '') {
+                    if (! is_string($path) || $path === '') {
+                        continue;
+                    }
+                    if (! in_array($path, $finalCoverPaths, true)) {
                         $this->fileDelete($path);
                     }
                 }

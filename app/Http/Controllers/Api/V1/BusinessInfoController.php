@@ -140,6 +140,7 @@ class BusinessInfoController extends Controller
             $validated = $request->validated();
             $logo = $request->file('logo');
             $coverPhotos = array_values($request->file('cover_photos', []));
+            $keepCoverPaths = array_values($validated['keep_cover_paths'] ?? []);
 
             $streetAddressProvided = array_key_exists('street_address', $validated)
                 || array_key_exists('full_address', $validated);
@@ -164,6 +165,7 @@ class BusinessInfoController extends Controller
                 array_key_exists('business_hours', $validated) ? $validated['business_hours'] : null,
                 $streetAddressProvided,
                 $subcategoryProvided,
+                $request->has('keep_cover_paths') ? $keepCoverPaths : null,
             );
 
             $business->load(['category:id,name,subcategories,created_at,updated_at', 'businessHours']);
