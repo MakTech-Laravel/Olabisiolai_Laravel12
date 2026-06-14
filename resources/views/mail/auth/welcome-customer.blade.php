@@ -3,7 +3,7 @@
 
 Hi {{ $user->first_name ?: $user->name }},
 
-Your account is verified and ready to use. You can discover trusted businesses, save favourites, send messages, and leave reviews.
+Your Gidira account has been successfully created. You can discover trusted businesses, save favourites, send messages, and leave reviews.
 
 @component('mail::button', ['url' => rtrim((string) config('app.frontend_url', config('app.url')), '/').'/user/dashboard'])
 Go to your dashboard

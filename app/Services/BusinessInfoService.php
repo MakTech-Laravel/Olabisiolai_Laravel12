@@ -210,6 +210,7 @@ class BusinessInfoService
         ]);
 
         $this->applyPublicFavoriteFlag($businessQuery, $user);
+        $this->applyPublicFollowMetrics($businessQuery, $user);
 
         $business = $businessQuery
             ->where('id', $businessId)
@@ -265,6 +266,7 @@ class BusinessInfoService
     {
         $this->applyPublicApprovedReviewStats($query);
         $this->applyPublicFavoriteFlag($query, $user);
+        $this->applyPublicFollowMetrics($query, $user);
     }
 
     /**
@@ -383,6 +385,21 @@ class BusinessInfoService
         ]);
     }
 
+    private function applyPublicFollowMetrics(Builder|QueryBuilder $query, ?User $user): void
+    {
+        $query->withCount(['followerLinks as followers_count']);
+
+        if (! $user instanceof User) {
+            return;
+        }
+
+        $query->withExists([
+            'followerLinks as is_following' => function (Builder $followQuery) use ($user): void {
+                $followQuery->where('follower_id', $user->id);
+            },
+        ]);
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Vendor (authenticated vendor business profile)
@@ -394,6 +411,67 @@ class BusinessInfoService
     public function userAlreadyHasProfile(User $user): bool
     {
         return BusinessInfo::query()->where('user_id', $user->id)->exists();
+    }
+
+    /**
+     * Create a minimal free business profile so a customer can switch to vendor mode
+     * without completing the legacy plan-form onboarding first.
+     */
+    public function createFreeTemplateForUser(User $user): BusinessInfo
+    {
+        if ($this->userAlreadyHasProfile($user)) {
+            throw new \RuntimeException('A business profile already exists for this account.');
+        }
+
+        $categoryId = Category::query()->value('id');
+        $locationId = Location::query()->value('id');
+
+        if ($categoryId === null || $locationId === null) {
+            throw new \RuntimeException('Platform categories and locations must be configured before creating a vendor profile.');
+        }
+
+        $businessName = trim((string) $user->name) !== ''
+            ? trim((string) $user->name) . ' Business'
+            : 'My Business';
+
+        $phone = trim((string) ($user->phone ?? ''));
+        if ($phone === '') {
+            $phone = '+2348000000000';
+        }
+
+        return DB::transaction(function () use ($user, $categoryId, $locationId, $businessName, $phone): BusinessInfo {
+            $business = BusinessInfo::query()->create([
+                'location_id' => $locationId,
+                'user_id' => $user->id,
+                'category_id' => $categoryId,
+                'subcategory' => null,
+                'business_name' => $businessName,
+                'street_address' => null,
+                'business_description' => 'Tell customers about your business and the services you offer.',
+                'services_offered' => [],
+                'phone' => $phone,
+                'whatsapp' => null,
+                'website' => null,
+                'social_accounts' => null,
+                'logo_path' => null,
+                'cover_photo_paths' => null,
+                'verification_status' => VerificationStatus::None,
+                'is_flagged' => false,
+                'business_status' => BusinessStatus::Active,
+            ]);
+
+            $this->businessHoursService->seedDefaultsForBusiness($business);
+
+            $this->subscriptionService->createForBusiness(
+                $business,
+                SubscriptionPlan::Free,
+                SubscriptionStatus::Active,
+            );
+
+            $this->locationService->refreshVendorCount($locationId);
+
+            return $business->load(['subscription', 'businessHours']);
+        });
     }
 
     /**

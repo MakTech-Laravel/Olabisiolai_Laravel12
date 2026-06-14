@@ -106,6 +106,8 @@ class BusinessInfoResource extends JsonResource
             'average_rating' => round((float) ($this->average_rating ?? 0), 1),
             'reviews_count' => (int) ($this->reviews_count ?? 0),
             'is_favorite' => (bool) ($this->is_favorite ?? false),
+            'followers_count' => (int) ($this->followers_count ?? 0),
+            'is_following' => (bool) ($this->is_following ?? false),
             'boost_status' => $this->resolvePublicBoostStatus(),
             'active_boost_tier' => $this->resolveActiveBoostTierKey(),
             'business_hours' => $businessHoursService->serializeForBusiness($this->resource),

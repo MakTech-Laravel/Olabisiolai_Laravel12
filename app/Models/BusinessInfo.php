@@ -174,6 +174,16 @@ class BusinessInfo extends Model
     }
 
     /**
+     * Users following this business owner account.
+     *
+     * @return HasMany<UserFollow, $this>
+     */
+    public function followerLinks(): HasMany
+    {
+        return $this->hasMany(UserFollow::class, 'following_id', 'user_id');
+    }
+
+    /**
      * @return HasMany<BusinessHour, $this>
      */
     public function businessHours(): HasMany

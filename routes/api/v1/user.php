@@ -3,6 +3,8 @@
 use App\Http\Controllers\Api\V1\BusinessReportController;
 use App\Http\Controllers\Api\V1\ReviewReportController;
 use App\Http\Controllers\Api\V1\UserFavoritesController;
+use App\Http\Controllers\Api\V1\UserFollowController;
+use App\Http\Controllers\Api\V1\UserModeController;
 use App\Http\Controllers\Api\V1\UserReviewsController;
 use App\Http\Controllers\Api\V1\UserSettingsController;
 use App\Http\Controllers\Api\V1\Vendor\VendorOnboardingController;
@@ -41,6 +43,17 @@ Route::prefix('user')->name('user.')->group(function () {
             Route::post('/toggle', [UserFavoritesController::class, 'toggle'])->name('toggle');
             Route::delete('/{businessId}', [UserFavoritesController::class, 'destroy'])->name('destroy');
             Route::get('/{businessId}/exists', [UserFavoritesController::class, 'exists'])->name('exists');
+        });
+
+        Route::prefix('follows')->name('follows.')->group(function () {
+            Route::get('/stats', [UserFollowController::class, 'stats'])->name('stats');
+            Route::get('/following', [UserFollowController::class, 'following'])->name('following');
+            Route::post('/toggle', [UserFollowController::class, 'toggle'])->name('toggle');
+        });
+
+        Route::prefix('mode')->name('mode.')->group(function () {
+            Route::post('/vendor', [UserModeController::class, 'switchToVendor'])->name('vendor');
+            Route::post('/customer', [UserModeController::class, 'switchToCustomer'])->name('customer');
         });
 
         Route::get('/reviews', [UserReviewsController::class, 'index'])->name('reviews.index');
