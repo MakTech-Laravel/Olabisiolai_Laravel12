@@ -67,13 +67,14 @@ class VendorBoostLocationSyncTest extends TestCase
 
         $business = BusinessInfo::factory()->for($user)->premiumActive()->create([
             'location_id' => $originalLocation->id,
+            'verification_status' => 'approved',
         ]);
 
         $token = $user->createToken('test')->accessToken;
 
         $response = $this->withToken($token)->postJson('/api/v1/vendor/boost/payment/init', [
-            'tier_key' => 'top_1',
-            'duration_days' => 7,
+            'duration_days' => 3,
+            'budget_amount' => 1500,
             'location_id' => $boostLocation->id,
         ]);
 

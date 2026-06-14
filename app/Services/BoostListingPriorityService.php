@@ -3,11 +3,14 @@
 namespace App\Services;
 
 use App\Enums\BoostPurchaseRequestStatus;
+use App\Enums\SubscriptionPlan;
+use App\Enums\SubscriptionStatus;
+use App\Enums\VerificationStatus;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * Orders public marketplace listings so active LGA boost campaigns surface first
- * (top_1, then top_5, then top_10) before non-boosted businesses.
+ * Orders public marketplace listings so active boost campaigns surface first.
+ * Dynamic boosts rotate fairly within the same LGA; legacy slot tiers remain supported.
  */
 class BoostListingPriorityService
 {
@@ -16,6 +19,8 @@ class BoostListingPriorityService
     public const TIER_RANK_TOP_5 = 2;
 
     public const TIER_RANK_TOP_10 = 3;
+
+    public const TIER_RANK_DYNAMIC = 10;
 
     public const TIER_RANK_NONE = 999;
 
@@ -27,8 +32,11 @@ class BoostListingPriorityService
         [$locationId, $locationIds] = $this->normalizeLocationContext($context);
 
         $prioritySql = $this->activeTierPrioritySubquerySql($locationId, $locationIds);
+        $rotationSql = $this->dynamicRotationRankSql($locationId, $locationIds);
 
+        $query->orderByRaw('('.$this->trustTierRankSql().') ASC');
         $query->orderByRaw("({$prioritySql}) ASC");
+        $query->orderByRaw("({$rotationSql}) ASC");
         $query->orderByDesc('sort_order');
         $query->orderByDesc('average_rating');
         $query->orderByDesc('created_at');
@@ -84,9 +92,10 @@ class BoostListingPriorityService
         $approved = BoostPurchaseRequestStatus::Approved->value;
 
         $tierCase = 'CASE bpr.tier_key
-                WHEN \'top_1\' THEN ' . self::TIER_RANK_TOP_1 . '
-                WHEN \'top_5\' THEN ' . self::TIER_RANK_TOP_5 . '
-                WHEN \'top_10\' THEN ' . self::TIER_RANK_TOP_10 . '
+                WHEN \'top_1\' THEN '.self::TIER_RANK_TOP_1.'
+                WHEN \'top_5\' THEN '.self::TIER_RANK_TOP_5.'
+                WHEN \'top_10\' THEN '.self::TIER_RANK_TOP_10.'
+                WHEN \'dynamic\' THEN '.self::TIER_RANK_DYNAMIC.'
                 ELSE 99
             END';
 
@@ -109,6 +118,62 @@ class BoostListingPriorityService
               AND bpr.ends_at IS NOT NULL
               AND bpr.ends_at > NOW()
               {$locationClause}
-        ), " . self::TIER_RANK_NONE . ')';
+        ), ".self::TIER_RANK_NONE.')';
+    }
+
+    /**
+     * Fair rotation among active boosted listings in the same LGA.
+     *
+     * @param  list<int>  $filterLocationIds
+     */
+    private function dynamicRotationRankSql(?int $filterLocationId, array $filterLocationIds = []): string
+    {
+        $approved = BoostPurchaseRequestStatus::Approved->value;
+        $window = max(60, (int) config('boost.dynamic.rotation_window_seconds', 300));
+
+        if ($filterLocationId !== null) {
+            $locationClause = 'AND bpr.location_id = '.(int) $filterLocationId;
+        } elseif ($filterLocationIds !== []) {
+            $locationClause = 'AND bpr.location_id IN ('.implode(',', $filterLocationIds).')'
+                .' AND bpr.location_id = business_info.location_id';
+        } else {
+            $locationClause = 'AND bpr.location_id = business_info.location_id';
+        }
+
+        return "COALESCE((
+            SELECT MOD(business_info.id + FLOOR(UNIX_TIMESTAMP() / {$window}), 1000)
+            FROM boost_purchase_requests bpr
+            WHERE bpr.business_info_id = business_info.id
+              AND bpr.status = '{$approved}'
+              AND bpr.starts_at IS NOT NULL
+              AND bpr.starts_at <= NOW()
+              AND bpr.ends_at IS NOT NULL
+              AND bpr.ends_at > NOW()
+              {$locationClause}
+            LIMIT 1
+        ), 1000)";
+    }
+
+    /**
+     * Verified + premium listings rank above verified free, then unverified.
+     * Active boost tiers still apply within each trust band via {@see applyToQuery}.
+     */
+    private function trustTierRankSql(): string
+    {
+        $approved = VerificationStatus::Approved->value;
+        $premiumPlan = SubscriptionPlan::Premium->value;
+        $activeStatus = SubscriptionStatus::Active->value;
+
+        return "CASE
+            WHEN business_info.verification_status = '{$approved}' AND EXISTS (
+                SELECT 1 FROM business_subscriptions bs
+                WHERE bs.business_info_id = business_info.id
+                  AND bs.plan = '{$premiumPlan}'
+                  AND bs.status = '{$activeStatus}'
+                  AND (bs.expires_at IS NULL OR bs.expires_at > NOW())
+            ) THEN 1
+            WHEN business_info.verification_status = '{$approved}' THEN 2
+            ELSE 3
+        END";
     }
 }

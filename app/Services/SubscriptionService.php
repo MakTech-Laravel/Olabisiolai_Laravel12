@@ -77,6 +77,33 @@ class SubscriptionService
             && ! $this->isSubscriptionExpired($subscription);
     }
 
+    public function freePhotoLimit(): int
+    {
+        return max(1, (int) config('subscription.photo_limits.free', 5));
+    }
+
+    public function premiumPhotoLimit(): int
+    {
+        return max($this->freePhotoLimit(), (int) config('subscription.photo_limits.premium', 20));
+    }
+
+    public function maxCoverPhotos(BusinessInfo $business): int
+    {
+        return $this->hasActivePremium($business)
+            ? $this->premiumPhotoLimit()
+            : $this->freePhotoLimit();
+    }
+
+    public function isBusinessVerified(BusinessInfo $business): bool
+    {
+        return app(VerificationService::class)->showsVerifiedBadge($business);
+    }
+
+    public function canUseBoost(BusinessInfo $business): bool
+    {
+        return $this->hasActivePremium($business) && $this->isBusinessVerified($business);
+    }
+
     public function requiresPayment(BusinessInfo $business): bool
     {
         $business = $this->syncExpiredSubscription($business);
@@ -172,6 +199,7 @@ class SubscriptionService
         ?string $boostTierKey = null,
         ?int $boostDurationDays = null,
         ?PaymentGateway $gateway = null,
+        ?float $boostBudgetAmount = null,
     ): array {
         $business = $this->preparePremiumCheckout($business);
         $checkoutGroupId = (string) Str::uuid();
@@ -197,16 +225,27 @@ class SubscriptionService
                 throw new RuntimeException('Select a business location before adding a boost.');
             }
 
-            $lgaBoost = $this->boostPurchaseService->assertBoostAvailableForLocation(
-                $business->location,
-                $boostTierKey,
-                $boostDurationDays,
-            );
-            $pricing = $this->boostPurchaseService->resolveTierDurationPrice(
-                $lgaBoost,
-                $boostTierKey,
-                $boostDurationDays,
-            );
+            if ($this->boostPurchaseService->isDynamicTier($boostTierKey)) {
+                if ($boostBudgetAmount === null) {
+                    throw new RuntimeException('Boost budget is required.');
+                }
+
+                $this->boostPurchaseService->assertDynamicBoost($boostDurationDays, $boostBudgetAmount);
+                $this->boostPurchaseService->assertLocationHasBoostEnabled($business->location);
+                $pricing = $this->boostPurchaseService->resolveDynamicBoostPrice($boostBudgetAmount);
+                $boostTierKey = $this->boostPurchaseService->dynamicTierKey();
+            } else {
+                $lgaBoost = $this->boostPurchaseService->assertBoostAvailableForLocation(
+                    $business->location,
+                    $boostTierKey,
+                    $boostDurationDays,
+                );
+                $pricing = $this->boostPurchaseService->resolveTierDurationPrice(
+                    $lgaBoost,
+                    $boostTierKey,
+                    $boostDurationDays,
+                );
+            }
 
             $boostPayment = $this->paymentService->initBoostPayment(
                 $vendor,
@@ -219,6 +258,8 @@ class SubscriptionService
                     'boost_tier_label' => $pricing['tier_label'],
                     'boost_duration_days' => $boostDurationDays,
                     'location_label' => $business->location->full_name,
+                    'boost_model' => $this->boostPurchaseService->isDynamicTier($boostTierKey) ? 'dynamic' : 'slot_tier',
+                    'boost_budget_amount' => $boostBudgetAmount,
                 ],
                 $boostTierKey,
                 $gateway,
@@ -231,6 +272,10 @@ class SubscriptionService
                 $boostDurationDays,
                 BoostPurchaseRequestStatus::PendingPayment,
                 $boostPayment,
+                null,
+                null,
+                (int) $business->location_id,
+                $boostBudgetAmount,
             );
 
             $subscriptionPayment->update([
@@ -397,6 +442,12 @@ class SubscriptionService
             'can_pay_premium' => $this->canPayForPremium($business),
             'is_premium_active' => $this->hasActivePremium($business),
             'can_access_features' => $this->canAccessVendorFeatures($business),
+            'photo_limit' => $this->maxCoverPhotos($business),
+            'free_photo_limit' => $this->freePhotoLimit(),
+            'premium_photo_limit' => $this->premiumPhotoLimit(),
+            'is_verified' => $this->isBusinessVerified($business),
+            'can_boost' => $this->canUseBoost($business),
+            'analytics_locked' => ! $this->hasActivePremium($business),
         ];
     }
 
@@ -409,7 +460,8 @@ class SubscriptionService
             return [
                 'has_business' => false,
                 'can_access_onboarding' => true,
-                'redirect_to' => '/vendor/plan-form',
+                'redirect_to' => '/user/profile',
+                'business_id' => null,
                 'subscription' => null,
             ];
         }
@@ -417,7 +469,7 @@ class SubscriptionService
         $business = $this->syncExpiredSubscription($business);
         $subscription = $this->subscriptionPayload($business);
 
-        $redirectTo = '/vendor/dashboard';
+        $redirectTo = null;
         if ($subscription['requires_payment']) {
             $redirectTo = '/vendor/premium-payment';
         }
@@ -426,6 +478,7 @@ class SubscriptionService
             'has_business' => true,
             'can_access_onboarding' => false,
             'redirect_to' => $redirectTo,
+            'business_id' => $business->id,
             'subscription' => $subscription,
         ];
     }

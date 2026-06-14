@@ -66,12 +66,16 @@ class VendorSubscriptionController extends Controller
             $validated = $request->validate([
                 'gateway' => ['nullable', 'string', Rule::in(PaymentGateway::values())],
                 'boost_tier_key' => ['nullable', 'string', 'max:30'],
-                'boost_duration_days' => ['nullable', 'integer', 'in:7,14,30'],
+                'boost_duration_days' => ['nullable', 'integer', 'min:1', 'max:30'],
+                'boost_budget_amount' => ['nullable', 'numeric', 'min:500', 'max:5000'],
             ]);
 
             $boostTierKey = isset($validated['boost_tier_key']) ? (string) $validated['boost_tier_key'] : null;
             $boostDurationDays = isset($validated['boost_duration_days'])
                 ? (int) $validated['boost_duration_days']
+                : null;
+            $boostBudgetAmount = isset($validated['boost_budget_amount'])
+                ? (float) $validated['boost_budget_amount']
                 : null;
 
             if (($boostTierKey === null) xor ($boostDurationDays === null)) {
@@ -84,6 +88,7 @@ class VendorSubscriptionController extends Controller
                 $boostTierKey,
                 $boostDurationDays,
                 isset($validated['gateway']) ? PaymentGateway::from((string) $validated['gateway']) : null,
+                $boostBudgetAmount,
             );
 
             $subscriptionPayment = $checkout['subscription_payment'];

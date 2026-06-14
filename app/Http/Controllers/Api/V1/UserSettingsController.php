@@ -11,6 +11,7 @@ use App\Http\Requests\Api\V1\VerifyUserEmailOtpRequest;
 use App\Http\Traits\FileManagementTrait;
 use App\Models\User;
 use App\Services\AuthService;
+use App\Services\UserFollowService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
@@ -24,6 +25,7 @@ class UserSettingsController extends Controller
 
     public function __construct(
         private readonly AuthService $authService,
+        private readonly UserFollowService $userFollowService,
     ) {}
 
     public function profileShow(Request $request): Response
@@ -364,6 +366,8 @@ class UserSettingsController extends Controller
             'email_verified' => $user->email_verified_at !== null,
             'email_verification_required' => $user->hasUnverifiedEmail(),
             'can_make_purchases' => $user->canMakePurchases(),
+            'followers_count' => $this->userFollowService->followersCount($user->id),
+            'following_count' => $this->userFollowService->followingCount($user->id),
         ];
     }
 }

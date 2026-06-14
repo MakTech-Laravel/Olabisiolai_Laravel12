@@ -49,6 +49,16 @@ class VendorBoostController extends Controller
                 'location' => new LocationResource($business->location),
                 'pending_request' => $this->boostPurchaseService->latestOpenRequestForBusiness($business),
                 'is_premium_active' => $this->subscriptionService->hasActivePremium($business),
+                'is_verified' => $this->subscriptionService->isBusinessVerified($business),
+                'can_boost' => $this->subscriptionService->canUseBoost($business),
+                'boost_model' => 'dynamic',
+                'dynamic' => [
+                    'tier_key' => $this->boostPurchaseService->dynamicTierKey(),
+                    'tier_label' => config('boost.dynamic.tier_label', 'Dynamic Boost'),
+                    'durations' => $this->boostPurchaseService->dynamicDurations(),
+                    'budget_min' => (float) config('boost.dynamic.budget_min', 500),
+                    'budget_max' => (float) config('boost.dynamic.budget_max', 5000),
+                ],
                 'campaigns' => BoostPurchaseRequestResource::collection($campaigns)->resolve(),
             ]);
         } catch (Throwable $throwable) {
@@ -61,13 +71,7 @@ class VendorBoostController extends Controller
     public function submitRequest(Request $request)
     {
         try {
-            $validated = $request->validate([
-                'tier_key' => ['required', 'string', 'max:30'],
-                'duration_days' => ['required', 'integer', 'in:7,14,30'],
-                'location_id' => ['nullable', 'integer', 'exists:locations,id'],
-                'renew_type' => ['nullable', 'string', 'in:extend,boost_again'],
-                'source_campaign_id' => ['nullable', 'integer', 'exists:boost_purchase_requests,id'],
-            ]);
+            $validated = $this->validateDynamicBoostPayload($request);
 
             $vendor = $request->user('api');
             $business = $this->businessInfoService->findForUser($vendor);
@@ -76,8 +80,12 @@ class VendorBoostController extends Controller
                 return sendResponse(false, 'No business profile found.', null, Response::HTTP_NOT_FOUND);
             }
 
-            if (! $this->subscriptionService->hasActivePremium($business)) {
-                return sendResponse(false, 'An active premium subscription is required. Add boost during premium checkout or upgrade first.', null, Response::HTTP_FORBIDDEN);
+            if (! $this->subscriptionService->canUseBoost($business)) {
+                $message = $this->subscriptionService->hasActivePremium($business)
+                    ? 'Verify your business before activating boost campaigns.'
+                    : 'An active premium subscription is required. Add boost during premium checkout or upgrade first.';
+
+                return sendResponse(false, $message, null, Response::HTTP_FORBIDDEN);
             }
 
             if (! empty($validated['renew_type'])) {
@@ -92,13 +100,14 @@ class VendorBoostController extends Controller
             $boostRequest = $this->boostPurchaseService->createRequest(
                 $vendor,
                 $business,
-                (string) $validated['tier_key'],
+                $this->boostPurchaseService->dynamicTierKey(),
                 (int) $validated['duration_days'],
                 BoostPurchaseRequestStatus::PendingAdmin,
                 null,
                 isset($validated['renew_type']) ? (string) $validated['renew_type'] : null,
                 isset($validated['source_campaign_id']) ? (int) $validated['source_campaign_id'] : null,
                 isset($validated['location_id']) ? (int) $validated['location_id'] : null,
+                (float) $validated['budget_amount'],
             );
 
             return sendResponse(true, 'Boost request submitted. An admin will review and confirm activation.', [
@@ -119,14 +128,7 @@ class VendorBoostController extends Controller
     public function initPayment(Request $request)
     {
         try {
-            $validated = $request->validate([
-                'tier_key' => ['required', 'string', 'max:30'],
-                'duration_days' => ['required', 'integer', 'in:7,14,30'],
-                'location_id' => ['nullable', 'integer', 'exists:locations,id'],
-                'renew_type' => ['nullable', 'string', 'in:extend,boost_again'],
-                'source_campaign_id' => ['nullable', 'integer', 'exists:boost_purchase_requests,id'],
-                'gateway' => ['nullable', 'string', Rule::in(PaymentGateway::values())],
-            ]);
+            $validated = $this->validateDynamicBoostPayload($request);
 
             $vendor = $request->user('api');
             $business = $this->businessInfoService->findForUser($vendor);
@@ -135,19 +137,24 @@ class VendorBoostController extends Controller
                 return sendResponse(false, 'No business profile found.', null, Response::HTTP_NOT_FOUND);
             }
 
-            if (! $this->subscriptionService->hasActivePremium($business)) {
-                return sendResponse(false, 'An active premium subscription is required.', null, Response::HTTP_FORBIDDEN);
+            if (! $this->subscriptionService->canUseBoost($business)) {
+                $message = $this->subscriptionService->hasActivePremium($business)
+                    ? 'Verify your business before paying for boost campaigns.'
+                    : 'An active premium subscription is required.';
+
+                return sendResponse(false, $message, null, Response::HTTP_FORBIDDEN);
             }
 
             $result = $this->boostPurchaseService->initBoostPayment(
                 $vendor,
                 $business,
-                (string) $validated['tier_key'],
+                $this->boostPurchaseService->dynamicTierKey(),
                 (int) $validated['duration_days'],
                 isset($validated['renew_type']) ? (string) $validated['renew_type'] : null,
                 isset($validated['source_campaign_id']) ? (int) $validated['source_campaign_id'] : null,
                 isset($validated['location_id']) ? (int) $validated['location_id'] : null,
                 isset($validated['gateway']) ? PaymentGateway::from((string) $validated['gateway']) : null,
+                (float) $validated['budget_amount'],
             );
 
             return sendResponse(true, 'Boost payment initialized successfully.', [
@@ -232,5 +239,24 @@ class VendorBoostController extends Controller
 
             return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
         }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function validateDynamicBoostPayload(Request $request): array
+    {
+        $durations = $this->boostPurchaseService->dynamicDurations();
+        $budgetMin = (float) config('boost.dynamic.budget_min', 500);
+        $budgetMax = (float) config('boost.dynamic.budget_max', 5000);
+
+        return $request->validate([
+            'duration_days' => ['required', 'integer', Rule::in($durations)],
+            'budget_amount' => ['required', 'numeric', 'min:'.$budgetMin, 'max:'.$budgetMax],
+            'location_id' => ['nullable', 'integer', 'exists:locations,id'],
+            'renew_type' => ['nullable', 'string', 'in:extend,boost_again'],
+            'source_campaign_id' => ['nullable', 'integer', 'exists:boost_purchase_requests,id'],
+            'gateway' => ['nullable', 'string', Rule::in(PaymentGateway::values())],
+        ]);
     }
 }

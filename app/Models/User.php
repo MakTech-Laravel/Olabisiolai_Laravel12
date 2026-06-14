@@ -199,4 +199,20 @@ class User extends Authenticatable
     {
         return $this->hasMany(SocialAccount::class);
     }
+
+    /**
+     * @return HasMany<UserFollow, $this>
+     */
+    public function followingLinks(): HasMany
+    {
+        return $this->hasMany(UserFollow::class, 'follower_id');
+    }
+
+    /**
+     * @return HasMany<UserFollow, $this>
+     */
+    public function followerLinks(): HasMany
+    {
+        return $this->hasMany(UserFollow::class, 'following_id');
+    }
 }
