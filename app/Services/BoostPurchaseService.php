@@ -28,6 +28,73 @@ class BoostPurchaseService
         private readonly LocationService $locationService,
     ) {}
 
+    public function dynamicTierKey(): string
+    {
+        return (string) config('boost.dynamic.tier_key', 'dynamic');
+    }
+
+    public function isDynamicTier(?string $tierKey): bool
+    {
+        if ($tierKey === null || $tierKey === '') {
+            return true;
+        }
+
+        return $tierKey === $this->dynamicTierKey();
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function dynamicDurations(): array
+    {
+        return array_values(array_map('intval', config('boost.dynamic.durations', [1, 3, 7])));
+    }
+
+    public function assertDynamicBoost(int $durationDays, float $budgetAmount): void
+    {
+        if (! in_array($durationDays, $this->dynamicDurations(), true)) {
+            throw new RuntimeException('Select a valid boost duration (1, 3, or 7 days).');
+        }
+
+        $min = (float) config('boost.dynamic.budget_min', 500);
+        $max = (float) config('boost.dynamic.budget_max', 5000);
+
+        if ($budgetAmount < $min || $budgetAmount > $max) {
+            throw new RuntimeException('Boost budget must be between ₦'.number_format($min).' and ₦'.number_format($max).'.');
+        }
+    }
+
+    public function assertLocationHasBoostEnabled(Location $location): LgaBoost
+    {
+        $location->loadMissing('lgaBoost');
+        $lgaBoost = $location->lgaBoost;
+
+        if ($lgaBoost === null || ! $lgaBoost->enabled) {
+            $label = trim((string) ($location->full_name ?? $location->lga_name ?? 'this location'));
+            throw new RuntimeException("Boost is not enabled for {$label}. Choose another LGA or contact support.");
+        }
+
+        return $lgaBoost;
+    }
+
+    /**
+     * @return array{amount: float, tier_label: string}
+     */
+    public function resolveDynamicBoostPrice(float $budgetAmount): array
+    {
+        $min = (float) config('boost.dynamic.budget_min', 500);
+        $max = (float) config('boost.dynamic.budget_max', 5000);
+
+        if ($budgetAmount < $min || $budgetAmount > $max) {
+            throw new RuntimeException('Boost budget must be between ₦'.number_format($min).' and ₦'.number_format($max).'.');
+        }
+
+        return [
+            'amount' => round($budgetAmount, 2),
+            'tier_label' => (string) config('boost.dynamic.tier_label', 'Dynamic Boost'),
+        ];
+    }
+
     /**
      * @return array{payment: Payment, request: BoostPurchaseRequest}
      */
@@ -85,7 +152,9 @@ class BoostPurchaseService
         ?int $sourceCampaignId = null,
         ?int $targetLocationId = null,
         ?PaymentGateway $gateway = null,
+        ?float $budgetAmount = null,
     ): array {
+        $tierKey = $this->isDynamicTier($tierKey) ? $this->dynamicTierKey() : $tierKey;
         $renewType = in_array($renewType, ['extend', 'boost_again'], true) ? $renewType : null;
         $location = $this->resolveBoostTargetLocation($business, $targetLocationId, $sourceCampaignId, $renewType);
         $forBusinessId = $renewType !== null ? $business->id : null;
@@ -104,8 +173,17 @@ class BoostPurchaseService
             ];
         }
 
-        $lgaBoost = $this->assertBoostAvailableForLocation($location, $tierKey, $durationDays, $forBusinessId, $renewType);
-        $pricing = $this->resolveTierDurationPrice($lgaBoost, $tierKey, $durationDays);
+        if ($this->isDynamicTier($tierKey)) {
+            if ($budgetAmount === null) {
+                throw new RuntimeException('Boost budget is required.');
+            }
+            $this->assertDynamicBoost($durationDays, $budgetAmount);
+            $this->assertLocationHasBoostEnabled($location);
+            $pricing = $this->resolveDynamicBoostPrice($budgetAmount);
+        } else {
+            $lgaBoost = $this->assertBoostAvailableForLocation($location, $tierKey, $durationDays, $forBusinessId, $renewType);
+            $pricing = $this->resolveTierDurationPrice($lgaBoost, $tierKey, $durationDays);
+        }
 
         $payment = $this->paymentService->initBoostPayment($user, $business, $pricing['amount'], [
             'boost_tier_key' => $tierKey,
@@ -114,6 +192,7 @@ class BoostPurchaseService
             'renew_type' => $renewType,
             'source_campaign_id' => $sourceCampaignId,
             'location_label' => $location->full_name,
+            'boost_model' => $this->isDynamicTier($tierKey) ? 'dynamic' : 'slot_tier',
         ], null, $gateway);
 
         $request = $this->createRequest(
@@ -126,6 +205,7 @@ class BoostPurchaseService
             $renewType,
             $sourceCampaignId,
             (int) $location->id,
+            $budgetAmount,
         );
 
         return [
@@ -208,6 +288,12 @@ class BoostPurchaseService
         ?int $forBusinessId = null,
         ?string $renewType = null,
     ): LgaBoost {
+        if ($this->isDynamicTier($tierKey)) {
+            $this->assertDynamicBoost($durationDays, (float) config('boost.dynamic.budget_min', 500));
+
+            return $this->assertLocationHasBoostEnabled($location);
+        }
+
         $location->loadMissing('lgaBoost');
         $lgaBoost = $location->lgaBoost;
 
@@ -348,7 +434,9 @@ class BoostPurchaseService
         ?string $renewType = null,
         ?int $sourceCampaignId = null,
         ?int $targetLocationId = null,
+        ?float $budgetAmount = null,
     ): BoostPurchaseRequest {
+        $tierKey = $this->isDynamicTier($tierKey) ? $this->dynamicTierKey() : $tierKey;
         $renewType = in_array($renewType, ['extend', 'boost_again'], true) ? $renewType : null;
         $location = $this->resolveBoostTargetLocation($business, $targetLocationId, $sourceCampaignId, $renewType);
         $forBusinessId = $renewType !== null ? $business->id : null;
@@ -378,14 +466,24 @@ class BoostPurchaseService
             }
         }
 
-        $lgaBoost = $this->assertBoostAvailableForLocation($location, $tierKey, $durationDays, $forBusinessId, $renewType);
-        $pricing = $this->resolveTierDurationPrice($lgaBoost, $tierKey, $durationDays);
+        if ($this->isDynamicTier($tierKey)) {
+            if ($budgetAmount === null) {
+                throw new RuntimeException('Boost budget is required.');
+            }
+            $this->assertDynamicBoost($durationDays, $budgetAmount);
+            $this->assertLocationHasBoostEnabled($location);
+            $pricing = $this->resolveDynamicBoostPrice($budgetAmount);
+        } else {
+            $lgaBoost = $this->assertBoostAvailableForLocation($location, $tierKey, $durationDays, $forBusinessId, $renewType);
+            $pricing = $this->resolveTierDurationPrice($lgaBoost, $tierKey, $durationDays);
+        }
 
         $metadata = [
             'location_label' => $location->full_name,
             'state' => $location->state_name,
             'city' => $location->city_name,
             'lga' => $location->lga_name,
+            'boost_model' => $this->isDynamicTier($tierKey) ? 'dynamic' : 'slot_tier',
         ];
 
         if ($renewType !== null) {
@@ -600,7 +698,11 @@ class BoostPurchaseService
             : null;
 
         $lgaBoost = $request->location?->lgaBoost;
-        if ($lgaBoost instanceof LgaBoost && ! ($extendSource?->ends_at?->isFuture())) {
+        if (
+            $lgaBoost instanceof LgaBoost
+            && ! ($extendSource?->ends_at?->isFuture())
+            && ! $this->isDynamicTier($request->tier_key)
+        ) {
             $tierLabel = collect($lgaBoost->tiers ?? [])->firstWhere('key', $request->tier_key)['label'] ?? $request->tier_label;
             if ($this->remainingSlotsForTier($lgaBoost, $request->tier_key, $request->id, $request->business_info_id) <= 0) {
                 throw new RuntimeException(
@@ -665,7 +767,7 @@ class BoostPurchaseService
                 'deactivated_at' => null,
             ]);
 
-            if (! $skipSlotIncrement) {
+            if (! $skipSlotIncrement && ! $this->isDynamicTier($request->tier_key)) {
                 $location = Location::query()->with('lgaBoost')->find($request->location_id);
                 if ($location?->lgaBoost instanceof LgaBoost) {
                     $lgaBoost = $location->lgaBoost;
