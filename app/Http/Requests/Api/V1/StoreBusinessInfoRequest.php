@@ -7,6 +7,7 @@ use App\Http\Requests\Concerns\ValidatesBusinessSubcategory;
 use App\Http\Requests\Concerns\ValidatesSocialAccounts;
 use App\Rules\NigerianPhoneNumber;
 use App\Services\LocationCatalogService;
+use App\Services\SubscriptionService;
 use App\Support\PhoneNormalizer;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -66,7 +67,7 @@ class StoreBusinessInfoRequest extends FormRequest
             'website' => ['nullable', 'string', 'max:2048', 'url'],
             ...$this->socialAccountsRules(),
             'logo' => ['required', File::image()->max(10 * 1024)],
-            'cover_photos' => ['required', 'array', 'min:1', 'max:5'],
+            'cover_photos' => ['required', 'array', 'min:1'],
             'cover_photos.*' => ['required', File::image()->max(10 * 1024)],
             'subscription_plan' => ['nullable', 'string', Rule::in(['free', 'premium'])],
         ];
@@ -75,5 +76,25 @@ class StoreBusinessInfoRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $this->validateBusinessSubcategory($validator, requiredWhenAvailable: true);
+
+        $validator->after(function (Validator $validator): void {
+            $photos = $this->file('cover_photos', []);
+            if (! is_array($photos)) {
+                return;
+            }
+
+            $plan = (string) ($this->input('subscription_plan') ?? 'free');
+            $subscriptionService = app(SubscriptionService::class);
+            $maxPhotos = $plan === 'premium'
+                ? $subscriptionService->premiumPhotoLimit()
+                : $subscriptionService->freePhotoLimit();
+
+            if (count($photos) > $maxPhotos) {
+                $validator->errors()->add(
+                    'cover_photos',
+                    "You can upload up to {$maxPhotos} gallery photos for the selected plan.",
+                );
+            }
+        });
     }
 }

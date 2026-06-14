@@ -423,11 +423,22 @@ class BusinessInfoService
             throw new \RuntimeException('A business profile already exists for this account.');
         }
 
-        $categoryId = Category::query()->value('id');
+        $category = Category::query()->orderBy('id')->first();
+        $categoryId = $category?->id;
         $locationId = Location::query()->value('id');
 
         if ($categoryId === null || $locationId === null) {
             throw new \RuntimeException('Platform categories and locations must be configured before creating a vendor profile.');
+        }
+
+        $defaultSubcategory = null;
+        $allowedSubcategories = is_array($category?->subcategories) ? $category->subcategories : [];
+        foreach ($allowedSubcategories as $candidate) {
+            if (is_string($candidate) && trim($candidate) !== '') {
+                $defaultSubcategory = trim($candidate);
+
+                break;
+            }
         }
 
         $businessName = trim((string) $user->name) !== ''
@@ -439,12 +450,12 @@ class BusinessInfoService
             $phone = '+2348000000000';
         }
 
-        return DB::transaction(function () use ($user, $categoryId, $locationId, $businessName, $phone): BusinessInfo {
+        return DB::transaction(function () use ($user, $categoryId, $locationId, $businessName, $phone, $defaultSubcategory): BusinessInfo {
             $business = BusinessInfo::query()->create([
                 'location_id' => $locationId,
                 'user_id' => $user->id,
                 'category_id' => $categoryId,
-                'subcategory' => null,
+                'subcategory' => $defaultSubcategory,
                 'business_name' => $businessName,
                 'street_address' => null,
                 'business_description' => 'Tell customers about your business and the services you offer.',
@@ -709,6 +720,11 @@ class BusinessInfoService
                 }
 
                 $finalCoverPaths = array_values(array_merge($keptPaths, $newCoverPaths));
+            }
+
+            $maxCoverPhotos = $this->subscriptionService->maxCoverPhotos($business);
+            if (count($finalCoverPaths) > $maxCoverPhotos) {
+                throw new \InvalidArgumentException("You can have up to {$maxCoverPhotos} gallery photos on your current plan.");
             }
 
             $previousLocationId = (int) $business->location_id;

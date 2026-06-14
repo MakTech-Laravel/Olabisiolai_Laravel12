@@ -49,6 +49,8 @@ class VendorBoostController extends Controller
                 'location' => new LocationResource($business->location),
                 'pending_request' => $this->boostPurchaseService->latestOpenRequestForBusiness($business),
                 'is_premium_active' => $this->subscriptionService->hasActivePremium($business),
+                'is_verified' => $this->subscriptionService->isBusinessVerified($business),
+                'can_boost' => $this->subscriptionService->canUseBoost($business),
                 'campaigns' => BoostPurchaseRequestResource::collection($campaigns)->resolve(),
             ]);
         } catch (Throwable $throwable) {
@@ -76,8 +78,12 @@ class VendorBoostController extends Controller
                 return sendResponse(false, 'No business profile found.', null, Response::HTTP_NOT_FOUND);
             }
 
-            if (! $this->subscriptionService->hasActivePremium($business)) {
-                return sendResponse(false, 'An active premium subscription is required. Add boost during premium checkout or upgrade first.', null, Response::HTTP_FORBIDDEN);
+            if (! $this->subscriptionService->canUseBoost($business)) {
+                $message = $this->subscriptionService->hasActivePremium($business)
+                    ? 'Verify your business before activating boost campaigns.'
+                    : 'An active premium subscription is required. Add boost during premium checkout or upgrade first.';
+
+                return sendResponse(false, $message, null, Response::HTTP_FORBIDDEN);
             }
 
             if (! empty($validated['renew_type'])) {
@@ -135,8 +141,12 @@ class VendorBoostController extends Controller
                 return sendResponse(false, 'No business profile found.', null, Response::HTTP_NOT_FOUND);
             }
 
-            if (! $this->subscriptionService->hasActivePremium($business)) {
-                return sendResponse(false, 'An active premium subscription is required.', null, Response::HTTP_FORBIDDEN);
+            if (! $this->subscriptionService->canUseBoost($business)) {
+                $message = $this->subscriptionService->hasActivePremium($business)
+                    ? 'Verify your business before paying for boost campaigns.'
+                    : 'An active premium subscription is required.';
+
+                return sendResponse(false, $message, null, Response::HTTP_FORBIDDEN);
             }
 
             $result = $this->boostPurchaseService->initBoostPayment(

@@ -5,7 +5,11 @@ namespace App\Http\Requests\Api\V1;
 use App\Http\Requests\Concerns\ValidatesBusinessHours;
 use App\Http\Requests\Concerns\ValidatesBusinessSubcategory;
 use App\Http\Requests\Concerns\ValidatesSocialAccounts;
+use App\Models\Category;
+use App\Services\BusinessInfoService;
+use App\Support\BusinessSubcategoryResolver;
 use App\Services\LocationCatalogService;
+use App\Services\SubscriptionService;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rules\File;
@@ -29,6 +33,48 @@ class UpdateBusinessInfoRequest extends FormRequest
     {
         $this->prepareBusinessHoursFromRequest();
         $this->prepareSocialAccountsFromRequest();
+        $this->prepareSubcategoryFromServices();
+    }
+
+    protected function prepareSubcategoryFromServices(): void
+    {
+        $subcategory = trim((string) $this->input('subcategory', ''));
+        $categoryId = $this->input('category_id');
+
+        if ($subcategory !== '' || $categoryId === null || $categoryId === '') {
+            return;
+        }
+
+        $services = $this->input('services', []);
+        if (! is_array($services)) {
+            $services = [];
+        }
+
+        $resolved = BusinessSubcategoryResolver::resolve(
+            null,
+            (int) $categoryId,
+            array_values(array_filter($services, fn ($service) => is_string($service))),
+        );
+
+        if ($resolved !== null) {
+            $this->merge(['subcategory' => $resolved]);
+
+            return;
+        }
+
+        $category = Category::query()->find((int) $categoryId, ['id', 'subcategories']);
+        if ($category === null) {
+            return;
+        }
+
+        $allowed = is_array($category->subcategories) ? $category->subcategories : [];
+        foreach ($allowed as $candidate) {
+            if (is_string($candidate) && trim($candidate) !== '') {
+                $this->merge(['subcategory' => trim($candidate)]);
+
+                break;
+            }
+        }
     }
 
     /**
@@ -54,9 +100,9 @@ class UpdateBusinessInfoRequest extends FormRequest
             'website' => ['nullable', 'string', 'max:2048', 'url'],
             ...$this->socialAccountsRules(),
             'logo' => ['nullable', File::image()->max(10 * 1024)],
-            'keep_cover_paths' => ['nullable', 'array', 'max:5'],
+            'keep_cover_paths' => ['nullable', 'array'],
             'keep_cover_paths.*' => ['required', 'string', 'max:500'],
-            'cover_photos' => ['nullable', 'array', 'max:5'],
+            'cover_photos' => ['nullable', 'array'],
             'cover_photos.*' => ['required', File::image()->max(10 * 1024)],
         ];
     }
@@ -75,6 +121,12 @@ class UpdateBusinessInfoRequest extends FormRequest
                 return;
             }
 
+            $user = $this->user('api');
+            $business = $user !== null ? app(BusinessInfoService::class)->findForUser($user) : null;
+            $maxPhotos = $business !== null
+                ? app(SubscriptionService::class)->maxCoverPhotos($business)
+                : app(SubscriptionService::class)->freePhotoLimit();
+
             $keepCount = $hasKeep ? count($keepPaths) : 0;
             $newCount = $hasNew ? count($newPhotos) : 0;
             $total = $keepCount + $newCount;
@@ -83,8 +135,11 @@ class UpdateBusinessInfoRequest extends FormRequest
                 $validator->errors()->add('cover_photos', 'Please keep or upload at least one gallery photo.');
             }
 
-            if ($total > 5) {
-                $validator->errors()->add('cover_photos', 'You can have up to 5 gallery photos.');
+            if ($total > $maxPhotos) {
+                $validator->errors()->add(
+                    'cover_photos',
+                    "You can have up to {$maxPhotos} gallery photos on your current plan.",
+                );
             }
         });
     }

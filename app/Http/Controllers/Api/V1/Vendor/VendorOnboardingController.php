@@ -22,6 +22,14 @@ class VendorOnboardingController extends Controller
             $vendor = $request->user('api');
             $business = $this->businessInfoService->findForUser($vendor);
 
+            if ($business === null && $vendor->isVendor()) {
+                try {
+                    $business = $this->businessInfoService->createFreeTemplateForUser($vendor);
+                } catch (\Throwable $exception) {
+                    report($exception);
+                }
+            }
+
             return sendResponse(
                 true,
                 'Vendor onboarding status retrieved successfully.',

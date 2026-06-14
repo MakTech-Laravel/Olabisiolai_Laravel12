@@ -4,6 +4,11 @@ return [
     'currency' => 'NGN',
     'duration_days' => 365,
 
+    'photo_limits' => [
+        'free' => 5,
+        'premium' => 20,
+    ],
+
     'packages' => [
         [
             'id' => 'premium_yearly',

@@ -3,6 +3,9 @@
 namespace App\Services;
 
 use App\Enums\BoostPurchaseRequestStatus;
+use App\Enums\SubscriptionPlan;
+use App\Enums\SubscriptionStatus;
+use App\Enums\VerificationStatus;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -28,6 +31,7 @@ class BoostListingPriorityService
 
         $prioritySql = $this->activeTierPrioritySubquerySql($locationId, $locationIds);
 
+        $query->orderByRaw('(' . $this->trustTierRankSql() . ') ASC');
         $query->orderByRaw("({$prioritySql}) ASC");
         $query->orderByDesc('sort_order');
         $query->orderByDesc('average_rating');
@@ -110,5 +114,28 @@ class BoostListingPriorityService
               AND bpr.ends_at > NOW()
               {$locationClause}
         ), " . self::TIER_RANK_NONE . ')';
+    }
+
+    /**
+     * Verified + premium listings rank above verified free, then unverified.
+     * Active boost tiers still apply within each trust band via {@see applyToQuery}.
+     */
+    private function trustTierRankSql(): string
+    {
+        $approved = VerificationStatus::Approved->value;
+        $premiumPlan = SubscriptionPlan::Premium->value;
+        $activeStatus = SubscriptionStatus::Active->value;
+
+        return "CASE
+            WHEN business_info.verification_status = '{$approved}' AND EXISTS (
+                SELECT 1 FROM business_subscriptions bs
+                WHERE bs.business_info_id = business_info.id
+                  AND bs.plan = '{$premiumPlan}'
+                  AND bs.status = '{$activeStatus}'
+                  AND (bs.expires_at IS NULL OR bs.expires_at > NOW())
+            ) THEN 1
+            WHEN business_info.verification_status = '{$approved}' THEN 2
+            ELSE 3
+        END";
     }
 }
