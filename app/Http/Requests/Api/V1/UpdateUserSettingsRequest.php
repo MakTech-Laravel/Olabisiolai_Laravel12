@@ -86,6 +86,7 @@ class UpdateUserSettingsRequest extends FormRequest
             'settings.notifications.push' => ['sometimes', 'boolean'],
             'settings.notifications.sms' => ['sometimes', 'boolean'],
             'settings.notifications.whatsapp' => ['sometimes', 'boolean'],
+            'settings.active_business_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
         ];
     }
 

@@ -31,11 +31,7 @@ class VendorBoostController extends Controller
     {
         try {
             $vendor = $request->user('api');
-            $business = $this->businessInfoService->findForUser($vendor);
-
-            if ($business === null) {
-                return sendResponse(false, 'No business profile found.', null, Response::HTTP_NOT_FOUND);
-            }
+            $business = $this->businessInfoService->resolveBusinessFromRequest($request);
 
             $business->load(['location.lgaBoost']);
 
@@ -74,11 +70,7 @@ class VendorBoostController extends Controller
             $validated = $this->validateDynamicBoostPayload($request);
 
             $vendor = $request->user('api');
-            $business = $this->businessInfoService->findForUser($vendor);
-
-            if ($business === null) {
-                return sendResponse(false, 'No business profile found.', null, Response::HTTP_NOT_FOUND);
-            }
+            $business = $this->businessInfoService->resolveBusinessFromRequest($request);
 
             if (! $this->subscriptionService->canUseBoost($business)) {
                 $message = $this->subscriptionService->hasActivePremium($business)
@@ -131,11 +123,7 @@ class VendorBoostController extends Controller
             $validated = $this->validateDynamicBoostPayload($request);
 
             $vendor = $request->user('api');
-            $business = $this->businessInfoService->findForUser($vendor);
-
-            if ($business === null) {
-                return sendResponse(false, 'No business profile found.', null, Response::HTTP_NOT_FOUND);
-            }
+            $business = $this->businessInfoService->resolveBusinessFromRequest($request);
 
             if (! $this->subscriptionService->canUseBoost($business)) {
                 $message = $this->subscriptionService->hasActivePremium($business)
@@ -178,11 +166,7 @@ class VendorBoostController extends Controller
             ]);
 
             $vendor = $request->user('api');
-            $business = $this->businessInfoService->findForUser($vendor);
-
-            if ($business === null) {
-                return sendResponse(false, 'No business profile found.', null, Response::HTTP_NOT_FOUND);
-            }
+            $business = $this->businessInfoService->resolveBusinessFromRequest($request);
 
             $result = $this->boostPurchaseService->resumeBoostPayment($business, (int) $validated['request_id']);
 

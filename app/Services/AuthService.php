@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use App\Support\LoginRoleCompatibility;
 use App\Support\PhoneNormalizer;
 
 class AuthService
@@ -169,7 +170,7 @@ class AuthService
             ]);
         }
 
-        if ($role !== null && $role !== '' && $user->role !== $role) {
+        if ($role !== null && $role !== '' && ! LoginRoleCompatibility::matches($role, $user->role)) {
             throw ValidationException::withMessages([
                 'phone' => ["This account is registered as a {$user->role}. Please log in with the correct account type."],
             ]);
@@ -220,7 +221,7 @@ class AuthService
             ]);
         }
 
-        if ($role !== null && $role !== '' && $user->role !== $role) {
+        if ($role !== null && $role !== '' && ! LoginRoleCompatibility::matches($role, $user->role)) {
             throw ValidationException::withMessages([
                 'code' => ["This account is registered as a {$user->role}. Please log in with the correct account type."],
             ]);
@@ -357,7 +358,7 @@ class AuthService
         }
 
         $expectedRole = $payload['expected_role'] ?? null;
-        if (is_string($expectedRole) && $expectedRole !== '' && $user->role !== $expectedRole) {
+        if (is_string($expectedRole) && $expectedRole !== '' && ! LoginRoleCompatibility::matches($expectedRole, $user->role)) {
             throw ValidationException::withMessages([
                 'code' => ["This account is registered as a {$user->role}. Please log in with the correct account type."],
             ]);
@@ -449,7 +450,7 @@ class AuthService
         }
 
         $resolvedRole = $expectedRole ?? ($payload['expected_role'] ?? null);
-        if (is_string($resolvedRole) && $resolvedRole !== '' && $user->role !== $resolvedRole) {
+        if (is_string($resolvedRole) && $resolvedRole !== '' && ! LoginRoleCompatibility::matches($resolvedRole, $user->role)) {
             throw ValidationException::withMessages([
                 'code' => ["This account is registered as a {$user->role}. Please log in with the correct account type."],
             ]);

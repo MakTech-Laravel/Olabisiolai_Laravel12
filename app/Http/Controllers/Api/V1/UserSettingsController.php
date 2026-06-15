@@ -11,6 +11,7 @@ use App\Http\Requests\Api\V1\VerifyUserEmailOtpRequest;
 use App\Http\Traits\FileManagementTrait;
 use App\Models\User;
 use App\Services\AuthService;
+use App\Services\BusinessInfoService;
 use App\Services\UserFollowService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -26,6 +27,7 @@ class UserSettingsController extends Controller
     public function __construct(
         private readonly AuthService $authService,
         private readonly UserFollowService $userFollowService,
+        private readonly BusinessInfoService $businessInfoService,
     ) {}
 
     public function profileShow(Request $request): Response
@@ -192,8 +194,18 @@ class UserSettingsController extends Controller
             }
 
             if (isset($validated['settings'])) {
+                $incoming = $validated['settings'];
+                if (array_key_exists('active_business_id', $incoming)) {
+                    $activeId = (int) $incoming['active_business_id'];
+                    if ($activeId > 0) {
+                        $this->businessInfoService->assertUserOwnsBusiness($user, $activeId);
+                    } else {
+                        $incoming['active_business_id'] = null;
+                    }
+                }
+
                 $current = is_array($user->settings) ? $user->settings : [];
-                $merged = array_replace_recursive($current, $validated['settings']);
+                $merged = array_replace_recursive($current, $incoming);
                 try {
                     $encoded = json_encode($merged, JSON_THROW_ON_ERROR);
                 } catch (JsonException) {

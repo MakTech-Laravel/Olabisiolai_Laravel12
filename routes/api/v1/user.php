@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\BusinessReportController;
 use App\Http\Controllers\Api\V1\ReviewReportController;
+use App\Http\Controllers\Api\V1\UserBusinessController;
 use App\Http\Controllers\Api\V1\UserFavoritesController;
 use App\Http\Controllers\Api\V1\UserFollowController;
 use App\Http\Controllers\Api\V1\UserModeController;
@@ -57,6 +58,9 @@ Route::prefix('user')->name('user.')->group(function () {
         });
 
         Route::get('/reviews', [UserReviewsController::class, 'index'])->name('reviews.index');
+
+        Route::get('/businesses', [UserBusinessController::class, 'index'])->name('businesses.index');
+        Route::post('/businesses', [UserBusinessController::class, 'store'])->name('businesses.store');
 
         Route::post('/reviews/{review}/report', [ReviewReportController::class, 'store'])
             ->middleware('throttle:5,1')

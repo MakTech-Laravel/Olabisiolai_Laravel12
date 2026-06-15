@@ -25,6 +25,9 @@ class PublicLocationCatalogController extends Controller
                 return [
                     'id' => $loc->id,
                     'label' => self::filterLabel($loc),
+                    'state_name' => trim((string) ($loc->state_name ?? '')),
+                    'city_name' => trim((string) ($loc->city_name ?? '')),
+                    'lga_name' => trim((string) ($loc->lga_name ?? '')),
                 ];
             })->values()->all();
 

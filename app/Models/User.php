@@ -167,11 +167,21 @@ class User extends Authenticatable
     }
 
     /**
+     * Primary business (lowest sort_order, then id) for backward compatibility.
+     *
      * @return HasOne<BusinessInfo, $this>
      */
     public function businessInfo(): HasOne
     {
-        return $this->hasOne(BusinessInfo::class);
+        return $this->hasOne(BusinessInfo::class)->orderBy('sort_order')->orderBy('id');
+    }
+
+    /**
+     * @return HasMany<BusinessInfo, $this>
+     */
+    public function businessInfos(): HasMany
+    {
+        return $this->hasMany(BusinessInfo::class)->orderBy('sort_order')->orderBy('id');
     }
 
     /**

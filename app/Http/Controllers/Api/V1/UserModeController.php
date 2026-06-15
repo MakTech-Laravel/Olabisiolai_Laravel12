@@ -43,26 +43,11 @@ class UserModeController extends Controller
 
     public function switchToCustomer(Request $request)
     {
-        /** @var User $user */
-        $user = $request->user('api');
-
-        try {
-            return sendResponse(
-                true,
-                'Customer mode enabled. Your business profile and followers are unchanged.',
-                $this->userModeService->switchToCustomerPayload($user),
-            );
-        } catch (ValidationException $exception) {
-            return sendResponse(
-                false,
-                $exception->validator->errors()->first(),
-                ['errors' => $exception->validator->errors()->toArray()],
-                Response::HTTP_UNPROCESSABLE_ENTITY,
-            );
-        } catch (Throwable $throwable) {
-            report($throwable);
-
-            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
-        }
+        return sendResponse(
+            false,
+            'Customer mode switching is no longer supported.',
+            null,
+            Response::HTTP_FORBIDDEN,
+        );
     }
 }
