@@ -29,16 +29,10 @@ class FeaturedBusinessSeeder extends Seeder
     {
         $categoriesByName = $this->resolveCategoriesFromSeeder();
 
-        $homeRepairId = $this->categoryId($categoriesByName, 'Home Repair Services');
-        $fashionBeautyId = $this->categoryId($categoriesByName, 'Fashion & Beauty Services');
-        $eventServicesId = $this->categoryId($categoriesByName, 'Event Services');
-        $techRepairId = $this->categoryId($categoriesByName, 'Tech Repair Services');
-        $foodStayId = $this->categoryId($categoriesByName, 'Food & Stay');
-
         $featuredBusinesses = [
             [
                 'name' => 'Sparkle Clean Services',
-                'category_id' => $homeRepairId,
+                'category' => 'Cleaners',
                 'services' => ['Cleaning Services'],
                 'location' => 'Lagos, Surulere',
                 'rating' => 4.9,
@@ -50,8 +44,8 @@ class FeaturedBusinessSeeder extends Seeder
             ],
             [
                 'name' => 'Elite Electrical Solutions',
-                'category_id' => $homeRepairId,
-                'services' => ['Electrician'],
+                'category' => 'Electricians',
+                'services' => ['Electrical installations and repairs'],
                 'location' => 'Lagos, Victoria Island',
                 'rating' => 4.6,
                 'reviews' => 89,
@@ -62,8 +56,8 @@ class FeaturedBusinessSeeder extends Seeder
             ],
             [
                 'name' => 'Glamour Beauty Spa',
-                'category_id' => $fashionBeautyId,
-                'services' => ['Spa'],
+                'category' => 'Spa & Massage',
+                'services' => ['Spa treatments', 'Massage'],
                 'location' => 'Lagos, Lekki',
                 'rating' => 4.7,
                 'reviews' => 156,
@@ -74,8 +68,8 @@ class FeaturedBusinessSeeder extends Seeder
             ],
             [
                 'name' => 'Royal Catering & Events',
-                'category_id' => $eventServicesId,
-                'services' => ['Caterer', 'Event Planner'],
+                'category' => 'Caterers',
+                'services' => ['Wedding catering', 'Corporate events'],
                 'location' => 'Lagos, Lekki',
                 'rating' => 4.9,
                 'reviews' => 178,
@@ -86,8 +80,8 @@ class FeaturedBusinessSeeder extends Seeder
             ],
             [
                 'name' => 'Vision Events & Decor',
-                'category_id' => $eventServicesId,
-                'services' => ['Event Decorator', 'Photographer'],
+                'category' => 'Decorators',
+                'services' => ['Event styling', 'Floral design'],
                 'location' => 'Abuja, Wuse',
                 'rating' => 4.5,
                 'reviews' => 92,
@@ -98,8 +92,8 @@ class FeaturedBusinessSeeder extends Seeder
             ],
             [
                 'name' => 'Tech Solutions Pro',
-                'category_id' => $techRepairId,
-                'services' => ['Laptop Repairer', 'Phone Repairer'],
+                'category' => 'Handymen',
+                'services' => ['Device repairs', 'On-site support'],
                 'location' => 'Lagos, Victoria Island',
                 'rating' => 4.8,
                 'reviews' => 145,
@@ -110,8 +104,8 @@ class FeaturedBusinessSeeder extends Seeder
             ],
             [
                 'name' => 'Premium Plumbing Services',
-                'category_id' => $homeRepairId,
-                'services' => ['Plumber'],
+                'category' => 'Plumbers',
+                'services' => ['Residential plumbing', 'Emergency repairs'],
                 'location' => 'Lagos, Ikeja',
                 'rating' => 4.8,
                 'reviews' => 127,
@@ -122,8 +116,8 @@ class FeaturedBusinessSeeder extends Seeder
             ],
             [
                 'name' => 'Midnight Mixology Lounge',
-                'category_id' => $foodStayId,
-                'services' => ['Mixologist', 'Bar'],
+                'category' => 'Private Chefs',
+                'services' => ['Craft cocktails', 'Private bar experiences'],
                 'location' => 'Lagos, Yaba',
                 'rating' => 4.7,
                 'reviews' => 112,
@@ -135,6 +129,8 @@ class FeaturedBusinessSeeder extends Seeder
         ];
 
         foreach ($featuredBusinesses as $data) {
+            $categoryId = $this->categoryId($categoriesByName, $data['category']);
+
             $locationParts = explode(', ', $data['location']);
             $stateName = $locationParts[0] ?? 'Lagos';
             $cityLgaName = $locationParts[1] ?? 'Ikeja';
@@ -168,7 +164,7 @@ class FeaturedBusinessSeeder extends Seeder
 
             $business = BusinessInfo::create([
                 'user_id' => $vendor->id,
-                'category_id' => $data['category_id'],
+                'category_id' => $categoryId,
                 'location_id' => $location->id,
                 'business_name' => $data['name'],
                 'business_description' => $data['description'],

@@ -17,7 +17,7 @@ class PublicCategoryCatalogController extends Controller
     {
         try {
             $categories = Category::query()
-                ->orderBy('name')
+                ->orderBy('name')->limit(10)
                 ->get(['id', 'name', 'subcategories', 'created_at', 'updated_at']);
 
             return sendResponse(true, 'Categories retrieved successfully.', [
