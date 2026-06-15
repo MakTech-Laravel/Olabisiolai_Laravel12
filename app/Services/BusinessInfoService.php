@@ -19,6 +19,7 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -423,6 +424,105 @@ class BusinessInfoService
             throw new \RuntimeException('A business profile already exists for this account.');
         }
 
+        return $this->createTemplateBusinessForUser($user, null, 0);
+    }
+
+    public function createAdditionalBusinessForUser(User $user, ?string $name = null): BusinessInfo
+    {
+        $existingCount = BusinessInfo::query()->where('user_id', $user->id)->count();
+        $maxSort = (int) (BusinessInfo::query()->where('user_id', $user->id)->max('sort_order') ?? 0);
+        $businessName = $this->resolveAdditionalBusinessName($user, $name, $existingCount);
+
+        $business = $this->createTemplateBusinessForUser($user, $businessName, $maxSort + 1);
+        $this->setActiveBusinessForUser($user, (int) $business->id);
+
+        return $business->fresh(['subscription', 'businessHours']);
+    }
+
+    public function assertUserOwnsBusiness(User $user, int $businessId): BusinessInfo
+    {
+        $business = $this->businessQueryForUser($user)
+            ->where('id', $businessId)
+            ->first();
+
+        if ($business === null) {
+            throw ValidationException::withMessages([
+                'business_id' => ['Business not found for this account.'],
+            ]);
+        }
+
+        return $business;
+    }
+
+    public function setActiveBusinessForUser(User $user, int $businessId): User
+    {
+        $this->assertUserOwnsBusiness($user, $businessId);
+
+        $settings = is_array($user->settings) ? $user->settings : [];
+        $settings['active_business_id'] = $businessId;
+        $user->forceFill(['settings' => $settings])->save();
+
+        return $user->fresh();
+    }
+
+    public function resolveBusinessFromRequest(Request $request): BusinessInfo
+    {
+        /** @var User|null $user */
+        $user = $request->user('api');
+        if ($user === null) {
+            throw ValidationException::withMessages([
+                'auth' => ['Unauthenticated.'],
+            ]);
+        }
+
+        $businessId = $request->input('business_id');
+        if ($businessId !== null && $businessId !== '') {
+            return $this->assertUserOwnsBusiness($user, (int) $businessId);
+        }
+
+        $business = $this->findForUser($user);
+        if ($business === null) {
+            throw ValidationException::withMessages([
+                'business_id' => ['No business profile found for this account.'],
+            ]);
+        }
+
+        return $business;
+    }
+
+    /**
+     * @return Builder<BusinessInfo>
+     */
+    private function businessQueryForUser(User $user): Builder
+    {
+        return BusinessInfo::query()
+            ->where('user_id', $user->id)
+            ->with([
+                'category:id,name,subcategories',
+                'location:id,lga_name,state_name,city_name,country_name,latitude,longitude,formatted_address',
+                'boost:id,business_info_id,is_active,activated_at,deactivated_at',
+                'subscription',
+                'businessHours',
+            ]);
+    }
+
+    private function resolveAdditionalBusinessName(User $user, ?string $name, int $existingCount): string
+    {
+        if ($name !== null && trim($name) !== '') {
+            return trim($name);
+        }
+
+        if ($existingCount === 0) {
+            return trim((string) $user->name) !== ''
+                ? trim((string) $user->name) . ' Business'
+                : 'My Business';
+        }
+
+        return 'Business ' . ($existingCount + 1);
+    }
+
+    private function createTemplateBusinessForUser(User $user, ?string $businessName, int $sortOrder): BusinessInfo
+    {
         $category = Category::query()->orderBy('id')->first();
         $categoryId = $category?->id;
         $locationId = Location::query()->value('id');
@@ -441,17 +541,20 @@ class BusinessInfoService
             }
         }
 
-        $businessName = trim((string) $user->name) !== ''
-            ? trim((string) $user->name) . ' Business'
-            : 'My Business';
+        if ($businessName === null || trim($businessName) === '') {
+            $businessName = trim((string) $user->name) !== ''
+                ? trim((string) $user->name) . ' Business'
+                : 'My Business';
+        }
 
         $phone = trim((string) ($user->phone ?? ''));
         if ($phone === '') {
             $phone = '+2348000000000';
         }
 
-        return DB::transaction(function () use ($user, $categoryId, $locationId, $businessName, $phone, $defaultSubcategory): BusinessInfo {
+        return DB::transaction(function () use ($user, $categoryId, $locationId, $businessName, $phone, $defaultSubcategory, $sortOrder): BusinessInfo {
             $business = BusinessInfo::query()->create([
+                'sort_order' => $sortOrder,
                 'location_id' => $locationId,
                 'user_id' => $user->id,
                 'category_id' => $categoryId,
@@ -605,17 +708,28 @@ class BusinessInfoService
         }
     }
 
-    public function findForUser(User $user): ?BusinessInfo
+    public function findForUser(User $user, ?int $businessId = null): ?BusinessInfo
     {
-        return BusinessInfo::query()
-            ->where('user_id', $user->id)
-            ->with([
-                'category:id,name,subcategories',
-                'location:id,lga_name,state_name,city_name,country_name,latitude,longitude,formatted_address',
-                'boost:id,business_info_id,is_active,activated_at,deactivated_at',
-                'subscription',
-                'businessHours',
-            ])
+        if ($businessId !== null) {
+            return $this->businessQueryForUser($user)
+                ->where('id', $businessId)
+                ->first();
+        }
+
+        $settings = is_array($user->settings) ? $user->settings : [];
+        $activeId = (int) ($settings['active_business_id'] ?? 0);
+        if ($activeId > 0) {
+            $active = $this->businessQueryForUser($user)
+                ->where('id', $activeId)
+                ->first();
+            if ($active !== null) {
+                return $active;
+            }
+        }
+
+        return $this->businessQueryForUser($user)
+            ->orderBy('sort_order')
+            ->orderBy('id')
             ->first();
     }
 
@@ -669,12 +783,15 @@ class BusinessInfoService
         bool $streetAddressProvided = false,
         bool $subcategoryProvided = true,
         ?array $keepCoverPaths = null,
+        ?int $businessId = null,
     ): BusinessInfo {
         if (! Location::where('id', $locationId)->exists()) {
             throw new \InvalidArgumentException('Invalid location ID.');
         }
 
-        $business = $this->findForUser($user);
+        $business = $businessId !== null
+            ? $this->assertUserOwnsBusiness($user, $businessId)
+            : $this->findForUser($user);
         if ($business === null) {
             throw new \RuntimeException('No business profile found for this account.');
         }
@@ -1051,9 +1168,11 @@ class BusinessInfoService
         ]);
     }
 
-    public function setBoostStatusForVendor(User $user, bool $isActive): Boost
+    public function setBoostStatusForVendor(User $user, bool $isActive, ?int $businessId = null): Boost
     {
-        $business = $this->findForUser($user);
+        $business = $businessId !== null
+            ? $this->assertUserOwnsBusiness($user, $businessId)
+            : $this->findForUser($user);
 
         if ($business === null) {
             throw new \RuntimeException('No business profile found for this account.');

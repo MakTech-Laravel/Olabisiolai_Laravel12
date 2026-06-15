@@ -219,6 +219,31 @@ class VendorAnalyticsService
         return $hours . 'h ' . $remainder . 'm';
     }
 
+    public function publicResponseTimeLabel(int $vendorUserId): ?string
+    {
+        $result = $this->averageResponseMinutes(
+            $vendorUserId,
+            now()->subDays(90),
+            now(),
+        );
+
+        if ($result['minutes'] === null) {
+            return null;
+        }
+
+        $minutes = (int) $result['minutes'];
+        if ($minutes < 60) {
+            $unit = $minutes === 1 ? 'minute' : 'minutes';
+
+            return "Usually responds within {$minutes} {$unit}";
+        }
+
+        $hours = (int) floor($minutes / 60);
+        $unit = $hours === 1 ? 'hour' : 'hours';
+
+        return "Usually responds within {$hours} {$unit}";
+    }
+
     /**
      * @return array{labels: list<string>, views: list<int>, enquiries: list<int>, views_heights: list<int>, enquiries_heights: list<int>, highlight_index: int}
      */

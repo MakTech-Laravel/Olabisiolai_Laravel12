@@ -22,6 +22,7 @@ use App\Models\Admin;
 use App\Models\User;
 use App\Services\AuthService;
 use App\Services\TwoFactorAuthenticationService;
+use App\Support\LoginRoleCompatibility;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
@@ -261,7 +262,7 @@ class AuthController extends Controller
                 return sendResponse(false, 'Admins must use the admin login URL.', null, Response::HTTP_FORBIDDEN);
             }
 
-            if (isset($validated['role']) && $user->role !== $validated['role']) {
+            if (isset($validated['role']) && ! LoginRoleCompatibility::matches($validated['role'], $user->role)) {
                 return sendResponse(false, "This account is registered as a {$user->role}. Please log in with role: {$user->role}.", null, Response::HTTP_FORBIDDEN);
             }
 
@@ -350,7 +351,7 @@ class AuthController extends Controller
                 return sendResponse(false, 'Admins must use the admin login URL.', null, Response::HTTP_FORBIDDEN);
             }
 
-            if (isset($validated['role']) && $user->role !== $validated['role']) {
+            if (isset($validated['role']) && ! LoginRoleCompatibility::matches($validated['role'], $user->role)) {
                 return sendResponse(
                     false,
                     "This account is registered as a {$user->role}. Please log in with role: {$user->role}.",
@@ -402,7 +403,7 @@ class AuthController extends Controller
                 return sendResponse(false, 'Admins must use the admin login URL.', null, Response::HTTP_FORBIDDEN);
             }
 
-            if (isset($validated['role']) && $user->role !== $validated['role']) {
+            if (isset($validated['role']) && ! LoginRoleCompatibility::matches($validated['role'], $user->role)) {
                 return sendResponse(
                     false,
                     "This account is registered as a {$user->role}. Please log in with role: {$user->role}.",

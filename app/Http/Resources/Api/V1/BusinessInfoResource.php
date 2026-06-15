@@ -7,6 +7,7 @@ use App\Models\BoostPurchaseRequest;
 use App\Services\BoostListingPriorityService;
 use App\Services\BusinessHoursService;
 use App\Services\SubscriptionService;
+use App\Services\VendorAnalyticsService;
 use App\Services\VerificationService;
 use App\Support\PhoneNormalizer;
 use Illuminate\Http\Request;
@@ -90,6 +91,10 @@ class BusinessInfoResource extends JsonResource
             'shows_verified_badge' => $verificationService->showsVerifiedBadge($this->resource),
             'is_verified' => $verificationService->showsVerifiedBadge($this->resource),
             'member_since' => humanDateTime($this->created_at, 'F Y'),
+            'response_time_label' => $this->when(
+                $this->relationLoaded('user') && $this->user !== null,
+                fn () => app(VendorAnalyticsService::class)->publicResponseTimeLabel((int) $this->user->id),
+            ),
             'verified_since' => $verificationService->showsVerifiedBadge($this->resource)
                 ? humanDateTime($this->verified_at ?? $this->updated_at, 'F Y')
                 : null,

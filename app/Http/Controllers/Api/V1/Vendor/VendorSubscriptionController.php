@@ -35,17 +35,19 @@ class VendorSubscriptionController extends Controller
     public function status(Request $request)
     {
         try {
-            $vendor = $request->user('api');
-            $business = $this->businessInfoService->findForUser($vendor);
-
-            if ($business === null) {
-                return sendResponse(false, 'No business profile found.', null, Response::HTTP_NOT_FOUND);
-            }
+            $business = $this->businessInfoService->resolveBusinessFromRequest($request);
 
             return sendResponse(true, 'Subscription status retrieved successfully.', [
                 'subscription' => $this->subscriptionService->subscriptionPayload($business),
                 'business' => new BusinessInfoResource($business),
             ]);
+        } catch (ValidationException $exception) {
+            return sendResponse(
+                false,
+                $exception->getMessage(),
+                ['errors' => $exception->errors()],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
         } catch (Throwable $throwable) {
             report($throwable);
 
@@ -57,14 +59,11 @@ class VendorSubscriptionController extends Controller
     {
         try {
             $vendor = $request->user('api');
-            $business = $this->businessInfoService->findForUser($vendor);
-
-            if ($business === null) {
-                return sendResponse(false, 'No business profile found. Please create a business profile first.', null, Response::HTTP_NOT_FOUND);
-            }
+            $business = $this->businessInfoService->resolveBusinessFromRequest($request);
 
             $validated = $request->validate([
                 'gateway' => ['nullable', 'string', Rule::in(PaymentGateway::values())],
+                'business_id' => ['sometimes', 'integer', 'min:1'],
                 'boost_tier_key' => ['nullable', 'string', 'max:30'],
                 'boost_duration_days' => ['nullable', 'integer', 'min:1', 'max:30'],
                 'boost_budget_amount' => ['nullable', 'numeric', 'min:500', 'max:5000'],
@@ -105,6 +104,13 @@ class VendorSubscriptionController extends Controller
                 'total_amount' => $checkout['total_amount'],
                 'currency' => $checkout['currency'],
             ], Response::HTTP_CREATED);
+        } catch (ValidationException $exception) {
+            return sendResponse(
+                false,
+                $exception->getMessage(),
+                ['errors' => $exception->errors()],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
         } catch (RuntimeException $exception) {
             return sendResponse(false, $exception->getMessage(), null, Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (Throwable $throwable) {
@@ -118,11 +124,7 @@ class VendorSubscriptionController extends Controller
     {
         try {
             $vendor = $request->user('api');
-            $business = $this->businessInfoService->findForUser($vendor);
-
-            if ($business === null) {
-                return sendResponse(false, 'No business profile found. Please create a business profile first.', null, Response::HTTP_NOT_FOUND);
-            }
+            $business = $this->businessInfoService->resolveBusinessFromRequest($request);
 
             $payment = $this->subscriptionService->findResumableSubscriptionPayment($vendor, $business);
 
@@ -145,6 +147,13 @@ class VendorSubscriptionController extends Controller
                 'total_amount' => $checkout['total_amount'],
                 'currency' => $checkout['currency'],
             ]);
+        } catch (ValidationException $exception) {
+            return sendResponse(
+                false,
+                $exception->getMessage(),
+                ['errors' => $exception->errors()],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
         } catch (RuntimeException $exception) {
             return sendResponse(false, $exception->getMessage(), null, Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (Throwable $throwable) {

@@ -56,7 +56,10 @@ class BusinessInfoController extends Controller
     public function show(Request $request)
     {
         $user = $request->user('api');
-        $business = $this->businessInfoService->findForUser($user);
+        $businessId = $request->integer('business_id');
+        $business = $businessId > 0
+            ? $this->businessInfoService->findForUser($user, $businessId)
+            : $this->businessInfoService->findForUser($user);
 
         if ($business === null) {
             return sendResponse(false, 'No business profile found.', null, Response::HTTP_NOT_FOUND);
@@ -147,6 +150,9 @@ class BusinessInfoController extends Controller
 
             $subcategoryProvided = array_key_exists('subcategory', $validated);
 
+            $businessId = $request->integer('business_id');
+            $resolvedBusinessId = $businessId > 0 ? $businessId : null;
+
             $business = $this->businessInfoService->updateForUser(
                 $user,
                 (int) $validated['category_id'],
@@ -166,6 +172,7 @@ class BusinessInfoController extends Controller
                 $streetAddressProvided,
                 $subcategoryProvided,
                 $request->has('keep_cover_paths') ? $keepCoverPaths : null,
+                $resolvedBusinessId,
             );
 
             $business->load(['category:id,name,subcategories,created_at,updated_at', 'businessHours']);
@@ -198,9 +205,12 @@ class BusinessInfoController extends Controller
         try {
             $validated = $request->validate([
                 'is_active' => ['required', 'boolean'],
+                'business_id' => ['sometimes', 'integer', 'min:1'],
             ]);
 
-            $boost = $this->businessInfoService->setBoostStatusForVendor($user, (bool) $validated['is_active']);
+            $businessId = isset($validated['business_id']) ? (int) $validated['business_id'] : null;
+
+            $boost = $this->businessInfoService->setBoostStatusForVendor($user, (bool) $validated['is_active'], $businessId);
 
             return sendResponse(true, 'Boost status updated successfully.', [
                 'boost' => [

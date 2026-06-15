@@ -6,7 +6,7 @@ return [
 
     'photo_limits' => [
         'free' => 5,
-        'premium' => 20,
+        'premium' => 25,
     ],
 
     'packages' => [
@@ -16,7 +16,7 @@ return [
             'amount' => 25000,
             'description' => 'Annual premium subscription with full vendor features and marketplace visibility.',
             'perks' => [
-                'Up to 20 photos',
+                'Up to 25 photos',
                 'Full analytics dashboard',
                 'Priority boost access',
                 'Featured in search results',

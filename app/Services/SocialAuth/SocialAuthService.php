@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\AuthService;
 use App\Services\TwoFactorAuthenticationService;
 use App\Services\WelcomeEmailService;
+use App\Support\LoginRoleCompatibility;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -154,7 +155,7 @@ class SocialAuthService
             ]);
         }
 
-        if ($user->role !== $role) {
+        if (! LoginRoleCompatibility::matches($role, $user->role)) {
             throw ValidationException::withMessages([
                 'role' => ["This account is registered as a {$user->role}. Please log in with role: {$user->role}."],
             ]);
