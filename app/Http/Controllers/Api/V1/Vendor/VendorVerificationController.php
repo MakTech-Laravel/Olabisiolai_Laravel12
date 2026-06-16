@@ -38,11 +38,7 @@ class VendorVerificationController extends Controller
     {
         try {
             $vendor = $request->user('api');
-            $business = $this->businessInfoService->findForUser($vendor);
-
-            if ($business === null) {
-                return sendResponse(false, 'No business profile found. Please create a business profile first.', null, Response::HTTP_NOT_FOUND);
-            }
+            $business = $this->businessInfoService->resolveBusinessFromRequest($request);
 
             if (! $this->verificationService->canApply($business)) {
                 return sendResponse(
@@ -111,15 +107,13 @@ class VendorVerificationController extends Controller
                 $payment = $payment->fresh();
             }
 
-            $business = $this->businessInfoService->findForUser($vendor);
+            $business = $this->businessInfoService->resolveBusinessFromRequest($request);
             $awaitingDocumentSubmission = false;
             $consumablePaymentId = null;
 
-            if ($business !== null) {
-                $statusData = $this->verificationService->getVendorVerificationStatus($business);
-                $awaitingDocumentSubmission = (bool) ($statusData['awaiting_document_submission'] ?? false);
-                $consumablePaymentId = $statusData['consumable_payment_id'] ?? null;
-            }
+            $statusData = $this->verificationService->getVendorVerificationStatus($business);
+            $awaitingDocumentSubmission = (bool) ($statusData['awaiting_document_submission'] ?? false);
+            $consumablePaymentId = $statusData['consumable_payment_id'] ?? null;
 
             return sendResponse(true, 'Payment confirmed successfully.', [
                 'payment' => $this->paymentService->toArray($payment->fresh()),
@@ -141,11 +135,7 @@ class VendorVerificationController extends Controller
     {
         try {
             $vendor = $request->user('api');
-            $business = $this->businessInfoService->findForUser($vendor);
-
-            if ($business === null) {
-                return sendResponse(false, 'No business profile found. Please create a business profile first.', null, Response::HTTP_NOT_FOUND);
-            }
+            $business = $this->businessInfoService->resolveBusinessFromRequest($request);
 
             $validated = $request->validate([
                 'payment_id' => ['required', 'integer', 'exists:payments,id'],
@@ -206,11 +196,7 @@ class VendorVerificationController extends Controller
     {
         try {
             $vendor = $request->user('api');
-            $business = $this->businessInfoService->findForUser($vendor);
-
-            if ($business === null) {
-                return sendResponse(false, 'No business profile found.', null, Response::HTTP_NOT_FOUND);
-            }
+            $business = $this->businessInfoService->resolveBusinessFromRequest($request);
 
             $statusData = $this->verificationService->getVendorVerificationStatus($business);
 
@@ -226,11 +212,7 @@ class VendorVerificationController extends Controller
     {
         try {
             $vendor = $request->user('api');
-            $business = $this->businessInfoService->findForUser($vendor);
-
-            if ($business === null) {
-                return sendResponse(false, 'No business profile found.', null, Response::HTTP_NOT_FOUND);
-            }
+            $business = $this->businessInfoService->resolveBusinessFromRequest($request);
 
             $validated = $request->validate([
                 'document_type' => ['required', 'string', 'in:payment_receipt,bank_transfer,business_registration,cac_document,identity_proof,address_proof,other'],

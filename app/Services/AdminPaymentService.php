@@ -233,6 +233,7 @@ class AdminPaymentService
             PaymentPurpose::Boost => 'boost',
             PaymentPurpose::Subscription => 'subscription',
             PaymentPurpose::Verification => 'verification',
+            PaymentPurpose::WalletTopUp => 'wallet_top_up',
         };
     }
 
