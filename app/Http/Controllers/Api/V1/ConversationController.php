@@ -38,6 +38,8 @@ final class ConversationController extends Controller
             'archived' => $request->boolean('archived') ? true : null,
             'unread' => $request->boolean('unread') ? true : null,
             'verified_only' => $request->boolean('verified_only') ? true : null,
+            'business_info_id' => $request->query('business_info_id'),
+            'inbox' => $request->query('inbox'),
         ], static fn(mixed $value): bool => $value !== null && $value !== '');
 
         $paginator = $this->conversations->getConversationsForUser($user, $filters, 30);
@@ -89,6 +91,7 @@ final class ConversationController extends Controller
             type: ConversationType::from($validated['type']),
             name: $validated['name'] ?? null,
             participantUserIds: $participantUserIds,
+            businessInfoId: isset($validated['business_info_id']) ? (int) $validated['business_info_id'] : null,
         );
 
         $conversation = $this->createConversation->execute($dto, $user);

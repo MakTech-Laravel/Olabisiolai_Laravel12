@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\V1\Vendor\VendorAdminChatController;
 use App\Http\Controllers\Api\V1\Vendor\VendorAnalyticsController;
 use App\Http\Controllers\Api\V1\Vendor\VendorDashboardController;
 use App\Http\Controllers\Api\V1\Vendor\VendorBoostController;
+use App\Http\Controllers\Api\V1\Vendor\VendorCatalogController;
 use App\Http\Controllers\Api\V1\Vendor\VendorOnboardingController;
 use App\Http\Controllers\Api\V1\Vendor\VendorPaymentMethodsController;
 use App\Http\Controllers\Api\V1\Vendor\VendorPaymentsController;
@@ -80,6 +81,13 @@ Route::prefix('vendor')->name('vendor.')->group(function () {
 
         Route::middleware('vendor.premium')->group(function () {
             Route::post('/business/boost-status', [BusinessInfoController::class, 'updateBoostStatus'])->name('business.boost-status');
+        });
+
+        Route::prefix('catalog')->name('catalog.')->group(function () {
+            Route::get('/', [VendorCatalogController::class, 'index'])->name('index');
+            Route::post('/', [VendorCatalogController::class, 'store'])->name('store');
+            Route::post('/{catalogItem}', [VendorCatalogController::class, 'update'])->name('update');
+            Route::delete('/{catalogItem}', [VendorCatalogController::class, 'destroy'])->name('destroy');
         });
 
         // Review Management Routes

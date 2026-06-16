@@ -64,6 +64,7 @@ class RegisterRequest extends FormRequest
             'role' => ['required', Rule::in(['user', 'vendor'])],
             'password' => ['required', 'confirmed', 'min:8'],
             'wants_marketing_emails' => ['nullable', 'boolean'],
+            'ref' => ['nullable', 'string', 'max:32'],
         ];
     }
 

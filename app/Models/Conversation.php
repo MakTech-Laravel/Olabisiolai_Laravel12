@@ -40,6 +40,7 @@ final class Conversation extends Model
         'name',
         'last_message_id',
         'created_by',
+        'business_info_id',
         'is_archived',
         'tenant_id',
     ];

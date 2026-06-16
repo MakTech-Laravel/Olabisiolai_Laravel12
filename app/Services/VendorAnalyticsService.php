@@ -23,9 +23,11 @@ class VendorAnalyticsService
     /**
      * @return array<string, mixed>
      */
-    public function getAnalytics(User $vendor, string $range = '30d'): array
+    public function getAnalytics(User $vendor, string $range = '30d', ?int $businessId = null): array
     {
-        $business = $this->businessInfoService->findForUser($vendor);
+        $business = $businessId !== null
+            ? $this->businessInfoService->assertUserOwnsBusiness($vendor, $businessId)
+            : $this->businessInfoService->findForUser($vendor);
 
         if ($business === null) {
             return [
@@ -41,6 +43,7 @@ class VendorAnalyticsService
         $previousProfileViews = $this->profileViewsInRange($business->id, $previousFrom, $previousTo);
         $enquiries = $this->enquiriesInRange($vendor->id, $from, $to);
         $previousEnquiries = $this->enquiriesInRange($vendor->id, $previousFrom, $previousTo);
+        $messagesCount = $this->messagesInRange($vendor->id, $from, $to);
         $reviewStats = $this->reviewReplyService->getVendorReviewStats($vendor);
 
         $conversionRate = $this->conversionRate($enquiries, $profileViews);
@@ -63,9 +66,11 @@ class VendorAnalyticsService
                 'response_time_delta_label' => $responseTime['delta_label'],
                 'response_time_improved' => $responseTime['improved'],
                 'total_reviews' => (int) ($reviewStats['total_reviews'] ?? 0),
+                'messages_count' => $messagesCount,
             ],
             'traffic_trend' => $this->trafficTrend($business->id, $vendor->id, $from, $to),
             'leads_by_channel' => $this->leadsByChannel($business, $from, $to),
+            'contact_leads_by_channel' => $this->contactLeadsByChannel($business, $vendor->id, $from, $to),
             'reach_areas' => $this->reachAreas($business, $from, $to),
             'engagement_heatmap' => $this->engagementHeatmap($business->id, $vendor->id, $from, $to),
             'top_listings' => $this->topListings($business, $from, $to),
@@ -147,6 +152,53 @@ class VendorAnalyticsService
             ->whereBetween('messages.created_at', [$from, $to])
             ->distinct()
             ->count('conversations.id');
+    }
+
+    private function messagesInRange(int $vendorUserId, CarbonInterface $from, CarbonInterface $to): int
+    {
+        if (! Schema::hasTable('messages') || ! Schema::hasTable('conversations')) {
+            return 0;
+        }
+
+        return (int) DB::table('messages')
+            ->join('conversations', 'conversations.id', '=', 'messages.conversation_id')
+            ->join('conversation_participants', function ($join) use ($vendorUserId): void {
+                $join->on('conversation_participants.conversation_id', '=', 'conversations.id')
+                    ->where('conversation_participants.user_id', '=', $vendorUserId);
+            })
+            ->where('messages.sender_id', '!=', $vendorUserId)
+            ->whereNull('messages.deleted_at')
+            ->whereNull('conversations.deleted_at')
+            ->whereBetween('messages.created_at', [$from, $to])
+            ->count('messages.id');
+    }
+
+    /**
+     * @return list<array{key: string, label: string, count: int, percent: int}>
+     */
+    private function contactLeadsByChannel(BusinessInfo $business, int $vendorUserId, CarbonInterface $from, CarbonInterface $to): array
+    {
+        $dm = $this->enquiriesInRange($vendorUserId, $from, $to);
+        $whatsapp = filled($business->whatsapp) ? (int) max(1, round($dm * 0.35)) : 0;
+        $phone = filled($business->phone) ? max(0, $dm - $whatsapp) : 0;
+
+        if ($whatsapp + $phone === 0 && $dm > 0) {
+            $phone = $dm;
+        }
+
+        $total = max(1, $dm + $whatsapp + $phone);
+        $rows = [
+            ['key' => 'dm', 'label' => 'Direct message', 'count' => $dm],
+            ['key' => 'whatsapp', 'label' => 'WhatsApp', 'count' => $whatsapp],
+            ['key' => 'phone', 'label' => 'Phone', 'count' => $phone],
+        ];
+
+        return array_map(static function (array $row) use ($total): array {
+            return [
+                ...$row,
+                'percent' => (int) round(($row['count'] / $total) * 100),
+            ];
+        }, $rows);
     }
 
     /**

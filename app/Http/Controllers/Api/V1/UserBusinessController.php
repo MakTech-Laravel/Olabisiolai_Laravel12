@@ -27,7 +27,13 @@ class UserBusinessController extends Controller
         }
 
         $businesses = $user->businessInfos()
-            ->with(['category', 'location', 'subscription'])
+            ->with(['category', 'location', 'subscription', 'catalogItems'])
+            ->withCount([
+                'reviews as reviews_count' => function ($query): void {
+                    $query->where('is_approved', true);
+                },
+                'followerLinks as followers_count',
+            ])
             ->orderBy('sort_order')
             ->orderBy('id')
             ->get();

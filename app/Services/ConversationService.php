@@ -37,7 +37,16 @@ final class ConversationService
             $existing = $this->conversations->findDirectBetweenUsers([$creator->id, $dto->participantUserIds[0]]);
 
             if ($existing !== null) {
-                return $existing;
+                if ($dto->businessInfoId !== null && $existing->business_info_id === null) {
+                    $existing->update(['business_info_id' => $dto->businessInfoId]);
+                }
+
+                return $existing->load([
+                    'lastMessage.sender',
+                    'lastMessage.attachments',
+                    'participantRows.user.messagingPresence',
+                    'participantRows.user.businessInfo:id,user_id,business_name,logo_path,verified_at',
+                ]);
             }
         }
 
@@ -47,6 +56,7 @@ final class ConversationService
                 'type' => $dto->type,
                 'name' => $dto->name,
                 'created_by' => $creator->id,
+                'business_info_id' => $dto->businessInfoId,
                 'tenant_id' => $dto->tenantId,
             ]);
             $this->conversations->save($conversation);

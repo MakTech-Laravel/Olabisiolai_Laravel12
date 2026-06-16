@@ -67,6 +67,7 @@ class VendorSubscriptionController extends Controller
                 'boost_tier_key' => ['nullable', 'string', 'max:30'],
                 'boost_duration_days' => ['nullable', 'integer', 'min:1', 'max:30'],
                 'boost_budget_amount' => ['nullable', 'numeric', 'min:500', 'max:5000'],
+                'use_wallet' => ['sometimes', 'boolean'],
             ]);
 
             $boostTierKey = isset($validated['boost_tier_key']) ? (string) $validated['boost_tier_key'] : null;
@@ -79,6 +80,22 @@ class VendorSubscriptionController extends Controller
 
             if (($boostTierKey === null) xor ($boostDurationDays === null)) {
                 return sendResponse(false, 'Provide both boost plan and duration, or omit boost entirely.', null, Response::HTTP_UNPROCESSABLE_ENTITY);
+            }
+
+            if ($request->boolean('use_wallet')) {
+                $walletCheckout = $this->subscriptionService->payPremiumFromWallet(
+                    $vendor,
+                    $business,
+                    $boostTierKey,
+                    $boostDurationDays,
+                    $boostBudgetAmount,
+                );
+
+                return sendResponse(true, 'Premium subscription paid from wallet successfully.', [
+                    'business' => new BusinessInfoResource($walletCheckout['business']),
+                    'wallet_balance' => $walletCheckout['wallet_balance'],
+                    'paid_from_wallet' => true,
+                ]);
             }
 
             $checkout = $this->subscriptionService->initPremiumPayment(

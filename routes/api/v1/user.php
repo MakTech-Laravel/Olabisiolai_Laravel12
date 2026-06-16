@@ -6,8 +6,10 @@ use App\Http\Controllers\Api\V1\UserBusinessController;
 use App\Http\Controllers\Api\V1\UserFavoritesController;
 use App\Http\Controllers\Api\V1\UserFollowController;
 use App\Http\Controllers\Api\V1\UserModeController;
+use App\Http\Controllers\Api\V1\UserReferralController;
 use App\Http\Controllers\Api\V1\UserReviewsController;
 use App\Http\Controllers\Api\V1\UserSettingsController;
+use App\Http\Controllers\Api\V1\UserWalletController;
 use App\Http\Controllers\Api\V1\Vendor\VendorOnboardingController;
 use App\Http\Controllers\Api\V1\Vendor\VendorSubscriptionController;
 use App\Http\Controllers\Api\V1\BusinessInfoController;
@@ -61,6 +63,14 @@ Route::prefix('user')->name('user.')->group(function () {
 
         Route::get('/businesses', [UserBusinessController::class, 'index'])->name('businesses.index');
         Route::post('/businesses', [UserBusinessController::class, 'store'])->name('businesses.store');
+
+        Route::get('/wallet', [UserWalletController::class, 'show'])->name('wallet.show');
+        Route::middleware('purchase.email_verified')->group(function (): void {
+            Route::post('/wallet/top-up', [UserWalletController::class, 'initTopUp'])->name('wallet.top-up');
+            Route::post('/wallet/top-up/confirm', [UserWalletController::class, 'confirmTopUp'])->name('wallet.top-up.confirm');
+        });
+
+        Route::get('/referrals', [UserReferralController::class, 'show'])->name('referrals.show');
 
         Route::post('/reviews/{review}/report', [ReviewReportController::class, 'store'])
             ->middleware('throttle:5,1')

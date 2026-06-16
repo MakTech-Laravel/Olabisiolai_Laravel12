@@ -32,6 +32,7 @@ final class StoreConversationRequest extends FormRequest
                 'max:36',
                 Rule::exists('users', 'uuid'),
             ],
+            'business_info_id' => ['nullable', 'integer', 'min:1', Rule::exists('business_info', 'id')],
         ];
     }
 }

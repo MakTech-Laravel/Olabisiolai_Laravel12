@@ -37,6 +37,7 @@ final class ConversationResource extends JsonResource
             'conversation_name' => $displayName,
             'conversation_image_url' => $peer['avatar_url'] ?? null,
             'is_archived' => $this->is_archived,
+            'business_info_id' => $this->business_info_id,
             'tenant_id' => $this->tenant_id,
             'unread_count' => (int) ($this->unread_count ?? 0),
             'has_unread' => (int) ($this->unread_count ?? 0) > 0,

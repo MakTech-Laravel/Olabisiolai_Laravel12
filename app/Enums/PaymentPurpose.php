@@ -7,6 +7,7 @@ enum PaymentPurpose: string
     case Verification = 'verification';
     case Boost = 'boosting';
     case Subscription = 'subscription';
+    case WalletTopUp = 'wallet_topup';
 
     public static function values(): array
     {
@@ -18,6 +19,7 @@ enum PaymentPurpose: string
             self::Verification => 'Verification',
             self::Boost => 'Boosting',
             self::Subscription => 'Subscription',
+            self::WalletTopUp => 'Wallet top-up',
         };
     }
 }

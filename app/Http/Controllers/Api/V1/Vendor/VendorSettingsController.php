@@ -42,10 +42,12 @@ class VendorSettingsController extends Controller
 
         try {
             $user->refresh();
+            $business = $this->businessInfoService->resolveBusinessFromRequest($request);
+            $business->load(['category', 'location', 'boost']);
+
+            return sendResponse(true, 'Vendor settings retrieved successfully.', $this->payload($user, $business));
+        } catch (ValidationException $exception) {
             $business = $this->businessInfoService->findForUser($user);
-            if ($business !== null) {
-                $business->load(['category', 'location', 'boost']);
-            }
 
             return sendResponse(true, 'Vendor settings retrieved successfully.', $this->payload($user, $business));
         } catch (Throwable $throwable) {

@@ -23,6 +23,7 @@ class SubscriptionService
         private readonly PaymentService $paymentService,
         private readonly PricingPackageService $pricingPackageService,
         private readonly BoostPurchaseService $boostPurchaseService,
+        private readonly WalletService $walletService,
     ) {}
 
     /**
@@ -298,6 +299,58 @@ class SubscriptionService
             'boost_payment' => $boostPayment,
             'total_amount' => $totalAmount,
             'currency' => $subscriptionPayment->currency,
+        ];
+    }
+
+    /**
+     * @return array{business: BusinessInfo, wallet_balance: float}
+     */
+    public function payPremiumFromWallet(
+        User $vendor,
+        BusinessInfo $business,
+        ?string $boostTierKey = null,
+        ?int $boostDurationDays = null,
+        ?float $boostBudgetAmount = null,
+    ): array {
+        $checkout = $this->initPremiumPayment(
+            $vendor,
+            $business,
+            $boostTierKey,
+            $boostDurationDays,
+            null,
+            $boostBudgetAmount,
+        );
+
+        $total = (float) $checkout['total_amount'];
+        $this->walletService->debit($vendor, $total, 'Premium checkout', $checkout['subscription_payment']->tx_ref);
+
+        /** @var Payment $subscriptionPayment */
+        $subscriptionPayment = $checkout['subscription_payment'];
+        $subscriptionPayment->update([
+            'status' => PaymentStatus::Completed,
+            'paid_at' => now(),
+            'gateway_transaction_id' => 'wallet_' . $subscriptionPayment->tx_ref,
+            'gateway' => PaymentGateway::Paystack,
+        ]);
+
+        $activatedBusiness = $this->activatePremiumAfterPayment($subscriptionPayment, $vendor);
+
+        $boostPayment = $checkout['boost_payment'];
+        if ($boostPayment instanceof Payment) {
+            $boostPayment->update([
+                'status' => PaymentStatus::Completed,
+                'paid_at' => now(),
+                'gateway_transaction_id' => 'wallet_' . $boostPayment->tx_ref,
+                'gateway' => PaymentGateway::Paystack,
+            ]);
+            $this->paymentService->consumePayment($boostPayment);
+        }
+
+        $wallet = $this->walletService->getOrCreateWallet($vendor);
+
+        return [
+            'business' => $activatedBusiness,
+            'wallet_balance' => (float) $wallet->balance,
         ];
     }
 

@@ -16,5 +16,6 @@ final readonly class ConversationDTO
         public ?string $name,
         public array $participantUserIds,
         public ?int $tenantId = null,
+        public ?int $businessInfoId = null,
     ) {}
 }

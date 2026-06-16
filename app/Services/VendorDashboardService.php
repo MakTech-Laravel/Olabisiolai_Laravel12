@@ -26,9 +26,11 @@ class VendorDashboardService
     /**
      * @return array<string, mixed>
      */
-    public function getDashboard(User $vendor): array
+    public function getDashboard(User $vendor, ?int $businessId = null): array
     {
-        $business = $this->businessInfoService->findForUser($vendor);
+        $business = $businessId !== null
+            ? $this->businessInfoService->assertUserOwnsBusiness($vendor, $businessId)
+            : $this->businessInfoService->findForUser($vendor);
 
         if ($business === null) {
             return [

@@ -32,6 +32,7 @@ class VerificationService
     public function __construct(
         private readonly PaymentService $paymentService,
         private readonly RealtimeNotificationService $realtimeNotifications,
+        private readonly ReferralService $referralService,
     ) {}
 
     public function canApply(BusinessInfo $business): bool
@@ -499,6 +500,8 @@ class VerificationService
                     note: $note,
                 );
             }
+
+            $this->referralService->onVerificationApproved($fresh);
 
             return $fresh;
         });

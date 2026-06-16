@@ -166,6 +166,14 @@ class BusinessInfo extends Model
     }
 
     /**
+     * @return HasMany<BusinessCatalogItem, $this>
+     */
+    public function catalogItems(): HasMany
+    {
+        return $this->hasMany(BusinessCatalogItem::class)->orderBy('sort_order')->orderBy('id');
+    }
+
+    /**
      * @return HasMany<Favorite, $this>
      */
     public function favorites(): HasMany

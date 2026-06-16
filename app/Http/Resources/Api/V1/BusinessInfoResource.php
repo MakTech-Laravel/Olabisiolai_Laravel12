@@ -117,6 +117,15 @@ class BusinessInfoResource extends JsonResource
             'active_boost_tier' => $this->resolveActiveBoostTierKey(),
             'business_hours' => $businessHoursService->serializeForBusiness($this->resource),
             'business_hours_display' => $businessHoursService->buildDisplayGroups($this->resource),
+            'catalog_items' => $this->when(
+                $this->relationLoaded('catalogItems') && $subscriptionService->hasActivePremium($this->resource),
+                fn () => BusinessCatalogItemResource::collection($this->catalogItems),
+            ),
+            'catalog_locked' => ! $subscriptionService->hasActivePremium($this->resource),
+            'catalog_count' => $this->when(
+                $this->relationLoaded('catalogItems'),
+                fn () => $this->catalogItems->count(),
+            ),
             'created_at' => humanDateTime($this->created_at),
             'updated_at' => humanDateTime($this->updated_at),
         ];
