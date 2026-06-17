@@ -815,6 +815,10 @@ class BusinessInfoService
         bool $subcategoryProvided = true,
         ?array $keepCoverPaths = null,
         ?int $businessId = null,
+        ?float $latitude = null,
+        ?float $longitude = null,
+        ?string $googlePlaceId = null,
+        bool $coordinatesProvided = false,
     ): BusinessInfo {
         if (! Location::where('id', $locationId)->exists()) {
             throw new \InvalidArgumentException('Invalid location ID.');
@@ -920,6 +924,10 @@ class BusinessInfoService
                 $finalCoverPaths,
                 $majorChange,
                 $normalizedHours,
+                $latitude,
+                $longitude,
+                $googlePlaceId,
+                $coordinatesProvided,
             ): BusinessInfo {
                 $payload = [
                     'location_id' => $locationId,
@@ -938,6 +946,12 @@ class BusinessInfoService
 
                 if ($streetAddressProvided) {
                     $payload['street_address'] = $normalizedStreetAddress;
+                }
+
+                if ($coordinatesProvided) {
+                    $payload['latitude'] = $latitude;
+                    $payload['longitude'] = $longitude;
+                    $payload['google_place_id'] = $googlePlaceId;
                 }
 
                 $business->update($payload);

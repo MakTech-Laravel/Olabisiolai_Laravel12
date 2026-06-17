@@ -34,6 +34,9 @@ class BusinessInfoResource extends JsonResource
             'business_name' => $this->business_name,
             'street_address' => $this->street_address,
             'full_address' => $this->street_address,
+            'latitude' => $this->latitude,
+            'longitude' => $this->longitude,
+            'google_place_id' => $this->google_place_id,
             'vendor' => $this->when(
                 $this->relationLoaded('user') && $this->user !== null,
                 fn() => [
