@@ -23,6 +23,7 @@ class VendorReviewController extends Controller
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
+            'business_id' => 'nullable|integer|min:1',
             'per_page' => 'integer|min:1|max:100',
             'rating' => 'integer|min:1|max:5',
             'has_reply' => 'boolean',
@@ -140,7 +141,12 @@ class VendorReviewController extends Controller
      */
     public function statistics(Request $request): JsonResponse
     {
-        $stats = $this->reviewReplyService->getVendorReviewStats($request->user());
+        $validated = $request->validate([
+            'business_id' => 'nullable|integer|min:1',
+        ]);
+
+        $businessId = isset($validated['business_id']) ? (int) $validated['business_id'] : null;
+        $stats = $this->reviewReplyService->getVendorReviewStats($request->user(), $businessId);
 
         return response()->json([
             'success' => true,

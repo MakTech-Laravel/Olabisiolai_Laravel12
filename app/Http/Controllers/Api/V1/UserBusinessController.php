@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V1\BusinessInfoResource;
+use App\Models\BusinessInfo;
 use App\Services\BusinessInfoService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -66,6 +67,39 @@ class UserBusinessController extends Controller
                 'business' => new BusinessInfoResource($business),
                 'created' => true,
             ], Response::HTTP_CREATED);
+        } catch (ValidationException $exception) {
+            return sendResponse(
+                false,
+                $exception->getMessage(),
+                ['errors' => $exception->errors()],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
+        } catch (RuntimeException $exception) {
+            return sendResponse(false, $exception->getMessage(), null, Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    public function destroy(Request $request, BusinessInfo $businessInfo): Response
+    {
+        /** @var \App\Models\User|null $user */
+        $user = $request->user('api');
+
+        if (! $user) {
+            return sendResponse(false, 'Unauthenticated.', null, Response::HTTP_UNAUTHORIZED);
+        }
+
+        if ((int) $businessInfo->user_id !== (int) $user->id) {
+            return sendResponse(false, 'Business not found for this account.', null, Response::HTTP_NOT_FOUND);
+        }
+
+        try {
+            $this->businessInfoService->deleteForUser($user, (int) $businessInfo->id);
+
+            return sendResponse(true, 'Business page deleted successfully.');
         } catch (ValidationException $exception) {
             return sendResponse(
                 false,

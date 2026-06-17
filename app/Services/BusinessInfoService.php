@@ -466,6 +466,36 @@ class BusinessInfoService
         return $user->fresh();
     }
 
+    public function deleteForUser(User $user, int $businessId): void
+    {
+        $business = $this->assertUserOwnsBusiness($user, $businessId);
+        $locationId = (int) $business->location_id;
+        $deletedId = (int) $business->id;
+
+        DB::transaction(function () use ($user, $business, $locationId, $deletedId): void {
+            $business->delete();
+
+            $this->locationService->refreshVendorCount($locationId);
+
+            $settings = is_array($user->settings) ? $user->settings : [];
+            if ((int) ($settings['active_business_id'] ?? 0) === $deletedId) {
+                $nextBusinessId = BusinessInfo::query()
+                    ->where('user_id', $user->id)
+                    ->orderBy('sort_order')
+                    ->orderBy('id')
+                    ->value('id');
+
+                if ($nextBusinessId !== null) {
+                    $settings['active_business_id'] = (int) $nextBusinessId;
+                } else {
+                    unset($settings['active_business_id']);
+                }
+
+                $user->forceFill(['settings' => $settings])->save();
+            }
+        });
+    }
+
     public function resolveBusinessFromRequest(Request $request): BusinessInfo
     {
         /** @var User|null $user */
