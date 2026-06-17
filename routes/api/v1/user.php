@@ -63,6 +63,7 @@ Route::prefix('user')->name('user.')->group(function () {
 
         Route::get('/businesses', [UserBusinessController::class, 'index'])->name('businesses.index');
         Route::post('/businesses', [UserBusinessController::class, 'store'])->name('businesses.store');
+        Route::delete('/businesses/{businessInfo}', [UserBusinessController::class, 'destroy'])->name('businesses.destroy');
 
         Route::get('/wallet', [UserWalletController::class, 'show'])->name('wallet.show');
         Route::middleware('purchase.email_verified')->group(function (): void {

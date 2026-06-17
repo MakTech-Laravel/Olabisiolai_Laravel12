@@ -150,6 +150,10 @@ class BusinessInfoController extends Controller
 
             $subcategoryProvided = array_key_exists('subcategory', $validated);
 
+            $coordinatesProvided = array_key_exists('latitude', $validated)
+                || array_key_exists('longitude', $validated)
+                || array_key_exists('google_place_id', $validated);
+
             $businessId = $request->integer('business_id');
             $resolvedBusinessId = $businessId > 0 ? $businessId : null;
 
@@ -173,6 +177,10 @@ class BusinessInfoController extends Controller
                 $subcategoryProvided,
                 $request->has('keep_cover_paths') ? $keepCoverPaths : null,
                 $resolvedBusinessId,
+                isset($validated['latitude']) ? (float) $validated['latitude'] : null,
+                isset($validated['longitude']) ? (float) $validated['longitude'] : null,
+                $validated['google_place_id'] ?? null,
+                $coordinatesProvided,
             );
 
             $business->load(['category:id,name,subcategories,created_at,updated_at', 'businessHours']);

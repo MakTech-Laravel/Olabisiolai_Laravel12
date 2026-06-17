@@ -466,6 +466,36 @@ class BusinessInfoService
         return $user->fresh();
     }
 
+    public function deleteForUser(User $user, int $businessId): void
+    {
+        $business = $this->assertUserOwnsBusiness($user, $businessId);
+        $locationId = (int) $business->location_id;
+        $deletedId = (int) $business->id;
+
+        DB::transaction(function () use ($user, $business, $locationId, $deletedId): void {
+            $business->delete();
+
+            $this->locationService->refreshVendorCount($locationId);
+
+            $settings = is_array($user->settings) ? $user->settings : [];
+            if ((int) ($settings['active_business_id'] ?? 0) === $deletedId) {
+                $nextBusinessId = BusinessInfo::query()
+                    ->where('user_id', $user->id)
+                    ->orderBy('sort_order')
+                    ->orderBy('id')
+                    ->value('id');
+
+                if ($nextBusinessId !== null) {
+                    $settings['active_business_id'] = (int) $nextBusinessId;
+                } else {
+                    unset($settings['active_business_id']);
+                }
+
+                $user->forceFill(['settings' => $settings])->save();
+            }
+        });
+    }
+
     public function resolveBusinessFromRequest(Request $request): BusinessInfo
     {
         /** @var User|null $user */
@@ -785,6 +815,10 @@ class BusinessInfoService
         bool $subcategoryProvided = true,
         ?array $keepCoverPaths = null,
         ?int $businessId = null,
+        ?float $latitude = null,
+        ?float $longitude = null,
+        ?string $googlePlaceId = null,
+        bool $coordinatesProvided = false,
     ): BusinessInfo {
         if (! Location::where('id', $locationId)->exists()) {
             throw new \InvalidArgumentException('Invalid location ID.');
@@ -890,6 +924,10 @@ class BusinessInfoService
                 $finalCoverPaths,
                 $majorChange,
                 $normalizedHours,
+                $latitude,
+                $longitude,
+                $googlePlaceId,
+                $coordinatesProvided,
             ): BusinessInfo {
                 $payload = [
                     'location_id' => $locationId,
@@ -908,6 +946,12 @@ class BusinessInfoService
 
                 if ($streetAddressProvided) {
                     $payload['street_address'] = $normalizedStreetAddress;
+                }
+
+                if ($coordinatesProvided) {
+                    $payload['latitude'] = $latitude;
+                    $payload['longitude'] = $longitude;
+                    $payload['google_place_id'] = $googlePlaceId;
                 }
 
                 $business->update($payload);

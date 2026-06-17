@@ -5,11 +5,22 @@ namespace App\Services;
 use App\Models\Review;
 use App\Models\ReviewReply;
 use App\Models\User;
+use App\Models\BusinessInfo;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 
 class ReviewReplyService
 {
+    private function resolveVendorBusiness(User $vendor, ?int $businessId = null): ?BusinessInfo
+    {
+        $service = app(BusinessInfoService::class);
+
+        if ($businessId !== null && $businessId > 0) {
+            return $service->assertUserOwnsBusiness($vendor, $businessId);
+        }
+
+        return $service->findForUser($vendor);
+    }
     /**
      * Store a new reply for a review.
      */
@@ -75,9 +86,9 @@ class ReviewReplyService
     {
         $perPage = $filters['per_page'] ?? 15;
         $page = $filters['page'] ?? 1;
+        $businessId = isset($filters['business_id']) ? (int) $filters['business_id'] : null;
 
-        // Get the vendor's business
-        $business = $vendor->businessInfo;
+        $business = $this->resolveVendorBusiness($vendor, $businessId);
         if (! $business) {
             abort(404, 'Business not found for this vendor');
         }
@@ -119,9 +130,9 @@ class ReviewReplyService
     /**
      * Get vendor's review statistics.
      */
-    public function getVendorReviewStats(User $vendor): array
+    public function getVendorReviewStats(User $vendor, ?int $businessId = null): array
     {
-        $business = $vendor->businessInfo;
+        $business = $this->resolveVendorBusiness($vendor, $businessId);
         if (! $business) {
             return [
                 'total_reviews' => 0,
