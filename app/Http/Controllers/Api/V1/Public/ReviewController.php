@@ -24,8 +24,10 @@ class ReviewController extends Controller
         $validated = $request->validate([
             'id' => 'nullable|integer|exists:business_info,id',
             'business_id' => 'nullable|integer|exists:business_info,id',
+            'page' => 'nullable|integer|min:1',
             'per_page' => 'integer|min:1|max:100',
             'rating' => 'integer|min:1|max:5',
+            'sort' => 'nullable|in:recent,top',
         ]);
 
         // Support both 'id' and 'business_id' parameters
@@ -38,7 +40,7 @@ class ReviewController extends Controller
 
         $reviews = $this->reviewService->getReviews($filters);
 
-        return response()->json([
+        $payload = [
             'success' => true,
             'data' => ReviewResource::collection($reviews->items()),
             'pagination' => [
@@ -47,7 +49,13 @@ class ReviewController extends Controller
                 'per_page' => $reviews->perPage(),
                 'total' => $reviews->total(),
             ],
-        ]);
+        ];
+
+        if ($businessId) {
+            $payload['summary'] = $this->reviewService->getBusinessReviewsSummary((int) $businessId);
+        }
+
+        return response()->json($payload);
     }
 
     /**

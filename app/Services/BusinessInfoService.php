@@ -554,24 +554,6 @@ class BusinessInfoService
 
     private function createTemplateBusinessForUser(User $user, ?string $businessName, int $sortOrder): BusinessInfo
     {
-        $category = Category::query()->orderBy('id')->first();
-        $categoryId = $category?->id;
-        $locationId = Location::query()->value('id');
-
-        if ($categoryId === null || $locationId === null) {
-            throw new \RuntimeException('Platform categories and locations must be configured before creating a vendor profile.');
-        }
-
-        $defaultSubcategory = null;
-        $allowedSubcategories = is_array($category?->subcategories) ? $category->subcategories : [];
-        foreach ($allowedSubcategories as $candidate) {
-            if (is_string($candidate) && trim($candidate) !== '') {
-                $defaultSubcategory = trim($candidate);
-
-                break;
-            }
-        }
-
         if ($businessName === null || trim($businessName) === '') {
             $businessName = trim((string) $user->name) !== ''
                 ? trim((string) $user->name) . ' Business'
@@ -583,13 +565,13 @@ class BusinessInfoService
             $phone = '+2348000000000';
         }
 
-        return DB::transaction(function () use ($user, $categoryId, $locationId, $businessName, $phone, $defaultSubcategory, $sortOrder): BusinessInfo {
+        return DB::transaction(function () use ($user, $businessName, $phone, $sortOrder): BusinessInfo {
             $business = BusinessInfo::query()->create([
                 'sort_order' => $sortOrder,
-                'location_id' => $locationId,
+                'location_id' => null,
                 'user_id' => $user->id,
-                'category_id' => $categoryId,
-                'subcategory' => $defaultSubcategory,
+                'category_id' => null,
+                'subcategory' => null,
                 'business_name' => $businessName,
                 'street_address' => null,
                 'business_description' => 'Tell customers about your business and the services you offer.',
@@ -612,8 +594,6 @@ class BusinessInfoService
                 SubscriptionPlan::Free,
                 SubscriptionStatus::Active,
             );
-
-            $this->locationService->refreshVendorCount($locationId);
 
             return $business->load(['subscription', 'businessHours']);
         });
