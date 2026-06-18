@@ -97,8 +97,13 @@ class ReviewService
         $perPage = $filters['per_page'] ?? 15;
         $page = $filters['page'] ?? 1;
 
-        $query = Review::with(['images', 'user:id,first_name,last_name,email', 'business:id,business_name'])
-            ->latest('created_at');
+        $query = Review::with(['images', 'user:id,first_name,last_name,email', 'business:id,business_name']);
+
+        if (($filters['sort'] ?? 'recent') === 'top') {
+            $query->orderByDesc('rating')->orderByDesc('created_at');
+        } else {
+            $query->latest('created_at');
+        }
 
         if (isset($filters['business_id'])) {
             $query->where('business_id', '=', $filters['business_id']);

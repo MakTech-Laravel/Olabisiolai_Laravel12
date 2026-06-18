@@ -133,11 +133,10 @@ class UserFollowController extends Controller
             }
 
             $result = $this->userFollowService->toggle($user, $target);
-            $message = $result['following'] ? 'You are now following this vendor.' : 'Unfollowed successfully.';
 
             return sendResponse(
                 true,
-                $message,
+                'Follow status updated.',
                 [
                     ...$result,
                     'followers_count' => $this->userFollowService->followersCount($target->id),
