@@ -48,9 +48,9 @@ final class ConversationInitiationService
             ]);
         }
 
-        // Legacy vendor-role accounts cannot initiate (reply-only inbox).
-        if ($creator->isVendor()) {
-            if ($target->isVendor()) {
+        // Business owners (vendor role or any business page) cannot initiate — reply-only inbox.
+        if ($creator->isVendor() || $creator->businessInfos()->exists()) {
+            if ($target->isVendor() || $target->businessInfos()->exists()) {
                 throw ValidationException::withMessages([
                     'participants' => ['Business-to-business messaging is not allowed.'],
                 ]);

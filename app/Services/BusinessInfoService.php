@@ -595,8 +595,19 @@ class BusinessInfoService
                 SubscriptionStatus::Active,
             );
 
+            $this->promoteUserToVendorIfNeeded($user);
+
             return $business->load(['subscription', 'businessHours']);
         });
+    }
+
+    private function promoteUserToVendorIfNeeded(User $user): void
+    {
+        if ($user->role === 'vendor') {
+            return;
+        }
+
+        $user->forceFill(['role' => 'vendor'])->save();
     }
 
     /**
@@ -703,9 +714,7 @@ class BusinessInfoService
 
                 $this->locationService->refreshVendorCount($locationId);
 
-                if ($user->role !== 'vendor') {
-                    $user->forceFill(['role' => 'vendor'])->save();
-                }
+                $this->promoteUserToVendorIfNeeded($user);
 
                 $this->setActiveBusinessForUser($user, (int) $business->id);
 

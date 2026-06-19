@@ -14,8 +14,8 @@ class UserModeService
     ) {}
 
     /**
-     * Create (or reuse) a business page for management. Does not change account role
-     * or social identity — users always interact as themselves.
+     * Create (or reuse) a business page for management and promote the account to vendor
+     * so messaging rules (reply-only inbox) apply consistently.
      *
      * @return array{user: User, business: BusinessInfo|null, created_business: bool}
      */
@@ -37,9 +37,10 @@ class UserModeService
 
         $settings = is_array($user->settings) ? $user->settings : [];
         $settings['active_business_id'] = $business->id;
-        unset($settings['active_profile_mode']);
+        $settings['active_profile_mode'] = 'vendor';
 
         $user->forceFill([
+            'role' => 'vendor',
             'settings' => $settings,
         ])->save();
 

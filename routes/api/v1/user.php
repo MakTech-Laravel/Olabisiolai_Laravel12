@@ -71,6 +71,9 @@ Route::prefix('user')->name('user.')->group(function () {
         Route::get('/reviews', [UserReviewsController::class, 'index'])->name('reviews.index');
 
         Route::get('/businesses', [UserBusinessController::class, 'index'])->name('businesses.index');
+        Route::get('/businesses/show', [BusinessInfoController::class, 'show'])->name('businesses.show');
+        Route::put('/businesses/update', [BusinessInfoController::class, 'update'])->name('businesses.update');
+        Route::post('/businesses/update', [BusinessInfoController::class, 'update'])->name('businesses.update.post');
         Route::post('/businesses', [UserBusinessController::class, 'store'])->name('businesses.store');
         Route::delete('/businesses/{businessInfo}', [UserBusinessController::class, 'destroy'])->name('businesses.destroy');
 
