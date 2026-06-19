@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace App\Support;
 
+use App\Enums\BusinessStatus;
 use App\Enums\ConversationType;
 use App\Enums\MessageStatus;
 use App\Enums\MessageType;
+use App\Models\BusinessInfo;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\User;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 final class MessagingHelper
 {
@@ -38,9 +41,9 @@ final class MessagingHelper
     }
 
     /**
-     * Label shown for a participant (vendor → business name, user → personal name).
+     * Personal name shown in direct messages (never a business listing title).
      */
-    public static function participantDisplayName(?User $user): string
+    public static function participantPersonalName(?User $user): string
     {
         if ($user === null) {
             return 'Unknown';
@@ -50,13 +53,33 @@ final class MessagingHelper
             return (string) config('messaging.platform_admin_display_name', 'Olabisiolai Admin');
         }
 
-        if ($user->role === 'vendor') {
-            if ($user->relationLoaded('businessInfo') && filled($user->businessInfo?->business_name)) {
-                return trim((string) $user->businessInfo->business_name);
-            }
+        return self::userPersonalName($user);
+    }
+
+    /**
+     * Primary vendor business name when the user owns a listing (subtitle / context only).
+     */
+    public static function participantBusinessName(?User $user): ?string
+    {
+        if ($user === null || $user->role !== 'vendor') {
+            return null;
         }
 
-        return self::userPersonalName($user);
+        if ($user->relationLoaded('businessInfo') && filled($user->businessInfo?->business_name)) {
+            $name = trim((string) $user->businessInfo->business_name);
+
+            return $name !== '' ? $name : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * @deprecated Prefer {@see participantPersonalName()} for direct chats.
+     */
+    public static function participantDisplayName(?User $user): string
+    {
+        return self::participantPersonalName($user);
     }
 
     /**
@@ -68,7 +91,8 @@ final class MessagingHelper
             return '';
         }
 
-        if ($user->role === 'vendor') {
+        $businessName = self::participantBusinessName($user);
+        if ($businessName !== null) {
             if ($user->relationLoaded('businessInfo') && $user->businessInfo !== null) {
                 $category = $user->businessInfo->relationLoaded('category')
                     ? trim((string) ($user->businessInfo->category?->name ?? ''))
@@ -79,7 +103,7 @@ final class MessagingHelper
                 }
             }
 
-            return 'Business';
+            return $businessName;
         }
 
         $email = trim((string) $user->email);
@@ -96,7 +120,7 @@ final class MessagingHelper
             $other = self::otherParticipant($conversation, $viewer);
 
             if ($other?->user !== null) {
-                return self::participantDisplayName($other->user);
+                return self::participantPersonalName($other->user);
             }
 
             return 'Direct message';
@@ -125,8 +149,8 @@ final class MessagingHelper
         }
 
         $user = $other->user;
-
-        $displayName = self::participantDisplayName($user);
+        $personalName = self::participantPersonalName($user);
+        $businessName = self::participantBusinessName($user);
 
         $businessInfoId = null;
         if (
@@ -142,15 +166,54 @@ final class MessagingHelper
             'id' => $user->id,
             'uuid' => $user->uuid,
             'role' => $user->role,
-            'name' => $displayName,
-            'display_name' => $displayName,
+            'personal_name' => $personalName,
+            'name' => $personalName,
+            'display_name' => $personalName,
+            'business_name' => $businessName,
             'business_info_id' => $businessInfoId > 0 ? $businessInfoId : null,
-            'avatar_url' => self::userAvatarUrl($user),
+            'avatar_url' => self::userPersonalAvatarUrl($user),
             'is_verified' => self::isVerifiedVendor($user),
+            'owned_businesses' => self::ownedBusinessesSummary($user),
             'presence' => $user->relationLoaded('messagingPresence') && $user->messagingPresence
                 ? app(\App\Services\PresenceService::class)->toPublicPayload($user->messagingPresence)
                 : null,
         ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public static function ownedBusinessesSummary(User $user): array
+    {
+        /** @var Collection<int, BusinessInfo> $businesses */
+        $businesses = $user->relationLoaded('businessInfos')
+            ? $user->businessInfos
+            : collect();
+
+        if ($businesses->isEmpty() && $user->relationLoaded('businessInfo') && $user->businessInfo instanceof BusinessInfo) {
+            $businesses = collect([$user->businessInfo]);
+        }
+
+        return $businesses
+            ->filter(static fn (BusinessInfo $business): bool => $business->business_status === BusinessStatus::Active && ! $business->is_flagged)
+            ->map(static function (BusinessInfo $business): array {
+                $categoryName = $business->relationLoaded('category') && $business->category
+                    ? trim((string) $business->category->name)
+                    : null;
+                $location = $business->relationLoaded('location') && $business->location
+                    ? trim((string) $business->location->full_name)
+                    : null;
+
+                return [
+                    'id' => $business->id,
+                    'business_name' => $business->business_name,
+                    'logo_url' => public_media_url($business->logo_path),
+                    'category_name' => $categoryName !== '' ? $categoryName : null,
+                    'location' => $location !== '' ? $location : null,
+                ];
+            })
+            ->values()
+            ->all();
     }
 
     public static function messagePreview(?Message $message): ?string
@@ -202,7 +265,7 @@ final class MessagingHelper
 
         if ($message->relationLoaded('reads')) {
             $readByOther = $message->reads->contains(
-                static fn($read): bool => (int) $read->user_id !== (int) $viewer->id,
+                static fn ($read): bool => (int) $read->user_id !== (int) $viewer->id,
             );
 
             if ($readByOther) {
@@ -237,17 +300,21 @@ final class MessagingHelper
         return $at->format('g:i A');
     }
 
-    public static function userAvatarUrl(?User $user): ?string
+    public static function userPersonalAvatarUrl(?User $user): ?string
     {
         if ($user === null) {
             return null;
         }
 
-        if ($user->relationLoaded('businessInfo') && filled($user->businessInfo?->logo_path)) {
-            return public_media_url((string) $user->businessInfo->logo_path, null);
-        }
-
         return $user->image_url;
+    }
+
+    /**
+     * @deprecated Prefer {@see userPersonalAvatarUrl()} in direct messaging UI.
+     */
+    public static function userAvatarUrl(?User $user): ?string
+    {
+        return self::userPersonalAvatarUrl($user);
     }
 
     public static function isVerifiedVendor(?User $user): bool
@@ -292,7 +359,7 @@ final class MessagingHelper
         }
 
         return $conversation->participantRows->first(
-            static fn($row): bool => (int) $row->user_id !== (int) $viewer->id,
+            static fn ($row): bool => (int) $row->user_id !== (int) $viewer->id,
         );
     }
 }

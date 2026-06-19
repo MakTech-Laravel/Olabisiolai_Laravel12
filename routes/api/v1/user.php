@@ -50,6 +50,7 @@ Route::prefix('user')->name('user.')->group(function () {
 
         Route::prefix('follows')->name('follows.')->group(function () {
             Route::get('/stats', [UserFollowController::class, 'stats'])->name('stats');
+            Route::get('/followers', [UserFollowController::class, 'followers'])->name('followers');
             Route::get('/following', [UserFollowController::class, 'following'])->name('following');
             Route::post('/toggle', [UserFollowController::class, 'toggle'])->name('toggle');
         });

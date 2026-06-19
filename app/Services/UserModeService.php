@@ -14,13 +14,16 @@ class UserModeService
     ) {}
 
     /**
+     * Create (or reuse) a business page for management. Does not change account role
+     * or social identity — users always interact as themselves.
+     *
      * @return array{user: User, business: BusinessInfo|null, created_business: bool}
      */
     public function switchToVendor(User $user): array
     {
         if ($user->isAdmin()) {
             throw ValidationException::withMessages([
-                'mode' => ['Admin accounts cannot switch profile modes.'],
+                'mode' => ['Admin accounts cannot create business pages.'],
             ]);
         }
 
@@ -33,10 +36,10 @@ class UserModeService
         }
 
         $settings = is_array($user->settings) ? $user->settings : [];
-        $settings['active_profile_mode'] = 'vendor';
+        $settings['active_business_id'] = $business->id;
+        unset($settings['active_profile_mode']);
 
         $user->forceFill([
-            'role' => 'vendor',
             'settings' => $settings,
         ])->save();
 
@@ -47,25 +50,6 @@ class UserModeService
         ];
     }
 
-    public function switchToCustomer(User $user): User
-    {
-        if ($user->isAdmin()) {
-            throw ValidationException::withMessages([
-                'mode' => ['Admin accounts cannot switch profile modes.'],
-            ]);
-        }
-
-        $settings = is_array($user->settings) ? $user->settings : [];
-        $settings['active_profile_mode'] = 'customer';
-
-        $user->forceFill([
-            'role' => 'user',
-            'settings' => $settings,
-        ])->save();
-
-        return $user->fresh();
-    }
-
     /**
      * @return array<string, mixed>
      */
@@ -74,25 +58,10 @@ class UserModeService
         $result = $this->switchToVendor($user);
 
         return [
-            'mode' => 'vendor',
+            'mode' => 'business',
             'created_business' => $result['created_business'],
             'business_id' => $result['business']?->id,
             'user' => UserResource::make($result['user']),
-        ];
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    public function switchToCustomerPayload(User $user): array
-    {
-        $user = $this->switchToCustomer($user);
-        $business = $this->businessInfoService->findForUser($user);
-
-        return [
-            'mode' => 'customer',
-            'business_id' => $business?->id,
-            'user' => UserResource::make($user),
         ];
     }
 }

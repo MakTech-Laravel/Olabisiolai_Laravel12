@@ -58,10 +58,13 @@ final class ConversationResource extends JsonResource
                         'user' => $user ? [
                             'id' => $user->id,
                             'uuid' => $user->uuid,
-                            'name' => MessagingHelper::participantDisplayName($user),
-                            'display_name' => MessagingHelper::participantDisplayName($user),
-                            'avatar_url' => MessagingHelper::userAvatarUrl($user),
+                            'name' => MessagingHelper::participantPersonalName($user),
+                            'display_name' => MessagingHelper::participantPersonalName($user),
+                            'personal_name' => MessagingHelper::participantPersonalName($user),
+                            'business_name' => MessagingHelper::participantBusinessName($user),
+                            'avatar_url' => MessagingHelper::userPersonalAvatarUrl($user),
                             'is_verified' => MessagingHelper::isVerifiedVendor($user),
+                            'owned_businesses' => MessagingHelper::ownedBusinessesSummary($user),
                             'presence' => $user->relationLoaded('messagingPresence') && $user->messagingPresence
                                 ? (new UserStatusResource($user->messagingPresence))->resolve()
                                 : null,

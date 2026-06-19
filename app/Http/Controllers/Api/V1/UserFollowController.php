@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\Api\V1\UserFollowerResource;
 use App\Http\Resources\Api\V1\UserFollowVendorResource;
+use App\Enums\BusinessStatus;
 use App\Models\User;
 use App\Models\UserFollow;
 use App\Services\UserFollowService;
@@ -42,6 +44,66 @@ class UserFollowController extends Controller
                 'user_id' => $targetId,
                 'followers_count' => $this->userFollowService->followersCount($targetId),
                 'following_count' => $this->userFollowService->followingCount($targetId),
+            ]);
+        } catch (ValidationException $exception) {
+            return sendResponse(
+                false,
+                $exception->validator->errors()->first(),
+                ['errors' => $exception->errors()],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    public function followers(Request $request): Response
+    {
+        /** @var User $user */
+        $user = $request->user('api');
+
+        if (! $this->userFollowService->canManageFollows($user)) {
+            return sendResponse(false, 'Access denied.', null, Response::HTTP_FORBIDDEN);
+        }
+
+        try {
+            $validated = $request->validate([
+                'per_page' => ['nullable', 'integer', 'min:1', 'max:50'],
+                'page' => ['nullable', 'integer', 'min:1'],
+            ]);
+
+            $perPage = $validated['per_page'] ?? 20;
+            $page = $validated['page'] ?? 1;
+
+            $follows = UserFollow::query()
+                ->where('following_id', $user->id)
+                ->with([
+                    'follower.businessInfos' => function ($query): void {
+                        $query
+                            ->where('business_status', BusinessStatus::Active->value)
+                            ->where('is_flagged', false)
+                            ->with([
+                                'category:id,name',
+                                'location:id,lga_name,state_name,city_name,country_name',
+                            ])
+                            ->orderBy('sort_order')
+                            ->orderBy('id');
+                    },
+                ])
+                ->latest('created_at')
+                ->paginate($perPage, ['*'], 'page', $page);
+
+            return sendResponse(true, 'Followers retrieved successfully.', [
+                'followers' => UserFollowerResource::collection($follows->getCollection())->toArray($request),
+                'count' => $follows->total(),
+                'pagination' => [
+                    'current_page' => $follows->currentPage(),
+                    'per_page' => $follows->perPage(),
+                    'last_page' => $follows->lastPage(),
+                    'total' => $follows->total(),
+                ],
             ]);
         } catch (ValidationException $exception) {
             return sendResponse(

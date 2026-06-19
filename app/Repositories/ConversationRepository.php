@@ -120,6 +120,18 @@ final class ConversationRepository implements ConversationRepositoryInterface
             'participantRows.user:id,uuid,name,first_name,last_name,email,role,image',
             'participantRows.user.messagingPresence',
             'participantRows.user.businessInfo:id,user_id,business_name,logo_path,verified_at',
+            'participantRows.user.businessInfos' => static function ($query): void {
+                $query
+                    ->where('business_status', 'active')
+                    ->where('is_flagged', false)
+                    ->select(['id', 'user_id', 'business_name', 'logo_path', 'business_status', 'is_flagged', 'category_id', 'location_id', 'sort_order'])
+                    ->orderBy('sort_order')
+                    ->orderBy('id')
+                    ->with([
+                        'category:id,name',
+                        'location:id,lga_name,state_name,city_name,country_name',
+                    ]);
+            },
         ];
     }
 
