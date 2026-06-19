@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\V1\UserModeController;
 use App\Http\Controllers\Api\V1\UserReferralController;
 use App\Http\Controllers\Api\V1\UserReviewsController;
 use App\Http\Controllers\Api\V1\UserSettingsController;
+use App\Http\Controllers\Api\V1\UserTwoFactorController;
 use App\Http\Controllers\Api\V1\UserWalletController;
 use App\Http\Controllers\Api\V1\Vendor\VendorOnboardingController;
 use App\Http\Controllers\Api\V1\Vendor\VendorSubscriptionController;
@@ -28,6 +29,13 @@ Route::prefix('user')->name('user.')->group(function () {
     // POST required for multipart image uploads (PHP/nginx do not parse files on PATCH in production).
     Route::match(['patch', 'post'], '/settings', [UserSettingsController::class, 'update'])->name('settings.update');
     Route::post('/password', [UserSettingsController::class, 'changePassword'])->name('password.change');
+
+    Route::prefix('two-factor')->name('two-factor.')->group(function () {
+        Route::get('/', [UserTwoFactorController::class, 'status'])->name('status');
+        Route::post('/enable', [UserTwoFactorController::class, 'enable'])->name('enable');
+        Route::post('/confirm', [UserTwoFactorController::class, 'confirm'])->name('confirm');
+        Route::delete('/', [UserTwoFactorController::class, 'disable'])->name('disable');
+    });
 
     Route::prefix('email')->name('email.')->group(function () {
         Route::post('/', [UserSettingsController::class, 'updateEmail'])->middleware('throttle:6,1')->name('update');
