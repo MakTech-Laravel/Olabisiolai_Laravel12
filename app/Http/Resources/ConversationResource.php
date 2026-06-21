@@ -35,7 +35,7 @@ final class ConversationResource extends JsonResource
             'name' => $this->name,
             'display_name' => $displayName,
             'conversation_name' => $displayName,
-            'conversation_image_url' => $peer['avatar_url'] ?? null,
+            'conversation_image_url' => MessagingHelper::conversationImageUrl($this->resource, $viewer),
             'is_archived' => $this->is_archived,
             'business_info_id' => $this->business_info_id,
             'tenant_id' => $this->tenant_id,
@@ -43,7 +43,7 @@ final class ConversationResource extends JsonResource
             'has_unread' => (int) ($this->unread_count ?? 0) > 0,
             'last_message_preview' => MessagingHelper::messagePreview($lastMessage),
             'last_message_at' => $lastMessage?->created_at?->toIso8601String(),
-            'peer' => $this->when($viewer !== null, fn () => $peer),
+            'peer' => $this->when($viewer !== null, fn() => $peer),
             'last_message' => new MessageResource($this->whenLoaded('lastMessage')),
             'participants' => $this->whenLoaded('participantRows', function () {
                 return $this->participantRows->map(function ($row): array {

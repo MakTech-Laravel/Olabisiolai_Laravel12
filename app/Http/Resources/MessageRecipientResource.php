@@ -33,9 +33,9 @@ final class MessageRecipientResource extends JsonResource
 
         return [
             'uuid' => $user->uuid,
-            'display_name' => MessagingHelper::participantDisplayName($user),
+            'display_name' => MessagingHelper::recipientDisplayName($user),
             'subtitle' => MessagingHelper::recipientSearchSubtitle($user),
-            'avatar_url' => MessagingHelper::userAvatarUrl($user),
+            'avatar_url' => MessagingHelper::recipientAvatarUrl($user),
             'is_verified' => MessagingHelper::isVerifiedVendor($user),
             'role' => $user->role,
             'business_info_id' => $businessInfoId > 0 ? $businessInfoId : null,

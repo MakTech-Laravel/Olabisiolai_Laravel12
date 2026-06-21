@@ -48,37 +48,12 @@ final class ConversationInitiationService
             ]);
         }
 
-        // Business owners (vendor role or any business page) cannot initiate — reply-only inbox.
-        if ($creator->isVendor() || $creator->businessInfos()->exists()) {
-            if ($target->isVendor() || $target->businessInfos()->exists()) {
-                throw ValidationException::withMessages([
-                    'participants' => ['Business-to-business messaging is not allowed.'],
-                ]);
-            }
-
-            throw ValidationException::withMessages([
-                'participants' => ['Businesses can only reply to customer messages. Wait for a customer to contact you first.'],
-            ]);
-        }
-
-        if ($creator->isUser()) {
-            if ($target->isVendor()) {
-                if (! $this->userFollowService->isFollowableVendor($target)) {
-                    throw ValidationException::withMessages([
-                        'participants' => ['This business cannot receive direct messages yet.'],
-                    ]);
-                }
-
-                return;
-            }
-
-            throw ValidationException::withMessages([
-                'participants' => ['You can only message business listings, not other personal accounts.'],
-            ]);
+        if ($this->userFollowService->isFollowableVendor($target)) {
+            return;
         }
 
         throw ValidationException::withMessages([
-            'participants' => ['You are not allowed to start this conversation.'],
+            'participants' => ['You can only message active business listings.'],
         ]);
     }
 

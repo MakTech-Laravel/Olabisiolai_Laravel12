@@ -121,10 +121,6 @@ final class ConversationService
      */
     public function searchRecipients(User $viewer, string $query): Collection
     {
-        if ($viewer->isVendor()) {
-            return new Collection();
-        }
-
         $trimmed = trim($query);
         $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $trimmed) . '%';
         $emailLike = '%' . str_replace(['%', '_'], ['\\%', '\\_'], strtolower($trimmed)) . '%';

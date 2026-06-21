@@ -21,11 +21,7 @@ final class ConversationPolicy
             return true;
         }
 
-        if ($user->isVendor() || $user->businessInfos()->exists()) {
-            return false;
-        }
-
-        return $user->isUser();
+        return $user->isUser() || $user->isVendor();
     }
 
     public function delete(User $user, Conversation $conversation): bool

@@ -106,6 +106,22 @@ final class RealtimeNotificationService
         ));
     }
 
+    public function newFollower(
+        User $recipient,
+        int $followerId,
+        string $followerName,
+        int $businessInfoId,
+        string $businessName,
+    ): void {
+        $this->notifyUser($recipient, RealtimeNotification::newFollower(
+            recipientUserId: (int) $recipient->id,
+            followerId: $followerId,
+            followerName: $followerName,
+            businessInfoId: $businessInfoId,
+            businessName: $businessName,
+        ));
+    }
+
     public function newMessage(
         User $recipient,
         int $senderId,

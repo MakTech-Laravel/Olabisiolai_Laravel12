@@ -4,10 +4,15 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Api;
 
+use App\Enums\BusinessStatus;
 use App\Enums\ConversationType;
 use App\Enums\ParticipantRole;
+use App\Enums\VerificationStatus;
+use App\Models\BusinessInfo;
+use App\Models\Category;
 use App\Models\Conversation;
 use App\Models\ConversationParticipant;
+use App\Models\Location;
 use App\Models\User;
 use Laravel\Passport\Passport;
 
@@ -25,6 +30,16 @@ final class ConversationTest extends MessagingTestCase
             'email_verified_at' => now(),
         ]);
 
+        BusinessInfo::factory()->create([
+            'user_id' => $b->id,
+            'category_id' => Category::factory()->create()->id,
+            'location_id' => Location::factory()->create()->id,
+            'business_name' => 'Test Vendor Shop',
+            'verification_status' => VerificationStatus::Approved,
+            'business_status' => BusinessStatus::Active,
+            'is_flagged' => false,
+        ]);
+
         Passport::actingAs($a, guard: 'api');
 
         $create = $this->postJson('/api/v1/conversations', [
@@ -40,14 +55,14 @@ final class ConversationTest extends MessagingTestCase
         $index->assertOk();
         $this->assertGreaterThanOrEqual(1, count($index->json('data')));
 
-        $show = $this->getJson('/api/v1/conversations/'.$uuid);
+        $show = $this->getJson('/api/v1/conversations/' . $uuid);
         $show->assertOk();
         $show->assertJsonPath('data.uuid', $uuid);
 
         $search = $this->getJson('/api/v1/conversations/search?q=direct');
         $search->assertOk();
 
-        $delete = $this->deleteJson('/api/v1/conversations/'.$uuid);
+        $delete = $this->deleteJson('/api/v1/conversations/' . $uuid);
         $delete->assertOk();
     }
 
@@ -71,7 +86,7 @@ final class ConversationTest extends MessagingTestCase
 
         Passport::actingAs($c, guard: 'api');
 
-        $this->getJson('/api/v1/conversations/'.$conversation->uuid)
+        $this->getJson('/api/v1/conversations/' . $conversation->uuid)
             ->assertForbidden();
     }
 }

@@ -93,7 +93,7 @@ final class ConversationRepository implements ConversationRepositoryInterface
 
     public function searchForUser(User $user, string $query): Collection
     {
-        $like = '%'.str_replace(['%', '_'], ['\\%', '\\_'], $query).'%';
+        $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $query) . '%';
 
         return Conversation::query()
             ->forUser($user)
@@ -117,6 +117,7 @@ final class ConversationRepository implements ConversationRepositoryInterface
         return [
             'lastMessage.sender',
             'lastMessage.attachments',
+            'businessInfo:id,user_id,business_name,logo_path,verified_at',
             'participantRows.user:id,uuid,name,first_name,last_name,email,role,image',
             'participantRows.user.messagingPresence',
             'participantRows.user.businessInfo:id,user_id,business_name,logo_path,verified_at',
@@ -200,9 +201,9 @@ final class ConversationRepository implements ConversationRepositoryInterface
 
         return Conversation::query()
             ->where('type', 'direct')
-            ->whereHas('participantRows', fn (Builder $q) => $q->where('user_id', $a))
-            ->whereHas('participantRows', fn (Builder $q) => $q->where('user_id', $b))
-            ->whereDoesntHave('participantRows', fn (Builder $q) => $q->whereNotIn('user_id', [$a, $b]))
+            ->whereHas('participantRows', fn(Builder $q) => $q->where('user_id', $a))
+            ->whereHas('participantRows', fn(Builder $q) => $q->where('user_id', $b))
+            ->whereDoesntHave('participantRows', fn(Builder $q) => $q->whereNotIn('user_id', [$a, $b]))
             ->whereRaw('(select count(*) from conversation_participants where conversation_participants.conversation_id = conversations.id) = 2')
             ->first();
     }

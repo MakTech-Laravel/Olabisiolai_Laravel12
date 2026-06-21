@@ -7,6 +7,7 @@ namespace App\Enums;
 enum RealtimeNotificationType: string
 {
     case NewMessage = 'new_message';
+    case NewFollower = 'new_follower';
     case VerificationApproved = 'verification_approved';
     case VerificationFlagged = 'verification_flagged';
     case VerificationRevoked = 'verification_revoked';
@@ -18,6 +19,7 @@ enum RealtimeNotificationType: string
     {
         return match ($this) {
             self::NewMessage => 'New message',
+            self::NewFollower => 'New follower',
             self::VerificationApproved => 'Verification approved',
             self::VerificationFlagged => 'Verification update',
             self::VerificationRevoked => 'Verification revoked',
@@ -30,7 +32,7 @@ enum RealtimeNotificationType: string
     public function defaultTone(): string
     {
         return match ($this) {
-            self::NewMessage => 'info',
+            self::NewMessage, self::NewFollower => 'info',
             self::VerificationApproved, self::PaymentCompleted => 'success',
             self::VerificationFlagged, self::VerificationRevoked => 'warning',
             self::VerificationSubmitted => 'info',
