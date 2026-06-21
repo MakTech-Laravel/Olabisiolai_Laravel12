@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V1\BusinessInfoResource;
-use App\Http\Resources\Api\V1\UserResource;
 use App\Models\BusinessInfo;
 use App\Services\BusinessInfoService;
 use Illuminate\Http\Request;
@@ -64,12 +63,9 @@ class UserBusinessController extends Controller
                 $validated['business_name'] ?? null,
             );
 
-            $user->refresh();
-
             return sendResponse(true, 'Business page created successfully.', [
                 'business' => new BusinessInfoResource($business),
                 'created' => true,
-                'user' => UserResource::make($user),
             ], Response::HTTP_CREATED);
         } catch (ValidationException $exception) {
             return sendResponse(

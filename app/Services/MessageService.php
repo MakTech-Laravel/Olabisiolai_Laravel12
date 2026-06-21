@@ -38,7 +38,6 @@ final class MessageService
         private readonly MessageRepositoryInterface $messages,
         private readonly BroadcastService $broadcast,
         private readonly PresenceService $presence,
-        private readonly ConversationInitiationService $initiation,
     ) {}
 
     public function sendMessage(MessageDTO $dto, User $sender): Message
@@ -50,8 +49,6 @@ final class MessageService
         }
 
         Gate::forUser($sender)->authorize('view', $conversation);
-
-        $this->initiation->assertNonCreatorCannotSendFirstMessage($conversation, $sender);
 
         if ($dto->parentId !== null) {
             $parentOk = Message::query()

@@ -17,11 +17,7 @@ final class ConversationPolicy
 
     public function create(User $user): bool
     {
-        if ($user->isAdmin()) {
-            return true;
-        }
-
-        return $user->isUser() || $user->isVendor();
+        return true;
     }
 
     public function delete(User $user, Conversation $conversation): bool

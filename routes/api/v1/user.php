@@ -9,7 +9,6 @@ use App\Http\Controllers\Api\V1\UserModeController;
 use App\Http\Controllers\Api\V1\UserReferralController;
 use App\Http\Controllers\Api\V1\UserReviewsController;
 use App\Http\Controllers\Api\V1\UserSettingsController;
-use App\Http\Controllers\Api\V1\UserTwoFactorController;
 use App\Http\Controllers\Api\V1\UserWalletController;
 use App\Http\Controllers\Api\V1\Vendor\VendorOnboardingController;
 use App\Http\Controllers\Api\V1\Vendor\VendorSubscriptionController;
@@ -29,13 +28,6 @@ Route::prefix('user')->name('user.')->group(function () {
     // POST required for multipart image uploads (PHP/nginx do not parse files on PATCH in production).
     Route::match(['patch', 'post'], '/settings', [UserSettingsController::class, 'update'])->name('settings.update');
     Route::post('/password', [UserSettingsController::class, 'changePassword'])->name('password.change');
-
-    Route::prefix('two-factor')->name('two-factor.')->group(function () {
-        Route::get('/', [UserTwoFactorController::class, 'status'])->name('status');
-        Route::post('/enable', [UserTwoFactorController::class, 'enable'])->name('enable');
-        Route::post('/confirm', [UserTwoFactorController::class, 'confirm'])->name('confirm');
-        Route::delete('/', [UserTwoFactorController::class, 'disable'])->name('disable');
-    });
 
     Route::prefix('email')->name('email.')->group(function () {
         Route::post('/', [UserSettingsController::class, 'updateEmail'])->middleware('throttle:6,1')->name('update');
@@ -58,7 +50,6 @@ Route::prefix('user')->name('user.')->group(function () {
 
         Route::prefix('follows')->name('follows.')->group(function () {
             Route::get('/stats', [UserFollowController::class, 'stats'])->name('stats');
-            Route::get('/followers', [UserFollowController::class, 'followers'])->name('followers');
             Route::get('/following', [UserFollowController::class, 'following'])->name('following');
             Route::post('/toggle', [UserFollowController::class, 'toggle'])->name('toggle');
         });
@@ -71,9 +62,6 @@ Route::prefix('user')->name('user.')->group(function () {
         Route::get('/reviews', [UserReviewsController::class, 'index'])->name('reviews.index');
 
         Route::get('/businesses', [UserBusinessController::class, 'index'])->name('businesses.index');
-        Route::get('/businesses/show', [BusinessInfoController::class, 'show'])->name('businesses.show');
-        Route::put('/businesses/update', [BusinessInfoController::class, 'update'])->name('businesses.update');
-        Route::post('/businesses/update', [BusinessInfoController::class, 'update'])->name('businesses.update.post');
         Route::post('/businesses', [UserBusinessController::class, 'store'])->name('businesses.store');
         Route::delete('/businesses/{businessInfo}', [UserBusinessController::class, 'destroy'])->name('businesses.destroy');
 

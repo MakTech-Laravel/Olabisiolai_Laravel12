@@ -14,16 +14,13 @@ class UserModeService
     ) {}
 
     /**
-     * Create (or reuse) a business page for management and promote the account to vendor
-     * so messaging rules (reply-only inbox) apply consistently.
-     *
      * @return array{user: User, business: BusinessInfo|null, created_business: bool}
      */
     public function switchToVendor(User $user): array
     {
         if ($user->isAdmin()) {
             throw ValidationException::withMessages([
-                'mode' => ['Admin accounts cannot create business pages.'],
+                'mode' => ['Admin accounts cannot switch profile modes.'],
             ]);
         }
 
@@ -36,7 +33,6 @@ class UserModeService
         }
 
         $settings = is_array($user->settings) ? $user->settings : [];
-        $settings['active_business_id'] = $business->id;
         $settings['active_profile_mode'] = 'vendor';
 
         $user->forceFill([
@@ -51,6 +47,25 @@ class UserModeService
         ];
     }
 
+    public function switchToCustomer(User $user): User
+    {
+        if ($user->isAdmin()) {
+            throw ValidationException::withMessages([
+                'mode' => ['Admin accounts cannot switch profile modes.'],
+            ]);
+        }
+
+        $settings = is_array($user->settings) ? $user->settings : [];
+        $settings['active_profile_mode'] = 'customer';
+
+        $user->forceFill([
+            'role' => 'user',
+            'settings' => $settings,
+        ])->save();
+
+        return $user->fresh();
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -59,10 +74,25 @@ class UserModeService
         $result = $this->switchToVendor($user);
 
         return [
-            'mode' => 'business',
+            'mode' => 'vendor',
             'created_business' => $result['created_business'],
             'business_id' => $result['business']?->id,
             'user' => UserResource::make($result['user']),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function switchToCustomerPayload(User $user): array
+    {
+        $user = $this->switchToCustomer($user);
+        $business = $this->businessInfoService->findForUser($user);
+
+        return [
+            'mode' => 'customer',
+            'business_id' => $business?->id,
+            'user' => UserResource::make($user),
         ];
     }
 }

@@ -67,8 +67,8 @@ final class MessageSent implements ShouldBroadcastNow
                     'created_at' => $parent->created_at?->toIso8601String(),
                     'sender' => [
                         'id' => $parent->sender?->id,
-                        'name' => MessagingHelper::participantPersonalName($parent->sender),
-                        'avatar_url' => MessagingHelper::userPersonalAvatarUrl($parent->sender),
+                        'name' => $parent->sender?->name,
+                        'avatar_url' => MessagingHelper::userAvatarUrl($parent->sender),
                     ],
                     'attachments' => $parent->relationLoaded('attachments')
                         ? AttachmentResource::collection($parent->attachments)->resolve()
@@ -81,8 +81,8 @@ final class MessageSent implements ShouldBroadcastNow
             ],
             'sender' => [
                 'id' => $sender?->id,
-                'name' => MessagingHelper::participantPersonalName($sender),
-                'avatar_url' => MessagingHelper::userPersonalAvatarUrl($sender),
+                'name' => $sender?->name,
+                'avatar_url' => MessagingHelper::userAvatarUrl($sender),
             ],
             'conversation_id' => $this->message->conversation_id,
         ];

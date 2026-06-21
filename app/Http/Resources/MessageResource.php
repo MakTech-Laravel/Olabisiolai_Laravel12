@@ -28,11 +28,10 @@ final class MessageResource extends JsonResource
         return [
             'uuid' => $this->uuid,
             'conversation_id' => $this->conversation_id,
-            'sender' => $this->whenLoaded('sender', fn () => [
+            'sender' => $this->whenLoaded('sender', fn() => [
                 'id' => $this->sender?->id,
-                'name' => MessagingHelper::participantPersonalName($this->sender),
-                'display_name' => MessagingHelper::participantPersonalName($this->sender),
-                'avatar_url' => MessagingHelper::userPersonalAvatarUrl($this->sender),
+                'name' => $this->sender?->name,
+                'avatar_url' => MessagingHelper::userAvatarUrl($this->sender),
             ]),
             'parent_uuid' => $this->parent_id !== null
                 ? ($this->relationLoaded('parent') ? $this->parent?->uuid : null)
@@ -50,9 +49,8 @@ final class MessageResource extends JsonResource
                     'created_at' => $this->parent->created_at?->toIso8601String(),
                     'sender' => $this->parent->relationLoaded('sender') ? [
                         'id' => $this->parent->sender?->id,
-                        'name' => MessagingHelper::participantPersonalName($this->parent->sender),
-                        'display_name' => MessagingHelper::participantPersonalName($this->parent->sender),
-                        'avatar_url' => MessagingHelper::userPersonalAvatarUrl($this->parent->sender),
+                        'name' => $this->parent->sender?->name,
+                        'avatar_url' => MessagingHelper::userAvatarUrl($this->parent->sender),
                     ] : null,
                     'attachments' => $this->parent->relationLoaded('attachments')
                         ? AttachmentResource::collection($this->parent->attachments)

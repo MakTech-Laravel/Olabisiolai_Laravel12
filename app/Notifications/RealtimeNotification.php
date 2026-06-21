@@ -40,7 +40,8 @@ final class RealtimeNotification extends Notification implements ShouldBroadcast
         private readonly ?string $broadcastAsOverride = null,
         /** @var Payload */
         private readonly array $topLevelPayload = [],
-    ) {}
+    ) {
+    }
 
     // -------------------------------------------------------------------------
     // Static factories (one place for all app notification shapes)
@@ -78,35 +79,6 @@ final class RealtimeNotification extends Notification implements ShouldBroadcast
                 'preview' => $preview,
                 'unread_count' => $unreadCount,
                 'from_platform_admin' => $fromPlatformAdmin,
-            ],
-        );
-    }
-
-    public static function newFollower(
-        int $recipientUserId,
-        int $followerId,
-        string $followerName,
-        int $businessInfoId,
-        string $businessName,
-    ): self {
-        return self::forUser(
-            userId: $recipientUserId,
-            type: RealtimeNotificationType::NewFollower,
-            title: $followerName,
-            message: sprintf('started following "%s".', $businessName),
-            data: [
-                'follower_id' => $followerId,
-                'follower_name' => $followerName,
-                'business_info_id' => $businessInfoId,
-                'business_name' => $businessName,
-            ],
-            actionUrl: '/user/profile',
-            tone: 'info',
-            topLevelPayload: [
-                'follower_id' => $followerId,
-                'follower_name' => $followerName,
-                'business_info_id' => $businessInfoId,
-                'business_name' => $businessName,
             ],
         );
     }

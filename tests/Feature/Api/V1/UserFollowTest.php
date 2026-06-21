@@ -43,7 +43,7 @@ class UserFollowTest extends TestCase
         $toggleResponse->assertJsonPath('data.following', true);
         $toggleResponse->assertJsonPath('data.followers_count', 1);
 
-        $statsResponse = $this->withToken($token)->getJson('/api/v1/user/follows/stats?user_id=' . $vendor->id);
+        $statsResponse = $this->withToken($token)->getJson('/api/v1/user/follows/stats?user_id='.$vendor->id);
         $statsResponse->assertOk();
         $statsResponse->assertJsonPath('data.followers_count', 1);
 
@@ -52,7 +52,7 @@ class UserFollowTest extends TestCase
         $followingResponse->assertJsonPath('data.following.0.following_user_id', $vendor->id);
         $followingResponse->assertJsonPath('data.following.0.business.id', $business->id);
 
-        $publicResponse = $this->withToken($token)->getJson('/api/v1/businesses/' . $business->id);
+        $publicResponse = $this->withToken($token)->getJson('/api/v1/businesses/'.$business->id);
         $publicResponse->assertOk();
         $publicResponse->assertJsonPath('data.business.followers_count', 1);
         $publicResponse->assertJsonPath('data.business.is_following', true);
@@ -62,36 +62,6 @@ class UserFollowTest extends TestCase
         ]);
         $unfollowResponse->assertOk();
         $unfollowResponse->assertJsonPath('data.following', false);
-    }
-
-    public function test_following_vendor_creates_notification_for_vendor(): void
-    {
-        [$vendor, $business] = $this->createVendorBusiness();
-        $customer = User::factory()->create([
-            'role' => 'user',
-            'email_verified_at' => now(),
-            'name' => 'Ada Customer',
-        ]);
-
-        $token = $customer->createToken('test')->accessToken;
-
-        $this->withToken($token)->postJson('/api/v1/user/follows/toggle', [
-            'following_user_id' => $vendor->id,
-        ])->assertCreated();
-
-        $this->assertDatabaseHas('notifications', [
-            'notifiable_type' => User::class,
-            'notifiable_id' => $vendor->id,
-        ]);
-
-        $notification = $vendor->notifications()->first();
-        $this->assertNotNull($notification);
-
-        $payload = $notification->data;
-        $this->assertSame('new_follower', $payload['type'] ?? null);
-        $this->assertSame($customer->id, $payload['follower_id'] ?? $payload['data']['follower_id'] ?? null);
-        $this->assertSame($business->id, $payload['business_info_id'] ?? $payload['data']['business_info_id'] ?? null);
-        $this->assertSame('/user/profile', $payload['action_url'] ?? null);
     }
 
     public function test_vendor_can_follow_another_vendor(): void

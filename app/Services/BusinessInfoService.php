@@ -595,19 +595,8 @@ class BusinessInfoService
                 SubscriptionStatus::Active,
             );
 
-            $this->promoteUserToVendorIfNeeded($user);
-
             return $business->load(['subscription', 'businessHours']);
         });
-    }
-
-    private function promoteUserToVendorIfNeeded(User $user): void
-    {
-        if ($user->role === 'vendor') {
-            return;
-        }
-
-        $user->forceFill(['role' => 'vendor'])->save();
     }
 
     /**
@@ -714,9 +703,9 @@ class BusinessInfoService
 
                 $this->locationService->refreshVendorCount($locationId);
 
-                $this->promoteUserToVendorIfNeeded($user);
-
-                $this->setActiveBusinessForUser($user, (int) $business->id);
+                if ($user->role !== 'vendor') {
+                    $user->forceFill(['role' => 'vendor'])->save();
+                }
 
                 return $business->load(['subscription', 'businessHours']);
             });
@@ -788,9 +777,9 @@ class BusinessInfoService
      */
     public function updateForUser(
         User $user,
-        ?int $categoryId,
+        int $categoryId,
         ?string $subcategory,
-        ?int $locationId,
+        int $locationId,
         string $businessName,
         ?string $streetAddress,
         string $businessDescription,
@@ -810,31 +799,17 @@ class BusinessInfoService
         ?float $longitude = null,
         ?string $googlePlaceId = null,
         bool $coordinatesProvided = false,
-        ?string $locationNarrative = null,
-        bool $locationNarrativeProvided = false,
     ): BusinessInfo {
+        if (! Location::where('id', $locationId)->exists()) {
+            throw new \InvalidArgumentException('Invalid location ID.');
+        }
+
         $business = $businessId !== null
             ? $this->assertUserOwnsBusiness($user, $businessId)
             : $this->findForUser($user);
         if ($business === null) {
             throw new \RuntimeException('No business profile found for this account.');
         }
-
-        if ($categoryId !== null && $categoryId > 0 && ! \App\Models\Category::whereKey($categoryId)->exists()) {
-            throw new \InvalidArgumentException('Invalid category ID.');
-        }
-
-        if ($locationId !== null && $locationId > 0 && ! Location::where('id', $locationId)->exists()) {
-            throw new \InvalidArgumentException('Invalid location ID.');
-        }
-
-        $finalCategoryId = ($categoryId !== null && $categoryId > 0)
-            ? $categoryId
-            : ($business->category_id !== null ? (int) $business->category_id : null);
-
-        $finalLocationId = ($locationId !== null && $locationId > 0)
-            ? $locationId
-            : ($business->location_id !== null ? (int) $business->location_id : null);
 
         $basePath = 'businesses/' . $user->id;
         $logoFolder = $basePath . '/logo';
@@ -884,16 +859,15 @@ class BusinessInfoService
                 throw new \InvalidArgumentException("You can have up to {$maxCoverPhotos} gallery photos on your current plan.");
             }
 
-            $previousLocationId = $business->location_id !== null ? (int) $business->location_id : 0;
+            $previousLocationId = (int) $business->location_id;
 
-            $categoryForSubcategory = $finalCategoryId ?? 0;
-            $resolvedSubcategory = BusinessSubcategoryResolver::resolve($subcategory, $categoryForSubcategory, $services);
+            $resolvedSubcategory = BusinessSubcategoryResolver::resolve($subcategory, $categoryId, $services);
             if (! $subcategoryProvided) {
                 $resolvedSubcategory = $business->subcategory;
             } elseif ($resolvedSubcategory === null) {
                 $resolvedSubcategory = BusinessSubcategoryResolver::resolve(
                     $business->subcategory,
-                    $categoryForSubcategory,
+                    $categoryId,
                     $services,
                 );
             }
@@ -902,14 +876,10 @@ class BusinessInfoService
                 ? trim($streetAddress)
                 : null;
 
-            $normalizedLocationNarrative = $locationNarrative !== null && trim($locationNarrative) !== ''
-                ? trim($locationNarrative)
-                : null;
-
             $majorChange = $business->business_name !== $businessName
-                || ($categoryId !== null && $categoryId > 0 && (int) ($business->category_id ?? 0) !== $categoryId)
+                || $business->category_id !== $categoryId
                 || $business->subcategory !== $resolvedSubcategory
-                || ($locationId !== null && $locationId > 0 && (int) ($business->location_id ?? 0) !== $locationId);
+                || $business->location_id !== $locationId;
 
             $normalizedHours = $businessHours !== null
                 ? $this->businessHoursService->normalizeInput($businessHours)
@@ -918,9 +888,9 @@ class BusinessInfoService
 
             $business = DB::transaction(function () use (
                 $business,
-                $finalCategoryId,
+                $categoryId,
                 $resolvedSubcategory,
-                $finalLocationId,
+                $locationId,
                 $businessName,
                 $normalizedStreetAddress,
                 $streetAddressProvided,
@@ -938,13 +908,10 @@ class BusinessInfoService
                 $longitude,
                 $googlePlaceId,
                 $coordinatesProvided,
-                $locationNarrative,
-                $locationNarrativeProvided,
-                $normalizedLocationNarrative,
             ): BusinessInfo {
                 $payload = [
-                    'location_id' => $finalLocationId,
-                    'category_id' => $finalCategoryId,
+                    'location_id' => $locationId,
+                    'category_id' => $categoryId,
                     'subcategory' => $resolvedSubcategory,
                     'business_name' => $businessName,
                     'business_description' => $businessDescription,
@@ -967,10 +934,6 @@ class BusinessInfoService
                     $payload['google_place_id'] = $googlePlaceId;
                 }
 
-                if ($locationNarrativeProvided) {
-                    $payload['location_narrative'] = $normalizedLocationNarrative;
-                }
-
                 $business->update($payload);
 
                 if ($normalizedHours !== null) {
@@ -987,8 +950,8 @@ class BusinessInfoService
                 return $business->refresh()->load('businessHours');
             });
 
-            if ($previousLocationId > 0 && $finalLocationId !== null && $previousLocationId !== $finalLocationId) {
-                $this->locationService->refreshVendorCountsAfterMove($previousLocationId, $finalLocationId);
+            if ($previousLocationId !== $locationId) {
+                $this->locationService->refreshVendorCountsAfterMove($previousLocationId, $locationId);
             }
 
             if ($newLogoPath !== null && $oldLogoPath !== null && $oldLogoPath !== '') {

@@ -101,7 +101,7 @@ class BusinessInfoController extends Controller
                 $validated['business_hours'] ?? null,
             );
 
-            $business->load(['category:id,name,subcategories,created_at,updated_at', 'location', 'businessHours']);
+            $business->load(['category:id,name,subcategories,created_at,updated_at', 'businessHours']);
 
             $requiresPayment = $this->subscriptionService->requiresPayment($business);
 
@@ -154,16 +154,14 @@ class BusinessInfoController extends Controller
                 || array_key_exists('longitude', $validated)
                 || array_key_exists('google_place_id', $validated);
 
-            $locationNarrativeProvided = array_key_exists('location_narrative', $validated);
-
             $businessId = $request->integer('business_id');
             $resolvedBusinessId = $businessId > 0 ? $businessId : null;
 
             $business = $this->businessInfoService->updateForUser(
                 $user,
-                array_key_exists('category_id', $validated) ? (int) $validated['category_id'] : null,
-                $subcategoryProvided ? trim((string) ($validated['subcategory'] ?? '')) : null,
-                array_key_exists('location_id', $validated) ? (int) $validated['location_id'] : null,
+                (int) $validated['category_id'],
+                $subcategoryProvided ? trim((string) $validated['subcategory']) : null,
+                (int) $validated['location_id'],
                 $validated['business_name'],
                 $streetAddressProvided ? self::resolveStreetAddress($validated) : null,
                 $validated['business_description'],
@@ -183,11 +181,9 @@ class BusinessInfoController extends Controller
                 isset($validated['longitude']) ? (float) $validated['longitude'] : null,
                 $validated['google_place_id'] ?? null,
                 $coordinatesProvided,
-                $locationNarrativeProvided ? ($validated['location_narrative'] ?? null) : null,
-                $locationNarrativeProvided,
             );
 
-            $business->load(['category:id,name,subcategories,created_at,updated_at', 'location', 'businessHours']);
+            $business->load(['category:id,name,subcategories,created_at,updated_at', 'businessHours']);
 
             return sendResponse(true, 'Business profile updated successfully.', [
                 'business' => new BusinessInfoResource($business),

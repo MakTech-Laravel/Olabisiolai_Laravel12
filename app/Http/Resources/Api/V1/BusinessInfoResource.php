@@ -33,8 +33,6 @@ class BusinessInfoResource extends JsonResource
             'sort_order' => $this->sort_order,
             'business_name' => $this->business_name,
             'street_address' => $this->street_address,
-            'location_narrative' => $this->location_narrative,
-            'location_display' => $this->buildLocationDisplay(),
             'full_address' => $this->street_address,
             'latitude' => $this->latitude,
             'longitude' => $this->longitude,
@@ -178,24 +176,5 @@ class BusinessInfoResource extends JsonResource
         }
 
         return ($this->relationLoaded('boost') && $this->boost?->is_active) ? 'active' : 'none';
-    }
-
-    private function buildLocationDisplay(): ?string
-    {
-        $narrative = is_string($this->location_narrative) ? trim($this->location_narrative) : '';
-        $location = $this->relationLoaded('location') ? $this->location : null;
-        $city = $location?->city_name ? trim((string) $location->city_name) : '';
-        $state = $location?->state_name ? trim((string) $location->state_name) : '';
-        $area = ($city !== '' && $state !== '') ? "{$city}, {$state}" : trim((string) ($location?->full_name ?? $city ?: $state));
-
-        if ($area !== '' && $narrative !== '') {
-            return "{$area} - {$narrative}";
-        }
-
-        if ($area !== '') {
-            return $area;
-        }
-
-        return $narrative !== '' ? $narrative : null;
     }
 }

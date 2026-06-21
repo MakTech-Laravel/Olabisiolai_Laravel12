@@ -24,7 +24,7 @@ class UserModeController extends Controller
         try {
             return sendResponse(
                 true,
-                'Your business page is ready. Complete your listing to start reaching customers on Gidira.',
+                'Vendor mode enabled. Complete your business profile to start listing your business on Gidira.',
                 $this->userModeService->switchToVendorPayload($user),
             );
         } catch (ValidationException $exception) {

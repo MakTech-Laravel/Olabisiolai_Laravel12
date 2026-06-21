@@ -29,7 +29,6 @@ class BusinessInfo extends Model
         'subcategory',
         'business_name',
         'street_address',
-        'location_narrative',
         'latitude',
         'longitude',
         'google_place_id',

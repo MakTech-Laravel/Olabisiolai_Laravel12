@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\DTOs\Messaging\ConversationDTO;
-use App\Enums\BusinessStatus;
 use App\Enums\ConversationType;
 use App\Enums\ParticipantRole;
 use App\Enums\UserStatus;
@@ -24,7 +23,6 @@ final class ConversationService
 {
     public function __construct(
         private readonly ConversationRepositoryInterface $conversations,
-        private readonly ConversationInitiationService $initiation,
     ) {}
 
     public function createConversation(ConversationDTO $dto, User $creator): Conversation
@@ -44,15 +42,12 @@ final class ConversationService
                 }
 
                 return $existing->load([
-                    'lastMessage.sender.businessInfo:id,user_id,business_name,logo_path,verified_at',
+                    'lastMessage.sender',
                     'lastMessage.attachments',
                     'participantRows.user.messagingPresence',
                     'participantRows.user.businessInfo:id,user_id,business_name,logo_path,verified_at',
-                    'participantRows.user.businessInfos:id,user_id,business_name,logo_path,business_status,is_flagged,category_id,location_id,sort_order',
                 ]);
             }
-
-            $this->initiation->assertCanInitiateDirect($creator, $dto->participantUserIds);
         }
 
         return DB::transaction(function () use ($dto, $creator): Conversation {
@@ -77,11 +72,10 @@ final class ConversationService
             }
 
             $conversation->load([
-                'lastMessage.sender.businessInfo:id,user_id,business_name,logo_path,verified_at',
+                'lastMessage.sender',
                 'lastMessage.attachments',
                 'participantRows.user.messagingPresence',
                 'participantRows.user.businessInfo:id,user_id,business_name,logo_path,verified_at',
-                'participantRows.user.businessInfos:id,user_id,business_name,logo_path,business_status,is_flagged,category_id,location_id,sort_order',
             ]);
 
             Cache::forget($this->participantCacheKey($conversation->uuid));
@@ -129,11 +123,7 @@ final class ConversationService
             ->where('id', '!=', $viewer->id)
             ->where('status', UserStatus::Active->value)
             ->whereNotNull('uuid')
-            ->where('role', 'vendor')
-            ->whereHas('businessInfo', function (Builder $bq): void {
-                $bq->where('business_status', BusinessStatus::Active->value)
-                    ->where('is_flagged', false);
-            })
+            ->where('role', '!=', 'admin')
             ->with([
                 'businessInfo:id,user_id,business_name,logo_path,verified_at,category_id',
                 'businessInfo.category:id,name',
