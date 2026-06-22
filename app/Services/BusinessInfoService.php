@@ -800,15 +800,19 @@ class BusinessInfoService
         ?string $googlePlaceId = null,
         bool $coordinatesProvided = false,
     ): BusinessInfo {
-        if (! Location::where('id', $locationId)->exists()) {
-            throw new \InvalidArgumentException('Invalid location ID.');
-        }
-
         $business = $businessId !== null
             ? $this->assertUserOwnsBusiness($user, $businessId)
             : $this->findForUser($user);
         if ($business === null) {
             throw new \RuntimeException('No business profile found for this account.');
+        }
+
+        if ($locationId > 0 && ! Location::where('id', $locationId)->exists()) {
+            throw new \InvalidArgumentException('Invalid location ID.');
+        }
+
+        if ($categoryId > 0 && ! Category::where('id', $categoryId)->exists()) {
+            throw new \InvalidArgumentException('Invalid category ID.');
         }
 
         $basePath = 'businesses/' . $user->id;
@@ -877,9 +881,9 @@ class BusinessInfoService
                 : null;
 
             $majorChange = $business->business_name !== $businessName
-                || $business->category_id !== $categoryId
+                || (int) ($business->category_id ?? 0) !== $categoryId
                 || $business->subcategory !== $resolvedSubcategory
-                || $business->location_id !== $locationId;
+                || (int) ($business->location_id ?? 0) !== $locationId;
 
             $normalizedHours = $businessHours !== null
                 ? $this->businessHoursService->normalizeInput($businessHours)
@@ -910,8 +914,8 @@ class BusinessInfoService
                 $coordinatesProvided,
             ): BusinessInfo {
                 $payload = [
-                    'location_id' => $locationId,
-                    'category_id' => $categoryId,
+                    'location_id' => $locationId > 0 ? $locationId : null,
+                    'category_id' => $categoryId > 0 ? $categoryId : null,
                     'subcategory' => $resolvedSubcategory,
                     'business_name' => $businessName,
                     'business_description' => $businessDescription,

@@ -34,6 +34,33 @@ class UpdateBusinessInfoRequest extends FormRequest
         $this->prepareBusinessHoursFromRequest();
         $this->prepareSocialAccountsFromRequest();
         $this->prepareSubcategoryFromServices();
+        $this->normalizeOptionalForeignKeys();
+    }
+
+    protected function normalizeOptionalForeignKeys(): void
+    {
+        $merge = [];
+
+        foreach (['category_id', 'location_id'] as $key) {
+            if (! $this->has($key)) {
+                continue;
+            }
+
+            $value = $this->input($key);
+            if ($value === null || $value === '') {
+                $merge[$key] = null;
+
+                continue;
+            }
+
+            if ((int) $value <= 0) {
+                $merge[$key] = null;
+            }
+        }
+
+        if ($merge !== []) {
+            $this->merge($merge);
+        }
     }
 
     protected function prepareSubcategoryFromServices(): void
@@ -86,8 +113,8 @@ class UpdateBusinessInfoRequest extends FormRequest
 
         return [
             ...$this->businessHoursRules(required: false),
-            'location_id' => ['required', 'integer', 'exists:locations,id'],
-            'category_id' => ['required', 'integer', 'exists:categories,id'],
+            'location_id' => ['sometimes', 'nullable', 'integer', 'exists:locations,id'],
+            'category_id' => ['sometimes', 'nullable', 'integer', 'exists:categories,id'],
             'subcategory' => ['nullable', 'string', 'max:255'],
             'business_name' => ['required', 'string', 'max:255'],
             'full_address' => ['nullable', 'string', 'max:500'],

@@ -157,11 +157,27 @@ class BusinessInfoController extends Controller
             $businessId = $request->integer('business_id');
             $resolvedBusinessId = $businessId > 0 ? $businessId : null;
 
+            $existingBusiness = $resolvedBusinessId !== null
+                ? $this->businessInfoService->findForUser($user, $resolvedBusinessId)
+                : $this->businessInfoService->findForUser($user);
+
+            if ($existingBusiness === null) {
+                return sendResponse(false, 'No business profile found.', null, Response::HTTP_NOT_FOUND);
+            }
+
+            $categoryId = array_key_exists('category_id', $validated) && $validated['category_id'] !== null
+                ? (int) $validated['category_id']
+                : (int) ($existingBusiness->category_id ?? 0);
+
+            $locationId = array_key_exists('location_id', $validated) && $validated['location_id'] !== null
+                ? (int) $validated['location_id']
+                : (int) ($existingBusiness->location_id ?? 0);
+
             $business = $this->businessInfoService->updateForUser(
                 $user,
-                (int) $validated['category_id'],
+                $categoryId,
                 $subcategoryProvided ? trim((string) $validated['subcategory']) : null,
-                (int) $validated['location_id'],
+                $locationId,
                 $validated['business_name'],
                 $streetAddressProvided ? self::resolveStreetAddress($validated) : null,
                 $validated['business_description'],
