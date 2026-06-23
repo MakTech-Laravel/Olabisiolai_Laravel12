@@ -59,7 +59,7 @@ class StoreBusinessInfoRequest extends FormRequest
             'business_name' => ['required', 'string', 'max:255'],
             'full_address' => ['nullable', 'string', 'max:500'],
             'street_address' => ['nullable', 'string', 'max:500'],
-            'business_description' => ['required', 'string', 'max:10000'],
+            'business_description' => ['required', 'string', 'max:150'],
             'services' => ['required', 'array', 'min:1'],
             'services.*' => ['required', 'string', 'max:255'],
             'phone' => ['required', 'string', new NigerianPhoneNumber()],

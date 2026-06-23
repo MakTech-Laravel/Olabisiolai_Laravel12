@@ -122,7 +122,7 @@ class UpdateBusinessInfoRequest extends FormRequest
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
             'google_place_id' => ['nullable', 'string', 'max:255'],
-            'business_description' => ['required', 'string', 'max:10000'],
+            'business_description' => ['required', 'string', 'max:150'],
             'services' => ['required', 'array', 'min:1'],
             'services.*' => ['required', 'string', 'max:255'],
             'phone' => ['required', 'string', 'max:30'],
