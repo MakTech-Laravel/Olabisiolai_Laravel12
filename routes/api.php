@@ -4,7 +4,7 @@ use App\Http\Controllers\Api\V1\NotificationController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Broadcast;
 
-Broadcast::routes(['middleware' => ['auth:api']]);
+Broadcast::routes(['middleware' => ['auth:api,admin_api']]);
 
 Route::prefix('v1')->name('api.v1.')->group(base_path('routes/api/v1/auth.php'));
 
