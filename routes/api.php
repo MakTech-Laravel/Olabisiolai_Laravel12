@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\NotificationController;
+use App\Http\Controllers\Api\V1\RealtimeController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Broadcast;
 
@@ -18,6 +19,9 @@ Route::middleware(['auth:api,admin_api'])
         Route::post('notifications/read-all', [NotificationController::class, 'markAllRead'])->name('notifications.read-all');
         Route::post('notifications/read-bulk', [NotificationController::class, 'markBulkRead'])->name('notifications.read-bulk');
         Route::post('notifications/{id}/read', [NotificationController::class, 'markRead'])->name('notifications.read');
+        Route::post('realtime/test-broadcast', [RealtimeController::class, 'testBroadcast'])
+            ->middleware('throttle:10,1')
+            ->name('realtime.test-broadcast');
     });
 
 Route::middleware(['auth:admin_api', 'admin', 'verified'])

@@ -1,72 +1,100 @@
-# Coolify + Reverb (WebSockets)
+# Coolify + Reverb (split architecture)
 
-## Correct mental model (this is not a bug)
+Gidira runs **three separate Coolify applications**:
 
-| Layer | Port | Role |
-|--------|------|------|
-| Browser | **443** (`wss://`) | Same public host as your REST API. Port 443 is default for HTTPS — you do **not** open Reverb’s internal port in the browser. |
-| Coolify / Traefik | 443 → **80** | TLS termination; forwards HTTP to the **container** port you expose (must be **80** for this image). |
-| **nginx** inside the container | **80** | Serves Laravel (`/`, `/api`, …) and **proxies** `/app`, `/apps`, `/reverb` → Reverb. |
-| **Reverb** (supervisor) | **8089** | **Internal only.** Listens on `127.0.0.1:8089` (or `0.0.0.0:8089`); nginx talks to it. **Do not** publish 8089 on Coolify. |
+| Service | Domain | Container port | Repo |
+|---------|--------|----------------|------|
+| API | `api.gidira.tech` | 80 | `Olabisiolai_Laravel12` |
+| SPA | `www.gidira.tech` | 80 | `olabisiolai_frontend_react` |
+| WebSocket | `ws.gidira.tech` | 8080 | `olabisiolai_websocket` |
 
-So: **`wss://olabisiolai.maktechlaravel.cloud:443/...` is correct.** Reverb on 8089 is reached **only** from nginx inside the container, not from the browser.
+Browsers connect with `wss://ws.gidira.tech/app/{REVERB_APP_KEY}`. The API container does **not** run Reverb or proxy `/app`.
 
-## What is already in this repo
+## Data flow
 
-The WebSocket proxy is **already** defined in `docker/nginx.conf`:
-
-- `location ^~ /app` → `http://127.0.0.1:8089`
-- `location ^~ /apps` → same
-- `location ^~ /reverb` → same  
-- `Upgrade` / `Connection` use `$connection_upgrade` (required for WebSockets).
-
-You **do not** add blocks under the VPS host `/etc/nginx/sites-available/` **unless** you run Laravel **without** this Docker image. With the provided **Dockerfile**, all of that lives **inside** the image.
-
-## Coolify checklist
-
-1. **Build pack:** Dockerfile (not Nixpacks).
-2. **Ports:** Map public HTTP(S) to container **80** only. Do **not** map or expose **8089** publicly.
-3. **Start command:** Leave default (supervisord); do not replace with `php artisan serve` or raw `reverb:start` only.
-4. **Laravel `.env`:** See `.env.production.example` — especially `REVERB_HOST`, `REVERB_PORT=443`, `REVERB_SCHEME=https`, and **loopback** publish: `REVERB_BROADCAST_HOST=127.0.0.1`, `REVERB_BROADCAST_PORT=8089`, `REVERB_BROADCAST_SCHEME=http`.
-5. **React build:** `VITE_REVERB_HOST` = **API hostname only** (same host where `/app` exists). `VITE_REVERB_APP_KEY` must equal `REVERB_APP_KEY`. Rebuild the frontend after any change.
-
-### Frontend (why DevTools shows no WebSocket)
-
-The SPA only starts Echo when **both** `VITE_REVERB_APP_KEY` and `VITE_REVERB_HOST` exist in the **built** bundle (`messagingEnv.isReverbConfigured()` in `src/config/messagingEnv.ts`). Vite inlines `VITE_*` at **build time**, not from the browser’s runtime `.env`.
-
-If those variables were missing in the Coolify **frontend** Docker build, you will see:
-
-- Successful `POST …/messages` (REST works)
-- **No** `WS` / `wss://…/app/…` entries in Network — Echo never connects
-
-**Fix:** In the **frontend** service on Coolify, set build arguments / build-time environment to match the backend `REVERB_APP_KEY` and API hostname, then **redeploy / rebuild** the frontend image. See `olabisiolai_frontend_react/Dockerfile` (`ARG VITE_REVERB_*`) and `olabisiolai_frontend_react/.env.example`.
-
-After a correct build, open the Console: you should **not** see `[Realtime] Laravel Echo is disabled…`. In Network → filter **WS**, you should see `101` on `wss://<API-host>/app/<key>`.
-
-**Note:** This app does not set `window.Echo`; use DevTools → WS filter, not `console.log(window.Echo)`.
-
-## Verify inside the running container
-
-```bash
-# Reverb listening (supervisor)
-ss -tlnp | grep 8089
-
-# nginx proxies /app to Reverb (expect non-connection-refused; exact status may vary)
-curl -sS -o /dev/null -w "%{http_code}\n" -H "Connection: Upgrade" -H "Upgrade: websocket" http://127.0.0.1/app/
-
-# Laravel can publish to Reverb
-php artisan tinker --execute="broadcast(new \\Illuminate\\Notifications\\Events\\BroadcastNotificationCreated(...));"
-# (optional — or trigger a real message and watch storage/logs)
+```
+Browser (www.gidira.tech)
+  │ REST  → api.gidira.tech/api/v1/...
+  │ wss   → ws.gidira.tech/app/{key}
+  │ auth  → api.gidira.tech/api/broadcasting/auth  (Bearer token)
+  ▼
+api.gidira.tech publishes events → ws.gidira.tech:443 (HTTP, HMAC-signed)
 ```
 
-Check **`storage/logs/laravel.log`** for `Broadcast skipped:` — that means PHP could not reach Reverb (usually wrong `REVERB_BROADCAST_*`).
+## Backend checklist (api.gidira.tech)
 
-## If WebSocket still fails in the browser
+1. **Build pack:** Dockerfile (not Nixpacks — see `nixpacks.toml`).
+2. **Port:** Map public HTTP(S) to container **80** only.
+3. **Health:** `/up`
+4. **Environment:** Start from [`docs/env.coolify.example`](env.coolify.example). Critical vars:
+   - `BROADCAST_CONNECTION=reverb`
+   - `REVERB_HOST=ws.gidira.tech`, `REVERB_PORT=443`, `REVERB_SCHEME=https`
+   - `REVERB_APP_*` must match websocket + frontend build
+   - `FRONTEND_URL=https://www.gidira.tech`
+   - `CORS_ALLOWED_ORIGINS=https://www.gidira.tech,https://gidira.tech`
+   - `APP_DEBUG=false`
+5. **Entrypoint:** `docker/entrypoint.sh` merges Coolify env into `.env`, runs migrations, Passport, then supervisord (php-fpm, nginx, queue, scheduler).
 
-1. **Network → WS:** URL should be `wss://<API-host>/app/<REVERB_APP_KEY>` (port 443 is implicit; `:443` in the UI is normal).
-2. **Status 101** = upgrade succeeded.
-3. If it never connects: edge proxy not forwarding `Upgrade` (rare on Coolify’s Traefik), wrong service port (not hitting container nginx), or **SPA** `VITE_REVERB_*` / key mismatch.
+### Publishing to Reverb from the API container
 
-## Common mistake
+On Coolify, separate apps do not resolve each other by Docker service name by default. Use the **public** WS hostname so Traefik loops back on the same VPS:
 
-Believing the browser must connect **directly** to **8089**. That would bypass nginx and usually break TLS and routing. **Always** use the public API URL on **443** (or **80** without TLS); nginx inside the container bridges to Reverb.
+```dotenv
+REVERB_HOST=ws.gidira.tech
+REVERB_PORT=443
+REVERB_SCHEME=https
+```
+
+**Alternative** (internal network): enable “Connect To Predefined Network” on both API and websocket services, then:
+
+```dotenv
+REVERB_HOST=<websocket-container-hostname>
+REVERB_PORT=8080
+REVERB_SCHEME=http
+```
+
+Do **not** set `REVERB_BROADCAST_*` or `REVERB_SERVER_*` in split deployment — those are for the old colocated model.
+
+## Frontend checklist (www.gidira.tech)
+
+Vite inlines `VITE_*` at **build time**. Set these as Docker **build arguments** in Coolify:
+
+```dotenv
+VITE_ENVIRONMENT_MODE=production
+VITE_API_BASE_URL=https://api.gidira.tech/api/v1
+VITE_REVERB_APP_KEY=<same as REVERB_APP_KEY>
+VITE_REVERB_HOST=ws.gidira.tech
+VITE_REVERB_PORT=443
+VITE_REVERB_SCHEME=https
+```
+
+Rebuild the frontend image after any `VITE_*` change.
+
+## WebSocket checklist (ws.gidira.tech)
+
+1. **Port:** Expose container **8080** (Traefik terminates TLS on 443).
+2. **Health:** `/health`
+3. **Environment:** See `olabisiolai_websocket/.env.example`
+4. **Origins:** `REVERB_ALLOWED_ORIGINS` must include `www.gidira.tech` and `gidira.tech` (bare hostnames, no scheme).
+
+## Verify end-to-end
+
+1. Open `https://www.gidira.tech/ws-test`
+2. Status should be **Connected** without logging in
+3. **Trigger public ping** → event on `reverb-ping`
+4. **Check backend config** → `host: ws.gidira.tech`, `port: 443`
+5. DevTools → Network → WS → `wss://ws.gidira.tech/app/...` with status **101**
+6. Log in → **Trigger private notification** (requires `REALTIME_ALLOW_TEST_BROADCAST=true` on API)
+7. API logs: no `Broadcast skipped:` after ping
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+|---------|----------------|
+| No WS in Network tab | Frontend built without `VITE_REVERB_*` |
+| WS 403 / origin rejected | `REVERB_ALLOWED_ORIGINS` missing SPA hostname |
+| Ping API OK, no WS event | API cannot reach `ws.gidira.tech` — check `REVERB_HOST` / firewall |
+| Private channel fails | Wrong token, or `/api/broadcasting/auth` CORS |
+| `Broadcast skipped:` in logs | Publish URL unreachable — fix `REVERB_HOST` |
+
+See also: [`docs/COOLIFY_GIDIRA_DEPLOYMENT.md`](../../docs/COOLIFY_GIDIRA_DEPLOYMENT.md) (repo root).

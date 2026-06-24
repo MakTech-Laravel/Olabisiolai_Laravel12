@@ -17,10 +17,9 @@ COPY --from=composer:2.6 /usr/bin/composer /usr/bin/composer
 WORKDIR /var/www
 COPY . .
 
-# Runtime .env is injected by the host (e.g. Coolify). This copy is only for build-time artisan/vite.
-# PHP 8.3 image (Reverb + Laravel 12). Lock file targets 8.2–8.3 (see composer.json platform).
-# Production Reverb/CORS: .env.production.example. Broadcast loopback if needed:
-# REVERB_BROADCAST_HOST=127.0.0.1 REVERB_BROADCAST_PORT=8089 REVERB_BROADCAST_SCHEME=http
+# Runtime .env is injected by Coolify at boot (see docker/entrypoint.sh).
+# PHP 8.3 image — API publisher only; WebSockets run in olabisiolai_websocket (ws.gidira.tech).
+# Production env template: docs/env.coolify.example
 RUN cp .env.example .env || touch .env \
     && mkdir -p storage/framework/{views,sessions,cache} storage/logs bootstrap/cache \
     && composer install --no-dev --optimize-autoloader \
@@ -37,10 +36,9 @@ COPY ./docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 RUN ln -sf /etc/supervisor/conf.d/supervisord.conf /etc/supervisord.conf
 COPY ./docker/ensure-passport.sh /usr/local/bin/ensure-passport.sh
 COPY ./docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-COPY ./docker/start-reverb.sh /usr/local/bin/start-reverb.sh
-RUN chmod +x /usr/local/bin/ensure-passport.sh /usr/local/bin/entrypoint.sh /usr/local/bin/start-reverb.sh
+RUN chmod +x /usr/local/bin/ensure-passport.sh /usr/local/bin/entrypoint.sh
 
-# Public: 80 (nginx + WebSocket /app). Internal Reverb: 8089 (not published on Coolify).
+# Public: 80 (nginx + Laravel). WebSockets: separate olabisiolai_websocket service.
 EXPOSE 80
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
