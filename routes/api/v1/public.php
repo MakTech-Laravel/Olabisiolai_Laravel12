@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\V1\Public\ReviewController;
 use App\Http\Controllers\Api\V1\BusinessReportController;
 use App\Http\Controllers\Api\V1\ReviewReportController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\V1\RealtimeController;
 
 /*
 |--------------------------------------------------------------------------
@@ -48,3 +49,9 @@ Route::prefix('reviews')->name('reviews.')->group(function () {
 Route::get('/about', [PublicCmsPageController::class, 'show'])->defaults('slug', 'about')->name('about');
 Route::get('/privacy-policy', [PublicCmsPageController::class, 'show'])->defaults('slug', 'privacy-policy')->name('privacy-policy');
 Route::get('/terms', [PublicCmsPageController::class, 'show'])->defaults('slug', 'terms')->name('terms');
+
+// Public realtime diagnostics (used by the frontend /ws-test console).
+Route::controller(RealtimeController::class)->prefix('realtime')->group(function () {
+    Route::get('/ping', 'ping')->middleware('throttle:30,1')->name('api.v1.realtime.ping');
+    Route::get('/health', 'health')->name('api.v1.realtime.health');
+});
