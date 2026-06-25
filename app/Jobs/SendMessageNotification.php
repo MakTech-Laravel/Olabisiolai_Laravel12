@@ -28,7 +28,7 @@ final class SendMessageNotification implements ShouldQueue
         RealtimeNotificationService $realtimeNotifications,
     ): void {
         $message = Message::query()
-            ->with(['sender', 'conversation.participantRows.user'])
+            ->with(['sender', 'conversation.participantRows.user', 'conversation.businessInfo'])
             ->find($this->messageId);
 
         if ($message === null) {
@@ -67,20 +67,39 @@ final class SendMessageNotification implements ShouldQueue
                 ? (string) config('messaging.platform_admin_display_name', 'Olabisiolai Admin')
                 : (string) $sender->name;
 
+            $conversation = $message->conversation;
+            $conversationUuid = (string) $conversation->uuid;
+            $businessInfoId = $conversation->business_info_id;
+
             $actionUrl = null;
             if ($fromPlatformAdmin && $user->isVendor()) {
                 $actionUrl = (string) config('messaging.vendor_admin_message_url', '/vendor/leads?channel=admin');
+            } elseif ($businessInfoId) {
+                $businessOwnerId = $conversation->businessInfo?->user_id;
+                if ($businessOwnerId !== null && (int) $businessOwnerId === (int) $user->id) {
+                    $actionUrl = sprintf(
+                        '/user/messages?business_id=%d&c=%s',
+                        (int) $businessInfoId,
+                        rawurlencode($conversationUuid),
+                    );
+                } else {
+                    $actionUrl = sprintf(
+                        '/user/messages?scope=personal&c=%s',
+                        rawurlencode($conversationUuid),
+                    );
+                }
             }
 
             $realtimeNotifications->newMessage(
                 recipient: $user,
                 senderId: (int) $sender->id,
-                conversationUuid: (string) $message->conversation->uuid,
+                conversationUuid: $conversationUuid,
                 senderName: $senderName,
                 preview: mb_substr($preview, 0, 120),
                 unreadCount: $unread,
                 actionUrl: $actionUrl,
                 fromPlatformAdmin: $fromPlatformAdmin,
+                businessInfoId: $businessInfoId ? (int) $businessInfoId : null,
             );
         }
     }

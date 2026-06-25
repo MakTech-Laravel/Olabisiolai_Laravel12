@@ -115,6 +115,7 @@ final class RealtimeNotificationService
         int $unreadCount,
         ?string $actionUrl = null,
         bool $fromPlatformAdmin = false,
+        ?int $businessInfoId = null,
     ): void {
         $notification = RealtimeNotification::newMessage(
             recipientUserId: (int) $recipient->id,
@@ -125,6 +126,7 @@ final class RealtimeNotificationService
             unreadCount: $unreadCount,
             actionUrl: $actionUrl,
             fromPlatformAdmin: $fromPlatformAdmin,
+            businessInfoId: $businessInfoId,
         );
 
         $this->deliverToUser($recipient, $notification);

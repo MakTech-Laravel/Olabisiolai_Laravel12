@@ -104,6 +104,14 @@ final class Conversation extends Model
     }
 
     /**
+     * @return BelongsTo<BusinessInfo, $this>
+     */
+    public function businessInfo(): BelongsTo
+    {
+        return $this->belongsTo(BusinessInfo::class, 'business_info_id');
+    }
+
+    /**
      * @return BelongsTo<Message, $this>
      */
     public function lastMessage(): BelongsTo

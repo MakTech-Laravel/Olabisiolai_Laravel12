@@ -83,9 +83,16 @@ final class ConversationRepository implements ConversationRepositoryInterface
         }
 
         if (($filters['inbox'] ?? null) === 'personal') {
-            $query->whereNull('business_info_id');
+            $query->whereNotNull('business_info_id')
+                ->whereHas('businessInfo', function (Builder $bq) use ($user): void {
+                    $bq->where('user_id', '!=', $user->id);
+                });
         } elseif (! empty($filters['business_info_id'])) {
-            $query->where('business_info_id', (int) $filters['business_info_id']);
+            $businessId = (int) $filters['business_info_id'];
+            $query->where('business_info_id', $businessId)
+                ->whereHas('businessInfo', function (Builder $bq) use ($user): void {
+                    $bq->where('user_id', $user->id);
+                });
         }
 
         return $query->paginate($perPage);
