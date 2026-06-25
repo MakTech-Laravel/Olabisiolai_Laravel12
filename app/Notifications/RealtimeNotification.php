@@ -56,6 +56,7 @@ final class RealtimeNotification extends Notification implements ShouldBroadcast
         int $unreadCount,
         ?string $actionUrl = null,
         bool $fromPlatformAdmin = false,
+        ?int $businessInfoId = null,
     ): self {
         return self::forUser(
             userId: $recipientUserId,
@@ -69,6 +70,7 @@ final class RealtimeNotification extends Notification implements ShouldBroadcast
                 'preview' => $preview,
                 'unread_count' => $unreadCount,
                 'from_platform_admin' => $fromPlatformAdmin,
+                'business_info_id' => $businessInfoId,
             ],
             actionUrl: $actionUrl,
             broadcastAs: 'new_message',
@@ -79,6 +81,7 @@ final class RealtimeNotification extends Notification implements ShouldBroadcast
                 'preview' => $preview,
                 'unread_count' => $unreadCount,
                 'from_platform_admin' => $fromPlatformAdmin,
+                'business_info_id' => $businessInfoId,
             ],
         );
     }
