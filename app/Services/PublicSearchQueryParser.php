@@ -53,6 +53,27 @@ class PublicSearchQueryParser
     }
 
     /**
+     * @return list<string>
+     */
+    public function extractKeywords(string $rawQuery): array
+    {
+        $normalized = mb_strtolower(preg_replace('/\s+/u', ' ', trim($rawQuery)) ?? trim($rawQuery));
+        if ($normalized === '') {
+            return [];
+        }
+
+        return $this->tokenizeServiceTerms($normalized);
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function expandTerms(string $token): array
+    {
+        return $this->expandToken($token);
+    }
+
+    /**
      * @return array{0: list<int>, 1: string}
      */
     private function extractLocationIds(string $normalized): array
@@ -88,7 +109,7 @@ class PublicSearchQueryParser
 
         return array_values(array_filter(
             $tokens,
-            static fn(string $token): bool => $token !== '' && ! in_array($token, self::STOP_WORDS, true),
+            static fn (string $token): bool => $token !== '' && ! in_array($token, self::STOP_WORDS, true),
         ));
     }
 
@@ -140,9 +161,9 @@ class PublicSearchQueryParser
             }
         }
 
-        $phrases = array_values(array_unique(array_filter($phrases, static fn(string $phrase): bool => $phrase !== '')));
+        $phrases = array_values(array_unique(array_filter($phrases, static fn (string $phrase): bool => $phrase !== '')));
 
-        usort($phrases, static fn(string $left, string $right): int => mb_strlen($right) <=> mb_strlen($left));
+        usort($phrases, static fn (string $left, string $right): int => mb_strlen($right) <=> mb_strlen($left));
 
         return $phrases;
     }
@@ -160,7 +181,7 @@ class PublicSearchQueryParser
         $terms = [$token];
 
         /** @var list<string> $synonyms */
-        $synonyms = config('search_synonyms.' . $token, []);
+        $synonyms = config('search_synonyms.'.$token, []);
         foreach ($synonyms as $synonym) {
             $synonym = mb_strtolower(trim((string) $synonym));
             if ($synonym !== '') {
@@ -181,7 +202,7 @@ class PublicSearchQueryParser
             }
         }
 
-        return array_values(array_unique(array_filter($terms, static fn(string $term): bool => $term !== '')));
+        return array_values(array_unique(array_filter($terms, static fn (string $term): bool => $term !== '')));
     }
 
     private function termsOverlap(string $token, string $candidate): bool
@@ -195,7 +216,7 @@ class PublicSearchQueryParser
 
     private function containsWholePhrase(string $haystack, string $phrase): bool
     {
-        $pattern = '/(?<!\p{L})' . preg_quote($phrase, '/') . '(?!\p{L})/u';
+        $pattern = '/(?<!\p{L})'.preg_quote($phrase, '/').'(?!\p{L})/u';
 
         return preg_match($pattern, $haystack) === 1;
     }
@@ -203,8 +224,8 @@ class PublicSearchQueryParser
     private function stripLocationPhrase(string $haystack, string $phrase): string
     {
         $quoted = preg_quote($phrase, '/');
-        $haystack = preg_replace('/(?<!\p{L})(?:in|at|near|around)\s+' . $quoted . '(?!\p{L})/u', ' ', $haystack) ?? $haystack;
-        $haystack = preg_replace('/(?<!\p{L})' . $quoted . '(?!\p{L})/u', ' ', $haystack) ?? $haystack;
+        $haystack = preg_replace('/(?<!\p{L})(?:in|at|near|around)\s+'.$quoted.'(?!\p{L})/u', ' ', $haystack) ?? $haystack;
+        $haystack = preg_replace('/(?<!\p{L})'.$quoted.'(?!\p{L})/u', ' ', $haystack) ?? $haystack;
 
         return trim(preg_replace('/\s+/u', ' ', $haystack) ?? $haystack);
     }
@@ -219,8 +240,8 @@ class PublicSearchQueryParser
         usort(
             $candidates,
             static function (array $left, array $right): int {
-                $leftMax = max(array_map(static fn(string $name): int => mb_strlen($name), $left['names']));
-                $rightMax = max(array_map(static fn(string $name): int => mb_strlen($name), $right['names']));
+                $leftMax = max(array_map(static fn (string $name): int => mb_strlen($name), $left['names']));
+                $rightMax = max(array_map(static fn (string $name): int => mb_strlen($name), $right['names']));
 
                 return $rightMax <=> $leftMax;
             },
@@ -246,14 +267,14 @@ class PublicSearchQueryParser
                     mb_strtolower(trim((string) $location->lga_name)),
                     mb_strtolower(trim((string) $location->city_name)),
                     mb_strtolower(trim((string) $location->state_name)),
-                ], static fn(string $name): bool => $name !== '')));
+                ], static fn (string $name): bool => $name !== '')));
 
                 return [
                     'id' => (int) $location->id,
                     'names' => $names,
                 ];
             })
-            ->filter(static fn(array $candidate): bool => $candidate['names'] !== [])
+            ->filter(static fn (array $candidate): bool => $candidate['names'] !== [])
             ->values()
             ->all();
 
@@ -293,7 +314,7 @@ class PublicSearchQueryParser
                     'subcategories' => $normalizedSubcategories,
                 ];
             })
-            ->filter(static fn(array $category): bool => $category['name'] !== '')
+            ->filter(static fn (array $category): bool => $category['name'] !== '')
             ->values()
             ->all();
 

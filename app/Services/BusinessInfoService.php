@@ -216,7 +216,7 @@ class BusinessInfoService
 
         $business = $businessQuery
             ->where('id', $businessId)
-            ->tap(fn(Builder $query) => $this->applyPublicMarketplaceVisibility($query))
+            ->tap(fn (Builder $query) => $this->applyPublicMarketplaceVisibility($query))
             ->first();
 
         if ($business === null) {
@@ -312,56 +312,43 @@ class BusinessInfoService
             return;
         }
 
-        $parsed = $this->publicSearchQueryParser->parse($searchTerm);
-
-        if ($parsed->hasLocationOnly()) {
+        $keywords = $this->publicSearchQueryParser->extractKeywords($searchTerm);
+        if ($keywords === []) {
             return;
         }
 
-        if ($parsed->serviceTermGroups !== []) {
-            foreach ($parsed->serviceTermGroups as $termGroup) {
-                $query->where(function (Builder $groupQuery) use ($termGroup): void {
-                    foreach ($termGroup as $term) {
-                        $groupQuery->orWhere(function (Builder $termQuery) use ($term): void {
-                            $this->appendPublicSearchTermClauses($termQuery, $term, includeLocationFields: false);
-                        });
-                    }
-                });
-            }
+        foreach ($keywords as $keyword) {
+            $expandedTerms = $this->publicSearchQueryParser->expandTerms($keyword);
 
-            return;
-        }
-
-        if (! $parsed->hasParsedIntent()) {
-            $query->where(function (Builder $innerQuery) use ($searchTerm): void {
-                $this->appendPublicSearchTermClauses($innerQuery, $searchTerm, includeLocationFields: true);
+            $query->where(function (Builder $keywordQuery) use ($expandedTerms): void {
+                foreach ($expandedTerms as $term) {
+                    $keywordQuery->orWhere(function (Builder $termQuery) use ($term): void {
+                        $this->appendPublicSearchTermClauses($termQuery, $term);
+                    });
+                }
             });
         }
     }
 
-    private function appendPublicSearchTermClauses(
-        Builder $query,
-        string $term,
-        bool $includeLocationFields,
-    ): void {
-        $like = '%' . $term . '%';
+    private function appendPublicSearchTermClauses(Builder $query, string $term): void
+    {
+        $like = '%'.$term.'%';
 
         $query->where('business_name', 'like', $like)
             ->orWhere('business_description', 'like', $like)
+            ->orWhere('street_address', 'like', $like)
             ->orWhere('subcategory', 'like', $like)
             ->orWhereRaw('CAST(services_offered AS CHAR) LIKE ?', [$like])
             ->orWhereHas('category', function (Builder $categoryQuery) use ($like): void {
                 $categoryQuery->where('name', 'like', $like);
-            });
-
-        if ($includeLocationFields) {
-            $query->orWhereHas('location', function (Builder $locationQuery) use ($like): void {
+            })
+            ->orWhereHas('location', function (Builder $locationQuery) use ($like): void {
                 $locationQuery->where('lga_name', 'like', $like)
                     ->orWhere('state_name', 'like', $like)
                     ->orWhere('city_name', 'like', $like)
-                    ->orWhere('country_name', 'like', $like);
+                    ->orWhere('country_name', 'like', $like)
+                    ->orWhere('formatted_address', 'like', $like);
             });
-        }
     }
 
     private function applyPublicApprovedReviewStats(Builder $query): void
@@ -545,18 +532,18 @@ class BusinessInfoService
 
         if ($existingCount === 0) {
             return trim((string) $user->name) !== ''
-                ? trim((string) $user->name) . ' Business'
+                ? trim((string) $user->name).' Business'
                 : 'My Business';
         }
 
-        return 'Business ' . ($existingCount + 1);
+        return 'Business '.($existingCount + 1);
     }
 
     private function createTemplateBusinessForUser(User $user, ?string $businessName, int $sortOrder): BusinessInfo
     {
         if ($businessName === null || trim($businessName) === '') {
             $businessName = trim((string) $user->name) !== ''
-                ? trim((string) $user->name) . ' Business'
+                ? trim((string) $user->name).' Business'
                 : 'My Business';
         }
 
@@ -630,17 +617,17 @@ class BusinessInfoService
             throw new \RuntimeException('A business profile already exists for this account.');
         }
 
-        $basePath = 'businesses/' . $user->id;
-        $logoFolder = $basePath . '/logo';
-        $coverFolder = $basePath . '/covers';
+        $basePath = 'businesses/'.$user->id;
+        $logoFolder = $basePath.'/logo';
+        $coverFolder = $basePath.'/covers';
         $logoPath = null;
         $coverPaths = [];
 
         try {
-            $logoPath = $this->handleFileUpload($logo, $logoFolder, $businessName . ' logo');
+            $logoPath = $this->handleFileUpload($logo, $logoFolder, $businessName.' logo');
 
             foreach ($coverPhotos as $file) {
-                $coverPaths[] = $this->handleFileUpload($file, $coverFolder, $businessName . ' cover');
+                $coverPaths[] = $this->handleFileUpload($file, $coverFolder, $businessName.' cover');
             }
 
             $isPremium = $subscriptionPlan === SubscriptionPlan::Premium;
@@ -815,9 +802,9 @@ class BusinessInfoService
             throw new \InvalidArgumentException('Invalid category ID.');
         }
 
-        $basePath = 'businesses/' . $user->id;
-        $logoFolder = $basePath . '/logo';
-        $coverFolder = $basePath . '/covers';
+        $basePath = 'businesses/'.$user->id;
+        $logoFolder = $basePath.'/logo';
+        $coverFolder = $basePath.'/covers';
 
         $oldLogoPath = $business->logo_path;
         $oldCoverPaths = is_array($business->cover_photo_paths) ? $business->cover_photo_paths : [];
@@ -828,7 +815,7 @@ class BusinessInfoService
         try {
             $finalLogoPath = $business->logo_path;
             if ($logo !== null) {
-                $newLogoPath = $this->handleFileUpload($logo, $logoFolder, $businessName . ' logo');
+                $newLogoPath = $this->handleFileUpload($logo, $logoFolder, $businessName.' logo');
                 $finalLogoPath = $newLogoPath;
             }
 
@@ -852,7 +839,7 @@ class BusinessInfoService
                 }
 
                 foreach ($coverPhotos as $file) {
-                    $newCoverPaths[] = $this->handleFileUpload($file, $coverFolder, $businessName . ' cover');
+                    $newCoverPaths[] = $this->handleFileUpload($file, $coverFolder, $businessName.' cover');
                 }
 
                 $finalCoverPaths = array_values(array_merge($keptPaths, $newCoverPaths));
@@ -1058,7 +1045,7 @@ class BusinessInfoService
     public function getAdminBusinessFilterOptions(): array
     {
         $verificationStatuses = array_map(
-            fn(VerificationStatus $status): array => [
+            fn (VerificationStatus $status): array => [
                 'value' => $status->value,
                 'label' => $status->label(),
             ],
@@ -1066,7 +1053,7 @@ class BusinessInfoService
         );
 
         $businessStatuses = array_map(
-            fn(BusinessStatus $status): array => [
+            fn (BusinessStatus $status): array => [
                 'value' => $status->value,
                 'label' => ucfirst($status->value),
             ],
@@ -1076,7 +1063,7 @@ class BusinessInfoService
         $categories = Category::query()
             ->orderBy('name')
             ->get(['id', 'name'])
-            ->map(fn(Category $category): array => [
+            ->map(fn (Category $category): array => [
                 'id' => $category->id,
                 'name' => $category->name,
             ])
@@ -1156,7 +1143,7 @@ class BusinessInfoService
                 'user:id,first_name,last_name,name,email,phone,role',
                 'verifiedBy:id,name,email,phone,role',
                 'boost:id,business_info_id,is_active,activated_at,deactivated_at',
-                'messages' => fn($query) => $query
+                'messages' => fn ($query) => $query
                     ->with(['admin:id,name,email', 'vendor:id,name,email'])
                     ->latest(),
             ])
@@ -1287,22 +1274,6 @@ class BusinessInfoService
     {
         if (isset($validated['location_id']) && (int) $validated['location_id'] > 0) {
             $query->where('location_id', (int) $validated['location_id']);
-
-            return;
-        }
-
-        if (! ($listingContext['resolved_from_search'] ?? false)) {
-            return;
-        }
-
-        if (isset($listingContext['location_id']) && (int) $listingContext['location_id'] > 0) {
-            $query->where('location_id', (int) $listingContext['location_id']);
-
-            return;
-        }
-
-        if (! empty($listingContext['location_ids'])) {
-            $query->whereIn('location_id', $listingContext['location_ids']);
         }
     }
 
