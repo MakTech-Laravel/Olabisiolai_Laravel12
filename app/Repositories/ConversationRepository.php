@@ -124,6 +124,7 @@ final class ConversationRepository implements ConversationRepositoryInterface
         return [
             'lastMessage.sender',
             'lastMessage.attachments',
+            'businessInfo:id,user_id,business_name,logo_path,verified_at',
             'participantRows.user:id,uuid,name,first_name,last_name,email,role,image',
             'participantRows.user.messagingPresence',
             'participantRows.user.businessInfo:id,user_id,business_name,logo_path,verified_at',

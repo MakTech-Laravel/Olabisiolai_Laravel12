@@ -88,11 +88,28 @@ final class RealtimeNotificationService
         string $businessName,
         string $vendorName,
     ): void {
-        $this->notifyEachAdmin(fn(Admin $admin): RealtimeNotification => RealtimeNotification::verificationSubmitted(
+        $this->notifyEachAdmin(fn (Admin $admin): RealtimeNotification => RealtimeNotification::verificationSubmitted(
             recipientAdminId: (int) $admin->id,
             businessInfoId: $businessInfoId,
             businessName: $businessName,
             vendorName: $vendorName,
+        ));
+    }
+
+    public function newFollow(User $vendor, User $follower): void
+    {
+        $followerBusinessId = $follower->isVendor() && $follower->businessInfo !== null
+            ? (int) $follower->businessInfo->id
+            : null;
+
+        $this->notifyUser($vendor, RealtimeNotification::newFollow(
+            recipientUserId: (int) $vendor->id,
+            recipientBusinessId: (int) $vendor->businessInfo->id,
+            followerId: (int) $follower->id,
+            followerName: (string) $follower->name,
+            followerUuid: (string) $follower->uuid,
+            followerRole: (string) $follower->role,
+            followerBusinessId: $followerBusinessId,
         ));
     }
 

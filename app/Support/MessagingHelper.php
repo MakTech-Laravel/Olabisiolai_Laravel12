@@ -8,8 +8,10 @@ use App\Enums\ConversationType;
 use App\Enums\MessageStatus;
 use App\Enums\MessageType;
 use App\Models\Conversation;
+use App\Models\ConversationParticipant;
 use App\Models\Message;
 use App\Models\User;
+use App\Services\PresenceService;
 use Illuminate\Support\Carbon;
 
 final class MessagingHelper
@@ -89,10 +91,32 @@ final class MessagingHelper
 
     /**
      * Conversation title for the authenticated viewer (other party in direct chats).
+     *
+     * For business-tagged direct conversations:
+     * - Business owner sees the sender's personal name (not their business name).
+     * - Sender sees the contacted business name (not the business owner's personal name).
      */
     public static function conversationDisplayName(Conversation $conversation, ?User $viewer = null): string
     {
         if ($conversation->type === ConversationType::Direct && $viewer !== null) {
+            if ($conversation->business_info_id !== null && $conversation->relationLoaded('businessInfo')) {
+                $businessOwnerId = (int) ($conversation->businessInfo?->user_id ?? 0);
+
+                if ($businessOwnerId > 0 && (int) $viewer->id === $businessOwnerId) {
+                    // Business inbox: show the sender's personal name
+                    $other = self::otherParticipant($conversation, $viewer);
+
+                    return $other?->user !== null
+                        ? self::userPersonalName($other->user)
+                        : 'Direct message';
+                }
+
+                // Personal inbox: show the business name directly
+                if (filled($conversation->businessInfo?->business_name)) {
+                    return trim((string) $conversation->businessInfo->business_name);
+                }
+            }
+
             $other = self::otherParticipant($conversation, $viewer);
 
             if ($other?->user !== null) {
@@ -126,14 +150,61 @@ final class MessagingHelper
 
         $user = $other->user;
 
-        $displayName = self::participantDisplayName($user);
+        $presence = $user->relationLoaded('messagingPresence') && $user->messagingPresence
+            ? app(PresenceService::class)->toPublicPayload($user->messagingPresence)
+            : null;
 
+        if ($conversation->business_info_id !== null && $conversation->relationLoaded('businessInfo')) {
+            $businessOwnerId = (int) ($conversation->businessInfo?->user_id ?? 0);
+
+            if ($businessOwnerId > 0 && (int) $viewer->id === $businessOwnerId) {
+                // Business inbox: show the sender's personal name and profile image
+                $displayName = self::userPersonalName($user);
+                $senderBusinessInfoId = null;
+                if ($user->role === 'vendor' && $user->relationLoaded('businessInfo') && $user->businessInfo !== null) {
+                    $senderBusinessInfoId = (int) $user->businessInfo->id;
+                }
+
+                return [
+                    'user_id' => $other->user_id,
+                    'id' => $user->id,
+                    'uuid' => $user->uuid,
+                    'role' => $user->role,
+                    'name' => $displayName,
+                    'display_name' => $displayName,
+                    'business_info_id' => $senderBusinessInfoId > 0 ? $senderBusinessInfoId : null,
+                    'avatar_url' => $user->image_url,
+                    'is_verified' => self::isVerifiedVendor($user),
+                    'presence' => $presence,
+                ];
+            }
+
+            // Personal inbox: show the contacted business name and logo
+            if ($conversation->businessInfo !== null) {
+                $businessInfo = $conversation->businessInfo;
+                $businessName = trim((string) $businessInfo->business_name);
+                $avatarUrl = filled($businessInfo->logo_path)
+                    ? public_media_url((string) $businessInfo->logo_path, null)
+                    : null;
+
+                return [
+                    'user_id' => $other->user_id,
+                    'id' => $user->id,
+                    'uuid' => $user->uuid,
+                    'role' => $user->role,
+                    'name' => $businessName,
+                    'display_name' => $businessName,
+                    'business_info_id' => (int) $conversation->business_info_id,
+                    'avatar_url' => $avatarUrl,
+                    'is_verified' => $businessInfo->verified_at !== null,
+                    'presence' => $presence,
+                ];
+            }
+        }
+
+        $displayName = self::participantDisplayName($user);
         $businessInfoId = null;
-        if (
-            $user->role === 'vendor'
-            && $user->relationLoaded('businessInfo')
-            && $user->businessInfo !== null
-        ) {
+        if ($user->role === 'vendor' && $user->relationLoaded('businessInfo') && $user->businessInfo !== null) {
             $businessInfoId = (int) $user->businessInfo->id;
         }
 
@@ -147,9 +218,7 @@ final class MessagingHelper
             'business_info_id' => $businessInfoId > 0 ? $businessInfoId : null,
             'avatar_url' => self::userAvatarUrl($user),
             'is_verified' => self::isVerifiedVendor($user),
-            'presence' => $user->relationLoaded('messagingPresence') && $user->messagingPresence
-                ? app(\App\Services\PresenceService::class)->toPublicPayload($user->messagingPresence)
-                : null,
+            'presence' => $presence,
         ];
     }
 
@@ -202,7 +271,7 @@ final class MessagingHelper
 
         if ($message->relationLoaded('reads')) {
             $readByOther = $message->reads->contains(
-                static fn($read): bool => (int) $read->user_id !== (int) $viewer->id,
+                static fn ($read): bool => (int) $read->user_id !== (int) $viewer->id,
             );
 
             if ($readByOther) {
@@ -259,7 +328,7 @@ final class MessagingHelper
         return $user->businessInfo?->verified_at !== null;
     }
 
-    private static function userPersonalName(User $user): string
+    public static function userPersonalName(User $user): string
     {
         $name = trim((string) ($user->name ?? ''));
 
@@ -268,7 +337,7 @@ final class MessagingHelper
         }
 
         $composed = trim(
-            trim((string) ($user->first_name ?? '')) . ' ' . trim((string) ($user->last_name ?? '')),
+            trim((string) ($user->first_name ?? '')).' '.trim((string) ($user->last_name ?? '')),
         );
 
         if ($composed !== '') {
@@ -282,17 +351,14 @@ final class MessagingHelper
         return 'User';
     }
 
-    /**
-     * @return \App\Models\ConversationParticipant|null
-     */
-    private static function otherParticipant(Conversation $conversation, User $viewer): ?\App\Models\ConversationParticipant
+    private static function otherParticipant(Conversation $conversation, User $viewer): ?ConversationParticipant
     {
         if (! $conversation->relationLoaded('participantRows')) {
             return null;
         }
 
         return $conversation->participantRows->first(
-            static fn($row): bool => (int) $row->user_id !== (int) $viewer->id,
+            static fn ($row): bool => (int) $row->user_id !== (int) $viewer->id,
         );
     }
 }

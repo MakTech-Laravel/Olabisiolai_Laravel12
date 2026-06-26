@@ -8,6 +8,7 @@ use App\Models\Message;
 use App\Repositories\Contracts\ConversationRepositoryInterface;
 use App\Services\AdminMessagingUserResolver;
 use App\Services\RealtimeNotificationService;
+use App\Support\MessagingHelper;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -20,8 +21,7 @@ final class SendMessageNotification implements ShouldQueue
 
     public function __construct(
         public int $messageId,
-    ) {
-    }
+    ) {}
 
     public function handle(
         ConversationRepositoryInterface $conversationRepository,
@@ -65,7 +65,7 @@ final class SendMessageNotification implements ShouldQueue
 
             $senderName = $fromPlatformAdmin
                 ? (string) config('messaging.platform_admin_display_name', 'Olabisiolai Admin')
-                : (string) $sender->name;
+                : MessagingHelper::userPersonalName($sender);
 
             $conversation = $message->conversation;
             $conversationUuid = (string) $conversation->uuid;

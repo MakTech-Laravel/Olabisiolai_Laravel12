@@ -6,11 +6,14 @@ use App\Enums\BusinessStatus;
 use App\Models\BusinessInfo;
 use App\Models\User;
 use App\Models\UserFollow;
-use Illuminate\Database\Eloquent\Builder;
 use RuntimeException;
 
 class UserFollowService
 {
+    public function __construct(
+        private readonly RealtimeNotificationService $notifications,
+    ) {}
+
     public function canManageFollows(?User $user): bool
     {
         return $user instanceof User && ($user->isUser() || $user->isVendor());
@@ -61,6 +64,8 @@ class UserFollowService
             'follower_id' => $follower->id,
             'following_id' => $target->id,
         ]);
+
+        $this->notifications->newFollow($target, $follower);
 
         return [
             'following' => true,

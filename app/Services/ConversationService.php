@@ -44,6 +44,7 @@ final class ConversationService
                 return $existing->load([
                     'lastMessage.sender',
                     'lastMessage.attachments',
+                    'businessInfo:id,user_id,business_name,logo_path,verified_at',
                     'participantRows.user.messagingPresence',
                     'participantRows.user.businessInfo:id,user_id,business_name,logo_path,verified_at',
                 ]);
@@ -74,6 +75,7 @@ final class ConversationService
             $conversation->load([
                 'lastMessage.sender',
                 'lastMessage.attachments',
+                'businessInfo:id,user_id,business_name,logo_path,verified_at',
                 'participantRows.user.messagingPresence',
                 'participantRows.user.businessInfo:id,user_id,business_name,logo_path,verified_at',
             ]);
@@ -116,8 +118,8 @@ final class ConversationService
     public function searchRecipients(User $viewer, string $query): Collection
     {
         $trimmed = trim($query);
-        $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $trimmed) . '%';
-        $emailLike = '%' . str_replace(['%', '_'], ['\\%', '\\_'], strtolower($trimmed)) . '%';
+        $like = '%'.str_replace(['%', '_'], ['\\%', '\\_'], $trimmed).'%';
+        $emailLike = '%'.str_replace(['%', '_'], ['\\%', '\\_'], strtolower($trimmed)).'%';
 
         return User::query()
             ->where('id', '!=', $viewer->id)
@@ -162,7 +164,7 @@ final class ConversationService
         return Cache::remember(
             $this->participantCacheKey($conversation->uuid),
             300,
-            fn(): \Illuminate\Support\Collection => $conversation->participantRows()
+            fn (): \Illuminate\Support\Collection => $conversation->participantRows()
                 ->pluck('user_id')
                 ->unique()
                 ->values()
