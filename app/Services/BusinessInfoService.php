@@ -32,6 +32,9 @@ class BusinessInfoService
     /** Eager-load columns for vendor on public {@see BusinessInfoResource} payloads. */
     private const PUBLIC_VENDOR_USER_COLUMNS = 'user:id,name,email,phone,role,uuid';
 
+    /** Businesses within this radius (km) from the search anchor are listed first. */
+    private const NEARBY_PRIORITY_RADIUS_KM = 0.804672;
+
     /*
     |--------------------------------------------------------------------------
     | Dependencies
@@ -89,6 +92,7 @@ class BusinessInfoService
             });
         }
 
+        $this->applyPublicProximityOrdering($query, $validated, $listingContext);
         $this->applyPublicBoostPriorityOrdering($query, $listingContext);
 
         return $query->paginate($perPage);
@@ -163,6 +167,7 @@ class BusinessInfoService
             $this->applyPublicSearchFilter($query, trim((string) $validated['search']));
         }
 
+        $this->applyPublicProximityOrdering($query, $validated, $listingContext);
         $this->applyPublicBoostPriorityOrdering($query, $listingContext);
 
         return $query->paginate($perPage);
@@ -193,6 +198,7 @@ class BusinessInfoService
 
         $this->applyPublicGeoRadiusFilter($query, $validated);
 
+        $this->applyPublicProximityOrdering($query, $validated, $listingContext);
         $this->applyPublicBoostPriorityOrdering($query, $listingContext);
 
         return $query->paginate($perPage);
@@ -1275,6 +1281,78 @@ class BusinessInfoService
         if (isset($validated['location_id']) && (int) $validated['location_id'] > 0) {
             $query->where('location_id', (int) $validated['location_id']);
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @param  array{location_id?: int, location_ids?: list<int>, resolved_from_search?: bool}  $listingContext
+     */
+    private function applyPublicProximityOrdering(Builder $query, array $validated, array $listingContext): void
+    {
+        $anchor = $this->resolvePublicProximityAnchor($validated, $listingContext);
+        if ($anchor === null) {
+            return;
+        }
+
+        $lat = $anchor['lat'];
+        $lng = $anchor['lng'];
+        $nearKm = self::NEARBY_PRIORITY_RADIUS_KM;
+
+        $businessLat = 'COALESCE(business_info.latitude, (SELECT l.latitude FROM locations l WHERE l.id = business_info.location_id LIMIT 1))';
+        $businessLng = 'COALESCE(business_info.longitude, (SELECT l.longitude FROM locations l WHERE l.id = business_info.location_id LIMIT 1))';
+
+        $distanceSql = "(6371 * acos(LEAST(1, GREATEST(-1, cos(radians(?)) * cos(radians({$businessLat})) * cos(radians({$businessLng}) - radians(?)) + sin(radians(?)) * sin(radians({$businessLat}))))))";
+
+        $query->orderByRaw(
+            "CASE WHEN {$businessLat} IS NOT NULL AND {$businessLng} IS NOT NULL AND ({$distanceSql}) <= ? THEN 0 ELSE 1 END ASC",
+            [$lat, $lng, $lat, $nearKm],
+        );
+        $query->orderByRaw("({$distanceSql}) ASC", [$lat, $lng, $lat]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @param  array{location_id?: int, location_ids?: list<int>, resolved_from_search?: bool}  $listingContext
+     * @return array{lat: float, lng: float}|null
+     */
+    private function resolvePublicProximityAnchor(array $validated, array $listingContext): ?array
+    {
+        if (isset($validated['lat'], $validated['lng'])) {
+            return [
+                'lat' => (float) $validated['lat'],
+                'lng' => (float) $validated['lng'],
+            ];
+        }
+
+        $locationId = isset($validated['location_id']) ? (int) $validated['location_id'] : 0;
+        if ($locationId <= 0 && isset($listingContext['location_id'])) {
+            $locationId = (int) $listingContext['location_id'];
+        }
+
+        if ($locationId <= 0 && ! empty($listingContext['location_ids'])) {
+            $locationId = (int) $listingContext['location_ids'][0];
+        }
+
+        if ($locationId <= 0) {
+            return null;
+        }
+
+        $location = Location::query()->find($locationId);
+        if ($location === null) {
+            return null;
+        }
+
+        $latitude = $location->resolvedLatitude();
+        $longitude = $location->resolvedLongitude();
+
+        if ($latitude === null || $longitude === null) {
+            return null;
+        }
+
+        return [
+            'lat' => $latitude,
+            'lng' => $longitude,
+        ];
     }
 
     /**
