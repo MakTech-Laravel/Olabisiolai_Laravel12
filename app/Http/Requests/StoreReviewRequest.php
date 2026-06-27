@@ -31,7 +31,7 @@ class StoreReviewRequest extends FormRequest
             'is_anonymous' => 'boolean',
             'rating' => 'required|integer|min:1|max:5',
             'review_text' => 'required|string|min:10|max:2000',
-            'images' => 'nullable|array|max:5',
+            'images' => 'nullable|array|max:10',
             'images.*' => [
                 'required',
                 'file',
@@ -51,7 +51,7 @@ class StoreReviewRequest extends FormRequest
             'review_text.required' => 'Please write a review.',
             'review_text.min' => 'Review must be at least 10 characters long.',
             'review_text.max' => 'Review cannot exceed 2000 characters.',
-            'images.max' => 'You can upload a maximum of 5 images.',
+            'images.max' => 'You can upload a maximum of 10 images.',
             'images.*.image' => 'All files must be images.',
             'images.*.mimes' => 'Images must be in JPG, PNG, or WebP format.',
             'images.*.max' => 'Each image cannot be larger than 5MB.',

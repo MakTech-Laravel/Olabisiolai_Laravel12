@@ -90,13 +90,28 @@ class ReviewController extends Controller
             return $files->isValid() ? [$files] : [];
         }
 
-        if (! is_array($files)) {
-            return [];
+        if (is_array($files)) {
+            return array_values(array_filter(
+                $files,
+                static fn (mixed $file): bool => $file instanceof UploadedFile && $file->isValid(),
+            ));
         }
 
-        return array_values(array_filter(
-            $files,
-            static fn (mixed $file): bool => $file instanceof UploadedFile && $file->isValid(),
-        ));
+        $normalized = [];
+        foreach ($request->allFiles() as $key => $value) {
+            if ($key === 'images' || str_starts_with((string) $key, 'images.')) {
+                if ($value instanceof UploadedFile && $value->isValid()) {
+                    $normalized[] = $value;
+                } elseif (is_array($value)) {
+                    foreach ($value as $file) {
+                        if ($file instanceof UploadedFile && $file->isValid()) {
+                            $normalized[] = $file;
+                        }
+                    }
+                }
+            }
+        }
+
+        return $normalized;
     }
 }
