@@ -10,18 +10,16 @@ use App\Enums\VerificationStatus;
 use App\Enums\VerificationWorkflowStatus;
 use App\Enums\VerificationWorkflowType;
 use App\Http\Traits\FileManagementTrait;
-use App\Models\Admin;
 use App\Models\BusinessInfo;
 use App\Models\Payment;
 use App\Models\User;
-use Illuminate\Contracts\Auth\Authenticatable;
 use App\Models\VerificationDocument;
 use App\Models\VerificationNote;
 use App\Models\VerificationWorkflow;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 use Throwable;
 
@@ -77,7 +75,7 @@ class VerificationService
             throw new RuntimeException('At least one document is required.');
         }
 
-        $folderPath = 'businesses/' . $business->id . '/verification';
+        $folderPath = 'businesses/'.$business->id.'/verification';
         $uploadedPaths = [];
 
         try {
@@ -146,8 +144,8 @@ class VerificationService
     public function getVendorVerificationStatus(BusinessInfo $business): array
     {
         $business->load([
-            'verificationDocuments' => fn($query) => $query->latest()->with('uploadedBy:id,name'),
-            'verificationNotes' => fn($query) => $query->where('is_visible_to_vendor', true)->latest(),
+            'verificationDocuments' => fn ($query) => $query->latest()->with('uploadedBy:id,name'),
+            'verificationNotes' => fn ($query) => $query->where('is_visible_to_vendor', true)->latest(),
         ]);
 
         $purchasedPackage = $this->resolvePurchasedVerificationPackage($business);
@@ -163,19 +161,19 @@ class VerificationService
             'awaiting_document_submission' => $awaitingDocumentSubmission,
             'consumable_payment_id' => $awaitingDocumentSubmission ? $consumablePayment?->id : null,
             'purchased_package' => $purchasedPackage,
-            'documents' => $business->verificationDocuments->map(fn(VerificationDocument $doc): array => [
+            'documents' => $business->verificationDocuments->map(fn (VerificationDocument $doc): array => [
                 'id' => $doc->id,
                 'parent_document_id' => $doc->parent_document_id,
                 'document_type' => $doc->document_type,
                 'title' => $doc->title,
                 'description' => $doc->description,
                 'file_name' => $doc->file_name,
-                'file_url' => $doc->file_path ? Storage::url($doc->file_path) : null,
+                'file_url' => $doc->file_path ? storage_url($doc->file_path) : null,
                 'status' => $doc->status->value,
                 'rejection_reason' => $doc->rejection_reason,
                 'submitted_at' => humanDateTime($doc->created_at),
             ])->values(),
-            'notes' => $business->verificationNotes->map(fn(VerificationNote $note): array => [
+            'notes' => $business->verificationNotes->map(fn (VerificationNote $note): array => [
                 'id' => $note->id,
                 'note' => $note->note,
                 'created_at' => humanDateTime($note->created_at),
@@ -284,7 +282,7 @@ class VerificationService
             ->with([
                 'user:id,first_name,last_name,name,email,phone,role',
                 'category:id,name,subcategories',
-                'verificationDocuments' => fn($q) => $q->latest()->limit(1),
+                'verificationDocuments' => fn ($q) => $q->latest()->limit(1),
             ])
             ->withMax('verificationWorkflows', 'created_at')
             ->withMax('verificationDocuments', 'created_at')
@@ -294,11 +292,11 @@ class VerificationService
                     VerificationStatus::Approved,
                 ])->orWhere('is_flagged', true);
             })
-            ->when($verificationStatus === 'flagged', fn($q) => $q->where('is_flagged', true))
-            ->when($verificationStatus === 'pending', fn($q) => $q
+            ->when($verificationStatus === 'flagged', fn ($q) => $q->where('is_flagged', true))
+            ->when($verificationStatus === 'pending', fn ($q) => $q
                 ->where('verification_status', VerificationStatus::Pending)
                 ->where('is_flagged', false))
-            ->when($verificationStatus === 'queue', fn($q) => $q->where(function ($inner): void {
+            ->when($verificationStatus === 'queue', fn ($q) => $q->where(function ($inner): void {
                 $inner->where(function ($pending): void {
                     $pending->where('verification_status', VerificationStatus::Pending)
                         ->where('is_flagged', false);
@@ -307,13 +305,13 @@ class VerificationService
             ->when(
                 $verificationStatus !== null
                     && ! in_array($verificationStatus, ['flagged', 'pending', 'queue', 'all'], true),
-                fn($q) => $q->where('verification_status', $verificationStatus),
+                fn ($q) => $q->where('verification_status', $verificationStatus),
             )
             ->when($search !== null && trim($search) !== '', function ($query) use ($search): void {
                 $term = trim($search);
                 $query->where(function ($q) use ($term): void {
                     $q->where('business_name', 'like', "%{$term}%")
-                        ->orWhereHas('user', fn($uq) => $uq->where('name', 'like', "%{$term}%")->orWhere('email', 'like', "%{$term}%"));
+                        ->orWhereHas('user', fn ($uq) => $uq->where('name', 'like', "%{$term}%")->orWhere('email', 'like', "%{$term}%"));
                 });
             })
             ->orderByDesc(DB::raw($submissionOrderSql))
@@ -327,13 +325,13 @@ class VerificationService
                 'user:id,first_name,last_name,name,email,phone,role',
                 'category:id,name,subcategories',
                 'verifiedBy:id,name,email',
-                'verificationDocuments' => fn($q) => $q->latest()->with('uploadedBy:id,name,email'),
-                'verificationNotes' => fn($q) => $q->latest()->with('addedBy:id,name,email'),
-                'verificationWorkflows' => fn($q) => $q->latest()->with([
+                'verificationDocuments' => fn ($q) => $q->latest()->with('uploadedBy:id,name,email'),
+                'verificationNotes' => fn ($q) => $q->latest()->with('addedBy:id,name,email'),
+                'verificationWorkflows' => fn ($q) => $q->latest()->with([
                     'triggeredBy:id,name,email',
                     'assignedTo:id,name,email',
                 ]),
-                'payments' => fn($q) => $q
+                'payments' => fn ($q) => $q
                     ->where('purpose', PaymentPurpose::Verification)
                     ->latest(),
             ])
@@ -406,7 +404,7 @@ class VerificationService
             }
         }
 
-        $folderPath = 'businesses/' . $business->id . '/verification';
+        $folderPath = 'businesses/'.$business->id.'/verification';
         $filePath = $this->handleFileUpload($file, $folderPath, $title);
 
         try {
@@ -573,7 +571,7 @@ class VerificationService
     public function revokeVerificationByAdmin(BusinessInfo $business, Authenticatable $admin, ?string $reason = null): BusinessInfo
     {
         if ($business->verification_status === VerificationStatus::None && ! $business->is_flagged) {
-            throw new \RuntimeException('This business is not verified.');
+            throw new RuntimeException('This business is not verified.');
         }
 
         $noteText = $reason !== null && trim($reason) !== ''

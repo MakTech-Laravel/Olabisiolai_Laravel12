@@ -7,7 +7,6 @@ use App\Models\VerificationNote;
 use App\Models\VerificationWorkflow;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\Storage;
 
 class VerificationResource extends JsonResource
 {
@@ -21,7 +20,7 @@ class VerificationResource extends JsonResource
             'business_name' => $this->business_name,
             'vendor' => $this->when(
                 $this->relationLoaded('user') && $this->user !== null,
-                fn() => [
+                fn () => [
                     'id' => $this->user->id,
                     'name' => $this->user->name,
                     'email' => $this->user->email,
@@ -30,12 +29,12 @@ class VerificationResource extends JsonResource
             ),
             'category' => $this->when(
                 $this->relationLoaded('category') && $this->category !== null,
-                fn() => [
+                fn () => [
                     'id' => $this->category->id,
                     'name' => $this->category->name,
                 ]
             ),
-            'logo_url' => $this->logo_path ? Storage::url($this->logo_path) : null,
+            'logo_url' => $this->logo_path ? public_media_url($this->logo_path, null) : null,
             'verification_status' => $this->verification_status->value,
             'verification_status_label' => $this->verification_status->value === 'approved'
                 ? $this->verification_status->label()
@@ -45,7 +44,7 @@ class VerificationResource extends JsonResource
             'business_status' => $this->business_status->value,
             'verified_by' => $this->when(
                 $this->relationLoaded('verifiedBy') && $this->verifiedBy !== null,
-                fn() => [
+                fn () => [
                     'id' => $this->verifiedBy->id,
                     'name' => $this->verifiedBy->name,
                     'email' => $this->verifiedBy->email,
@@ -60,14 +59,14 @@ class VerificationResource extends JsonResource
             'verification_note' => $this->verification_note,
             'documents' => $this->when(
                 $this->relationLoaded('verificationDocuments'),
-                fn() => $this->verificationDocuments->map(fn(VerificationDocument $doc): array => [
+                fn () => $this->verificationDocuments->map(fn (VerificationDocument $doc): array => [
                     'id' => $doc->id,
                     'parent_document_id' => $doc->parent_document_id,
                     'document_type' => $doc->document_type,
                     'title' => $doc->title,
                     'description' => $doc->description,
                     'file_name' => $doc->file_name,
-                    'file_url' => $doc->file_path ? Storage::url($doc->file_path) : null,
+                    'file_url' => $doc->file_path ? storage_url($doc->file_path) : null,
                     'mime_type' => $doc->mime_type,
                     'file_size' => $doc->file_size,
                     'status' => $doc->status->value,
@@ -80,7 +79,7 @@ class VerificationResource extends JsonResource
             ),
             'notes' => $this->when(
                 $this->relationLoaded('verificationNotes'),
-                fn() => $this->verificationNotes->map(fn(VerificationNote $note): array => [
+                fn () => $this->verificationNotes->map(fn (VerificationNote $note): array => [
                     'id' => $note->id,
                     'note_type' => $note->note_type->value,
                     'note' => $note->note,
@@ -93,7 +92,7 @@ class VerificationResource extends JsonResource
             ),
             'payments' => $this->when(
                 $this->relationLoaded('payments'),
-                fn() => $this->payments->map(fn($payment): array => [
+                fn () => $this->payments->map(fn ($payment): array => [
                     'id' => $payment->id,
                     'package_id' => $payment->package_id,
                     'amount' => (float) $payment->amount,
@@ -105,7 +104,7 @@ class VerificationResource extends JsonResource
             ),
             'workflows' => $this->when(
                 $this->relationLoaded('verificationWorkflows'),
-                fn() => $this->verificationWorkflows->map(fn(VerificationWorkflow $wf): array => [
+                fn () => $this->verificationWorkflows->map(fn (VerificationWorkflow $wf): array => [
                     'id' => $wf->id,
                     'workflow_type' => $wf->workflow_type->value,
                     'status' => $wf->status->value,
