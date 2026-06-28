@@ -34,7 +34,20 @@ class UserFollowController extends Controller
         try {
             $validated = $request->validate([
                 'user_id' => ['nullable', 'integer', Rule::exists('users', 'id')],
+                'business_id' => ['nullable', 'integer', Rule::exists('business_info', 'id')],
             ]);
+
+            if (isset($validated['business_id'])) {
+                $business = BusinessInfo::query()->find((int) $validated['business_id']);
+
+                return sendResponse(true, 'Follow stats retrieved successfully.', [
+                    'business_id' => (int) $validated['business_id'],
+                    'followers_count' => $business instanceof BusinessInfo
+                        ? $this->userFollowService->followersCountForBusiness((int) $business->id)
+                        : 0,
+                    'following_count' => $this->userFollowService->followingCount($user->id),
+                ]);
+            }
 
             $targetId = isset($validated['user_id'])
                 ? (int) $validated['user_id']
@@ -85,7 +98,7 @@ class UserFollowController extends Controller
             $page = $validated['page'] ?? 1;
 
             $follows = UserFollow::query()
-                ->where('following_id', $business->user_id)
+                ->where('business_info_id', $business->id)
                 ->with(['follower'])
                 ->latest('created_at')
                 ->paginate($perPage, ['*'], 'page', $page);
@@ -135,7 +148,8 @@ class UserFollowController extends Controller
             $follows = UserFollow::query()
                 ->where('follower_id', $user->id)
                 ->with([
-                    'following.businessInfo' => function ($query): void {
+                    'following',
+                    'businessInfo' => function ($query): void {
                         $query->with([
                             'category:id,name,subcategories',
                             'location:id,lga_name,state_name,city_name,country_name',
@@ -181,6 +195,7 @@ class UserFollowController extends Controller
         try {
             $validated = $request->validate([
                 'following_user_id' => ['required', 'integer', Rule::exists('users', 'id')],
+                'business_id' => ['required', 'integer', Rule::exists('business_info', 'id')],
             ]);
 
             $target = User::query()->find((int) $validated['following_user_id']);
@@ -189,15 +204,16 @@ class UserFollowController extends Controller
                 return sendResponse(false, 'User not found.', null, Response::HTTP_NOT_FOUND);
             }
 
-            $result = $this->userFollowService->toggle($user, $target);
+            $result = $this->userFollowService->toggle(
+                $user,
+                $target,
+                (int) $validated['business_id'],
+            );
 
             return sendResponse(
                 true,
                 'Follow status updated.',
-                [
-                    ...$result,
-                    'followers_count' => $this->userFollowService->followersCount($target->id),
-                ],
+                $result,
                 $result['following'] ? Response::HTTP_CREATED : Response::HTTP_OK,
             );
         } catch (RuntimeException $exception) {

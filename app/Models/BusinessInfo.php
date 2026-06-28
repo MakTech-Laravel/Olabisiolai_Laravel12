@@ -193,7 +193,7 @@ class BusinessInfo extends Model
      */
     public function followerLinks(): HasMany
     {
-        return $this->hasMany(UserFollow::class, 'following_id', 'user_id');
+        return $this->hasMany(UserFollow::class, 'business_info_id');
     }
 
     /**

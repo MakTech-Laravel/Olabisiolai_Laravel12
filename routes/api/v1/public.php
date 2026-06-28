@@ -8,8 +8,11 @@ use App\Http\Controllers\Api\V1\Public\PublicLocationCatalogController;
 use App\Http\Controllers\Api\V1\Public\ReviewController;
 use App\Http\Controllers\Api\V1\BusinessReportController;
 use App\Http\Controllers\Api\V1\ReviewReportController;
-use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\V1\RealtimeController;
+use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
+use Illuminate\Cookie\Middleware\EncryptCookies;
+use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
@@ -30,7 +33,13 @@ Route::prefix('businesses')->name('businesses.')->group(function () {
     Route::get('/home', [BusinessInfoController::class, 'homePage'])->name('home');
     Route::get('/featured', [BusinessInfoController::class, 'featured'])->name('featured');
     Route::get('/search', [BusinessInfoController::class, 'search'])->name('search');
-    Route::get('/{businessId}', [BusinessInfoController::class, 'show'])->name('show');
+    Route::get('/{businessId}', [BusinessInfoController::class, 'show'])
+        ->middleware([
+            EncryptCookies::class,
+            AddQueuedCookiesToResponse::class,
+            StartSession::class,
+        ])
+        ->name('show');
 });
 
 Route::get('/business-report-reasons', [BusinessReportController::class, 'reasons'])

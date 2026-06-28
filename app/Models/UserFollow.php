@@ -13,6 +13,7 @@ class UserFollow extends Model
     protected $fillable = [
         'follower_id',
         'following_id',
+        'business_info_id',
     ];
 
     /**
@@ -29,5 +30,13 @@ class UserFollow extends Model
     public function following(): BelongsTo
     {
         return $this->belongsTo(User::class, 'following_id');
+    }
+
+    /**
+     * @return BelongsTo<BusinessInfo, $this>
+     */
+    public function businessInfo(): BelongsTo
+    {
+        return $this->belongsTo(BusinessInfo::class, 'business_info_id');
     }
 }

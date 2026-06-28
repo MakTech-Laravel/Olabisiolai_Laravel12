@@ -184,7 +184,7 @@ final class ConversationRepository implements ConversationRepositoryInterface
     /**
      * @param  list<int>  $userIds
      */
-    public function findDirectBetweenUsers(array $userIds): ?Conversation
+    public function findDirectBetweenUsers(array $userIds, ?int $businessInfoId = null): ?Conversation
     {
         sort($userIds);
         $a = $userIds[0] ?? null;
@@ -194,12 +194,17 @@ final class ConversationRepository implements ConversationRepositoryInterface
             return null;
         }
 
-        return Conversation::query()
+        $query = Conversation::query()
             ->where('type', 'direct')
             ->whereHas('participantRows', fn (Builder $q) => $q->where('user_id', $a))
             ->whereHas('participantRows', fn (Builder $q) => $q->where('user_id', $b))
             ->whereDoesntHave('participantRows', fn (Builder $q) => $q->whereNotIn('user_id', [$a, $b]))
-            ->whereRaw('(select count(*) from conversation_participants where conversation_participants.conversation_id = conversations.id) = 2')
-            ->first();
+            ->whereRaw('(select count(*) from conversation_participants where conversation_participants.conversation_id = conversations.id) = 2');
+
+        if ($businessInfoId !== null) {
+            $query->where('business_info_id', $businessInfoId);
+        }
+
+        return $query->first();
     }
 }

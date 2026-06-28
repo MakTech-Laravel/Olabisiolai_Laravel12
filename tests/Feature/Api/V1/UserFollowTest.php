@@ -37,13 +37,14 @@ class UserFollowTest extends TestCase
 
         $toggleResponse = $this->withToken($token)->postJson('/api/v1/user/follows/toggle', [
             'following_user_id' => $vendor->id,
+            'business_id' => $business->id,
         ]);
 
         $toggleResponse->assertCreated();
         $toggleResponse->assertJsonPath('data.following', true);
         $toggleResponse->assertJsonPath('data.followers_count', 1);
 
-        $statsResponse = $this->withToken($token)->getJson('/api/v1/user/follows/stats?user_id='.$vendor->id);
+        $statsResponse = $this->withToken($token)->getJson('/api/v1/user/follows/stats?business_id='.$business->id);
         $statsResponse->assertOk();
         $statsResponse->assertJsonPath('data.followers_count', 1);
 
@@ -59,20 +60,56 @@ class UserFollowTest extends TestCase
 
         $unfollowResponse = $this->withToken($token)->postJson('/api/v1/user/follows/toggle', [
             'following_user_id' => $vendor->id,
+            'business_id' => $business->id,
         ]);
         $unfollowResponse->assertOk();
         $unfollowResponse->assertJsonPath('data.following', false);
     }
 
+    public function test_followers_are_isolated_per_business_page(): void
+    {
+        [$vendor, $firstBusiness] = $this->createVendorBusiness('First Business');
+        $secondBusiness = BusinessInfo::factory()->create([
+            'user_id' => $vendor->id,
+            'category_id' => $firstBusiness->category_id,
+            'location_id' => $firstBusiness->location_id,
+            'business_name' => 'Second Business',
+            'business_status' => BusinessStatus::Active,
+            'is_flagged' => false,
+        ]);
+
+        $customer = User::factory()->create([
+            'role' => 'user',
+            'email_verified_at' => now(),
+        ]);
+
+        $token = $customer->createToken('test')->accessToken;
+
+        $this->withToken($token)->postJson('/api/v1/user/follows/toggle', [
+            'following_user_id' => $vendor->id,
+            'business_id' => $firstBusiness->id,
+        ])->assertCreated();
+
+        $firstPublic = $this->withToken($token)->getJson('/api/v1/businesses/'.$firstBusiness->id);
+        $firstPublic->assertOk();
+        $firstPublic->assertJsonPath('data.business.followers_count', 1);
+
+        $secondPublic = $this->withToken($token)->getJson('/api/v1/businesses/'.$secondBusiness->id);
+        $secondPublic->assertOk();
+        $secondPublic->assertJsonPath('data.business.followers_count', 0);
+        $secondPublic->assertJsonPath('data.business.is_following', false);
+    }
+
     public function test_vendor_can_follow_another_vendor(): void
     {
-        [$vendorA] = $this->createVendorBusiness();
-        [$vendorB] = $this->createVendorBusiness();
+        [$vendorA, $businessA] = $this->createVendorBusiness();
+        [$vendorB, $businessB] = $this->createVendorBusiness();
 
         $token = $vendorA->createToken('test')->accessToken;
 
         $response = $this->withToken($token)->postJson('/api/v1/user/follows/toggle', [
             'following_user_id' => $vendorB->id,
+            'business_id' => $businessB->id,
         ]);
 
         $response->assertCreated();
@@ -81,7 +118,7 @@ class UserFollowTest extends TestCase
 
     public function test_vendor_cannot_follow_customer(): void
     {
-        [$vendor] = $this->createVendorBusiness();
+        [$vendor, $business] = $this->createVendorBusiness();
         $customer = User::factory()->create([
             'role' => 'user',
             'email_verified_at' => now(),
@@ -91,6 +128,7 @@ class UserFollowTest extends TestCase
 
         $response = $this->withToken($token)->postJson('/api/v1/user/follows/toggle', [
             'following_user_id' => $customer->id,
+            'business_id' => $business->id,
         ]);
 
         $response->assertUnprocessable();
@@ -98,11 +136,12 @@ class UserFollowTest extends TestCase
 
     public function test_user_cannot_follow_self(): void
     {
-        [$vendor] = $this->createVendorBusiness();
+        [$vendor, $business] = $this->createVendorBusiness();
         $token = $vendor->createToken('test')->accessToken;
 
         $response = $this->withToken($token)->postJson('/api/v1/user/follows/toggle', [
             'following_user_id' => $vendor->id,
+            'business_id' => $business->id,
         ]);
 
         $response->assertUnprocessable();
@@ -111,7 +150,7 @@ class UserFollowTest extends TestCase
     /**
      * @return array{0: User, 1: BusinessInfo}
      */
-    private function createVendorBusiness(): array
+    private function createVendorBusiness(string $name = 'Test Business'): array
     {
         $category = Category::factory()->create();
         $location = Location::factory()->create();
@@ -125,6 +164,7 @@ class UserFollowTest extends TestCase
             'user_id' => $vendor->id,
             'category_id' => $category->id,
             'location_id' => $location->id,
+            'business_name' => $name,
             'business_status' => BusinessStatus::Active,
             'is_flagged' => false,
         ]);

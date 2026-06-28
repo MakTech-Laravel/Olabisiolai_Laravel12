@@ -31,5 +31,5 @@ interface ConversationRepositoryInterface
     /**
      * @param  list<int>  $userIds
      */
-    public function findDirectBetweenUsers(array $userIds): ?Conversation;
+    public function findDirectBetweenUsers(array $userIds, ?int $businessInfoId = null): ?Conversation;
 }

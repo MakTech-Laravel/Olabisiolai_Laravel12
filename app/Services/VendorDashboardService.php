@@ -42,9 +42,9 @@ class VendorDashboardService
 
         $subscription = $this->subscriptionService->subscriptionPayload($business);
         $verification = $this->verificationService->getVendorVerificationStatus($business);
-        $reviewStats = $this->reviewReplyService->getVendorReviewStats($vendor);
+        $reviewStats = $this->reviewReplyService->getVendorReviewStats($vendor, $business->id);
         $profileViews = $this->profileViewMetrics($business->id);
-        $enquiries = $this->enquiryMetrics($vendor->id);
+        $enquiries = $this->enquiryMetrics($business->id, $vendor->id);
         $profileCompletion = $this->profileCompletion($business);
         $trust = $this->trustMetrics($business, $subscription, $verification, $reviewStats, $profileCompletion['percent']);
 
@@ -202,15 +202,16 @@ class VendorDashboardService
     /**
      * @return array{total: int, this_week: int, delta_percent: float|null}
      */
-    private function enquiryMetrics(int $vendorUserId): array
+    private function enquiryMetrics(int $businessInfoId, int $vendorUserId): array
     {
         if (! Schema::hasTable('messages') || ! Schema::hasTable('conversations')) {
             return ['total' => 0, 'this_week' => 0, 'delta_percent' => null];
         }
 
-        $total = $this->countEnquiries($vendorUserId);
-        $thisWeek = $this->countEnquiries($vendorUserId, now()->startOfWeek());
+        $total = $this->countEnquiries($businessInfoId, $vendorUserId);
+        $thisWeek = $this->countEnquiries($businessInfoId, $vendorUserId, now()->startOfWeek());
         $lastWeek = $this->countEnquiries(
+            $businessInfoId,
             $vendorUserId,
             now()->subWeek()->startOfWeek(),
             now()->subWeek()->endOfWeek(),
@@ -224,6 +225,7 @@ class VendorDashboardService
     }
 
     private function countEnquiries(
+        int $businessInfoId,
         int $vendorUserId,
         ?CarbonInterface $from = null,
         ?CarbonInterface $to = null,
@@ -234,6 +236,7 @@ class VendorDashboardService
                 $join->on('conversation_participants.conversation_id', '=', 'conversations.id')
                     ->where('conversation_participants.user_id', '=', $vendorUserId);
             })
+            ->where('conversations.business_info_id', $businessInfoId)
             ->where('messages.sender_id', '!=', $vendorUserId)
             ->whereNull('messages.deleted_at')
             ->whereNull('conversations.deleted_at');
@@ -296,7 +299,7 @@ class VendorDashboardService
                     ->count()
                 : 0;
 
-            $rawInteractions[] = $this->countEnquiries($vendorUserId, $dayStart, $dayEnd);
+            $rawInteractions[] = $this->countEnquiries($businessInfoId, $vendorUserId, $dayStart, $dayEnd);
         }
 
         $max = max(1, ...$rawViews, ...$rawInteractions);

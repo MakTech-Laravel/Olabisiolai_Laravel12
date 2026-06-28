@@ -96,7 +96,7 @@ final class RealtimeNotificationService
         ));
     }
 
-    public function newFollow(User $vendor, User $follower): void
+    public function newFollow(User $vendor, User $follower, int $businessInfoId): void
     {
         $followerBusinessId = $follower->isVendor() && $follower->businessInfo !== null
             ? (int) $follower->businessInfo->id
@@ -104,7 +104,7 @@ final class RealtimeNotificationService
 
         $this->notifyUser($vendor, RealtimeNotification::newFollow(
             recipientUserId: (int) $vendor->id,
-            recipientBusinessId: (int) $vendor->businessInfo->id,
+            recipientBusinessId: $businessInfoId,
             followerId: (int) $follower->id,
             followerName: (string) $follower->name,
             followerUuid: (string) $follower->uuid,

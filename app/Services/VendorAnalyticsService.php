@@ -41,14 +41,14 @@ class VendorAnalyticsService
 
         $profileViews = $this->profileViewsInRange($business->id, $from, $to);
         $previousProfileViews = $this->profileViewsInRange($business->id, $previousFrom, $previousTo);
-        $enquiries = $this->enquiriesInRange($vendor->id, $from, $to);
-        $previousEnquiries = $this->enquiriesInRange($vendor->id, $previousFrom, $previousTo);
-        $messagesCount = $this->messagesInRange($vendor->id, $from, $to);
-        $reviewStats = $this->reviewReplyService->getVendorReviewStats($vendor);
+        $enquiries = $this->enquiriesInRange($business->id, $vendor->id, $from, $to);
+        $previousEnquiries = $this->enquiriesInRange($business->id, $vendor->id, $previousFrom, $previousTo);
+        $messagesCount = $this->messagesInRange($business->id, $vendor->id, $from, $to);
+        $reviewStats = $this->reviewReplyService->getVendorReviewStats($vendor, $business->id);
 
         $conversionRate = $this->conversionRate($enquiries, $profileViews);
         $previousConversion = $this->conversionRate($previousEnquiries, $previousProfileViews);
-        $responseTime = $this->averageResponseMinutes($vendor->id, $from, $to);
+        $responseTime = $this->averageResponseMinutes($business->id, $vendor->id, $from, $to);
 
         return [
             'has_business' => true,
@@ -134,43 +134,44 @@ class VendorAnalyticsService
             ->count();
     }
 
-    private function enquiriesInRange(int $vendorUserId, CarbonInterface $from, CarbonInterface $to): int
+    private function enquiriesInRange(int $businessInfoId, int $vendorUserId, CarbonInterface $from, CarbonInterface $to): int
     {
         if (! Schema::hasTable('messages') || ! Schema::hasTable('conversations')) {
             return 0;
         }
 
-        return (int) DB::table('messages')
-            ->join('conversations', 'conversations.id', '=', 'messages.conversation_id')
-            ->join('conversation_participants', function ($join) use ($vendorUserId): void {
-                $join->on('conversation_participants.conversation_id', '=', 'conversations.id')
-                    ->where('conversation_participants.user_id', '=', $vendorUserId);
-            })
-            ->where('messages.sender_id', '!=', $vendorUserId)
-            ->whereNull('messages.deleted_at')
-            ->whereNull('conversations.deleted_at')
+        return (int) $this->baseInboundMessageQuery($businessInfoId, $vendorUserId)
             ->whereBetween('messages.created_at', [$from, $to])
             ->distinct()
             ->count('conversations.id');
     }
 
-    private function messagesInRange(int $vendorUserId, CarbonInterface $from, CarbonInterface $to): int
+    private function messagesInRange(int $businessInfoId, int $vendorUserId, CarbonInterface $from, CarbonInterface $to): int
     {
         if (! Schema::hasTable('messages') || ! Schema::hasTable('conversations')) {
             return 0;
         }
 
-        return (int) DB::table('messages')
+        return (int) $this->baseInboundMessageQuery($businessInfoId, $vendorUserId)
+            ->whereBetween('messages.created_at', [$from, $to])
+            ->count('messages.id');
+    }
+
+    /**
+     * @return \Illuminate\Database\Query\Builder
+     */
+    private function baseInboundMessageQuery(int $businessInfoId, int $vendorUserId)
+    {
+        return DB::table('messages')
             ->join('conversations', 'conversations.id', '=', 'messages.conversation_id')
             ->join('conversation_participants', function ($join) use ($vendorUserId): void {
                 $join->on('conversation_participants.conversation_id', '=', 'conversations.id')
                     ->where('conversation_participants.user_id', '=', $vendorUserId);
             })
+            ->where('conversations.business_info_id', $businessInfoId)
             ->where('messages.sender_id', '!=', $vendorUserId)
             ->whereNull('messages.deleted_at')
-            ->whereNull('conversations.deleted_at')
-            ->whereBetween('messages.created_at', [$from, $to])
-            ->count('messages.id');
+            ->whereNull('conversations.deleted_at');
     }
 
     /**
@@ -178,7 +179,7 @@ class VendorAnalyticsService
      */
     private function contactLeadsByChannel(BusinessInfo $business, int $vendorUserId, CarbonInterface $from, CarbonInterface $to): array
     {
-        $dm = $this->enquiriesInRange($vendorUserId, $from, $to);
+        $dm = $this->enquiriesInRange($business->id, $vendorUserId, $from, $to);
         $whatsapp = filled($business->whatsapp) ? (int) max(1, round($dm * 0.35)) : 0;
         $phone = filled($business->phone) ? max(0, $dm - $whatsapp) : 0;
 
@@ -204,7 +205,7 @@ class VendorAnalyticsService
     /**
      * @return array{minutes: int|null, label: string, delta_label: string, improved: bool}
      */
-    private function averageResponseMinutes(int $vendorUserId, CarbonInterface $from, CarbonInterface $to): array
+    private function averageResponseMinutes(int $businessInfoId, int $vendorUserId, CarbonInterface $from, CarbonInterface $to): array
     {
         if (! Schema::hasTable('messages')) {
             return [
@@ -227,6 +228,7 @@ class VendorAnalyticsService
                     ->whereColumn('vendor_msg.created_at', '>', 'customer_msg.created_at')
                     ->whereNull('vendor_msg.deleted_at');
             })
+            ->where('conversations.business_info_id', $businessInfoId)
             ->where('customer_msg.sender_id', '!=', $vendorUserId)
             ->whereNull('customer_msg.deleted_at')
             ->whereNull('conversations.deleted_at')
@@ -271,9 +273,10 @@ class VendorAnalyticsService
         return $hours . 'h ' . $remainder . 'm';
     }
 
-    public function publicResponseTimeLabel(int $vendorUserId): ?string
+    public function publicResponseTimeLabel(int $businessInfoId, int $vendorUserId): ?string
     {
         $result = $this->averageResponseMinutes(
+            $businessInfoId,
             $vendorUserId,
             now()->subDays(90),
             now(),
@@ -318,7 +321,7 @@ class VendorAnalyticsService
 
             $labels[] = $bucketStart->format('M j');
             $views[] = $this->profileViewsInRange($businessInfoId, $bucketStart, $bucketEnd);
-            $enquiries[] = $this->enquiriesInRange($vendorUserId, $bucketStart, $bucketEnd);
+            $enquiries[] = $this->enquiriesInRange($businessInfoId, $vendorUserId, $bucketStart, $bucketEnd);
         }
 
         $max = max(1, ...$views, ...$enquiries);
@@ -540,6 +543,7 @@ class VendorAnalyticsService
                     $join->on('conversation_participants.conversation_id', '=', 'conversations.id')
                         ->where('conversation_participants.user_id', '=', $vendorUserId);
                 })
+                ->where('conversations.business_info_id', $businessInfoId)
                 ->where('messages.sender_id', '!=', $vendorUserId)
                 ->whereNull('messages.deleted_at')
                 ->whereNull('conversations.deleted_at')
@@ -576,7 +580,7 @@ class VendorAnalyticsService
     private function topListings(BusinessInfo $business, CarbonInterface $from, CarbonInterface $to): array
     {
         $totalViews = $this->profileViewsInRange($business->id, $from, $to);
-        $totalEnquiries = $this->enquiriesInRange($business->user_id, $from, $to);
+        $totalEnquiries = $this->enquiriesInRange($business->id, $business->user_id, $from, $to);
         $services = is_array($business->services_offered) ? array_values(array_filter($business->services_offered)) : [];
 
         if ($services === []) {

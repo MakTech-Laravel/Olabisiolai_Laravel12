@@ -96,7 +96,7 @@ class BusinessInfoResource extends JsonResource
             'member_since' => humanDateTime($this->created_at, 'F Y'),
             'response_time_label' => $this->when(
                 $this->relationLoaded('user') && $this->user !== null,
-                fn () => app(VendorAnalyticsService::class)->publicResponseTimeLabel((int) $this->user->id),
+                fn () => app(VendorAnalyticsService::class)->publicResponseTimeLabel((int) $this->id, (int) $this->user->id),
             ),
             'verified_since' => $verificationService->showsVerifiedBadge($this->resource)
                 ? humanDateTime($this->verified_at ?? $this->updated_at, 'F Y')

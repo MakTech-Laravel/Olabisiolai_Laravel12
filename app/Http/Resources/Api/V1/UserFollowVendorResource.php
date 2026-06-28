@@ -20,10 +20,11 @@ class UserFollowVendorResource extends JsonResource
         /** @var User|null $vendorUser */
         $vendorUser = $follow->relationLoaded('following') ? $follow->following : null;
         /** @var BusinessInfo|null $business */
-        $business = $vendorUser?->relationLoaded('businessInfo') ? $vendorUser->businessInfo : null;
+        $business = $follow->relationLoaded('businessInfo') ? $follow->businessInfo : null;
 
         return [
             'following_user_id' => $follow->following_id,
+            'business_id' => $follow->business_info_id,
             'followed_at' => humanDateTime($follow->created_at),
             'vendor' => $vendorUser ? [
                 'id' => $vendorUser->id,

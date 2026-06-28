@@ -34,13 +34,12 @@ final class ConversationService
         }
 
         if ($dto->type === ConversationType::Direct && count($dto->participantUserIds) === 1) {
-            $existing = $this->conversations->findDirectBetweenUsers([$creator->id, $dto->participantUserIds[0]]);
+            $existing = $this->conversations->findDirectBetweenUsers(
+                [$creator->id, $dto->participantUserIds[0]],
+                $dto->businessInfoId,
+            );
 
             if ($existing !== null) {
-                if ($dto->businessInfoId !== null && $existing->business_info_id === null) {
-                    $existing->update(['business_info_id' => $dto->businessInfoId]);
-                }
-
                 return $existing->load([
                     'lastMessage.sender',
                     'lastMessage.attachments',

@@ -12,16 +12,36 @@ use Illuminate\Support\Facades\DB;
 
 class BoostCampaignAnalyticsService
 {
-    public function recordProfileView(BusinessInfo $business, ?User $viewer = null, ?string $ipAddress = null): void
+    private const SESSION_VIEWS_KEY = 'business_profile_views.recorded';
+
+    private const DEDUPE_HOURS = 24;
+
+    public function recordProfileView(BusinessInfo $business, ?User $viewer = null, ?string $ipAddress = null): bool
     {
+        if ($this->isBusinessOwnerView($business, $viewer)) {
+            return false;
+        }
+
+        if ($this->wasViewedInSession($business->id)) {
+            return false;
+        }
+
+        if ($this->hasRecentView($business->id, $viewer, $ipAddress)) {
+            $this->markViewedInSession($business->id);
+
+            return false;
+        }
+
         BusinessProfileView::query()->create([
             'business_info_id' => $business->id,
             'viewer_user_id' => $viewer?->id,
-            'viewer_ip_hash' => $ipAddress !== null && $ipAddress !== ''
-                ? hash('sha256', $ipAddress)
-                : null,
+            'viewer_ip_hash' => $this->hashIp($ipAddress),
             'viewed_at' => now(),
         ]);
+
+        $this->markViewedInSession($business->id);
+
+        return true;
     }
 
     public function viewsForCampaign(BoostPurchaseRequest $request): int
@@ -60,6 +80,7 @@ class BoostCampaignAnalyticsService
                 $join->on('conversation_participants.conversation_id', '=', 'conversations.id')
                     ->where('conversation_participants.user_id', '=', $vendorUserId);
             })
+            ->where('conversations.business_info_id', $request->business_info_id)
             ->where('messages.sender_id', '!=', $vendorUserId)
             ->whereNull('messages.deleted_at')
             ->whereNull('conversations.deleted_at')
@@ -104,5 +125,64 @@ class BoostCampaignAnalyticsService
             : now();
 
         return [$request->starts_at, $endsAt];
+    }
+
+    private function isBusinessOwnerView(BusinessInfo $business, ?User $viewer): bool
+    {
+        return $viewer !== null && (int) $viewer->id === (int) $business->user_id;
+    }
+
+    private function wasViewedInSession(int $businessId): bool
+    {
+        $recorded = session(self::SESSION_VIEWS_KEY, []);
+
+        return is_array($recorded) && in_array($businessId, $recorded, true);
+    }
+
+    private function markViewedInSession(int $businessId): void
+    {
+        $recorded = session(self::SESSION_VIEWS_KEY, []);
+        if (! is_array($recorded)) {
+            $recorded = [];
+        }
+
+        if (! in_array($businessId, $recorded, true)) {
+            $recorded[] = $businessId;
+        }
+
+        session([self::SESSION_VIEWS_KEY => $recorded]);
+    }
+
+    private function hasRecentView(int $businessId, ?User $viewer, ?string $ipAddress): bool
+    {
+        $since = now()->subHours(self::DEDUPE_HOURS);
+
+        if ($viewer !== null) {
+            return BusinessProfileView::query()
+                ->where('business_info_id', $businessId)
+                ->where('viewer_user_id', $viewer->id)
+                ->where('viewed_at', '>=', $since)
+                ->exists();
+        }
+
+        $ipHash = $this->hashIp($ipAddress);
+        if ($ipHash === null) {
+            return false;
+        }
+
+        return BusinessProfileView::query()
+            ->where('business_info_id', $businessId)
+            ->where('viewer_ip_hash', $ipHash)
+            ->where('viewed_at', '>=', $since)
+            ->exists();
+    }
+
+    private function hashIp(?string $ipAddress): ?string
+    {
+        if ($ipAddress === null || $ipAddress === '') {
+            return null;
+        }
+
+        return hash('sha256', $ipAddress);
     }
 }

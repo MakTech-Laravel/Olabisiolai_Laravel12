@@ -33,9 +33,9 @@ class UserFollowService
     }
 
     /**
-     * @return array{following: bool, following_user_id: int}
+     * @return array{following: bool, following_user_id: int, business_info_id: int, followers_count: int}
      */
-    public function toggle(User $follower, User $target): array
+    public function toggle(User $follower, User $target, int $businessInfoId): array
     {
         if ($follower->id === $target->id) {
             throw new RuntimeException('You cannot follow yourself.');
@@ -45,10 +45,19 @@ class UserFollowService
             throw new RuntimeException('Only vendor profiles can be followed.');
         }
 
+        $business = BusinessInfo::query()
+            ->whereKey($businessInfoId)
+            ->where('user_id', $target->id)
+            ->first();
+
+        if (! $business instanceof BusinessInfo) {
+            throw new RuntimeException('Business not found.');
+        }
+
         /** @var UserFollow|null $existing */
         $existing = UserFollow::query()
             ->where('follower_id', $follower->id)
-            ->where('following_id', $target->id)
+            ->where('business_info_id', $businessInfoId)
             ->first();
 
         if ($existing instanceof UserFollow) {
@@ -57,20 +66,32 @@ class UserFollowService
             return [
                 'following' => false,
                 'following_user_id' => $target->id,
+                'business_info_id' => $businessInfoId,
+                'followers_count' => $this->followersCountForBusiness($businessInfoId),
             ];
         }
 
         UserFollow::query()->create([
             'follower_id' => $follower->id,
             'following_id' => $target->id,
+            'business_info_id' => $businessInfoId,
         ]);
 
-        $this->notifications->newFollow($target, $follower);
+        $this->notifications->newFollow($target, $follower, $businessInfoId);
 
         return [
             'following' => true,
             'following_user_id' => $target->id,
+            'business_info_id' => $businessInfoId,
+            'followers_count' => $this->followersCountForBusiness($businessInfoId),
         ];
+    }
+
+    public function followersCountForBusiness(int $businessInfoId): int
+    {
+        return UserFollow::query()
+            ->where('business_info_id', $businessInfoId)
+            ->count();
     }
 
     public function followersCount(int $userId): int
@@ -88,6 +109,14 @@ class UserFollowService
         return UserFollow::query()
             ->where('follower_id', $follower->id)
             ->where('following_id', $targetUserId)
+            ->exists();
+    }
+
+    public function isFollowingBusiness(User $follower, int $businessInfoId): bool
+    {
+        return UserFollow::query()
+            ->where('follower_id', $follower->id)
+            ->where('business_info_id', $businessInfoId)
             ->exists();
     }
 }
