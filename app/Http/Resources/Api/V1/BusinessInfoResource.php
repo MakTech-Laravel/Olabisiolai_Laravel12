@@ -171,10 +171,6 @@ class BusinessInfoResource extends JsonResource
 
     private function resolvePublicBoostStatus(): string
     {
-        if ($this->resolveActiveBoostTierKey() !== null) {
-            return 'active';
-        }
-
-        return ($this->relationLoaded('boost') && $this->boost?->is_active) ? 'active' : 'none';
+        return $this->resolveActiveBoostTierKey() !== null ? 'active' : 'none';
     }
 }

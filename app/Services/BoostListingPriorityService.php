@@ -44,6 +44,7 @@ class BoostListingPriorityService
         $prioritySql = $this->activeTierPrioritySubquerySql($locationId, $locationIds);
         $dailyBudgetSql = $this->activeDailyBudgetSubquerySql($locationId, $locationIds);
 
+        $query->reorder();
         $query->orderByRaw('('.$this->searchHierarchyRankSql($locationId, $locationIds).') ASC');
 
         $proximity = $context['proximity'] ?? null;
@@ -114,11 +115,10 @@ class BoostListingPriorityService
         }
 
         if ($filterLocationIds !== []) {
-            return 'AND bpr.location_id IN ('.implode(',', $filterLocationIds).')'
-                .' AND bpr.location_id = business_info.location_id';
+            return 'AND bpr.location_id IN ('.implode(',', $filterLocationIds).')';
         }
 
-        return 'AND bpr.location_id = business_info.location_id';
+        return '';
     }
 
     /**

@@ -259,6 +259,7 @@ class BusinessInfoService
     {
         $query = BusinessInfo::with(['category:id,name,subcategories', 'location:id,lga_name,state_name,city_name,country_name,latitude,longitude,formatted_address', 'businessHours', self::PUBLIC_VENDOR_USER_COLUMNS]);
 
+        $this->applyPublicMarketplaceVisibility($query);
         $this->applyPublicListAggregates($query, $user);
 
         return $query;
