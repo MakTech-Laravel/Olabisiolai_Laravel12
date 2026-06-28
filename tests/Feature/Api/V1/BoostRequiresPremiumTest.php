@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Api\V1;
 
+use App\Enums\VerificationStatus;
 use App\Models\BusinessInfo;
 use App\Models\User;
 use Database\Seeders\PricingPackageSeeder;
@@ -48,7 +49,9 @@ class BoostRequiresPremiumTest extends TestCase
             'role' => 'vendor',
             'email_verified_at' => now(),
         ]);
-        BusinessInfo::factory()->for($user)->premiumActive()->create();
+        BusinessInfo::factory()->for($user)->premiumActive()->create([
+            'verification_status' => VerificationStatus::Approved,
+        ]);
 
         $token = $user->createToken('test')->accessToken;
 
@@ -58,5 +61,25 @@ class BoostRequiresPremiumTest extends TestCase
 
         $response->assertOk();
         $response->assertJsonPath('data.boost.is_active', true);
+    }
+
+    public function test_unverified_premium_vendor_cannot_activate_boost(): void
+    {
+        $user = User::factory()->create([
+            'role' => 'vendor',
+            'email_verified_at' => now(),
+        ]);
+        BusinessInfo::factory()->for($user)->premiumActive()->create([
+            'verification_status' => VerificationStatus::None,
+        ]);
+
+        $token = $user->createToken('test')->accessToken;
+
+        $response = $this->withToken($token)->postJson('/api/v1/vendor/business/boost-status', [
+            'is_active' => true,
+        ]);
+
+        $response->assertNotFound();
+        $response->assertJsonPath('message', 'Business verification is required to boost your profile.');
     }
 }

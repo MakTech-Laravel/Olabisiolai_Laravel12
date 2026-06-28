@@ -32,9 +32,6 @@ class BusinessInfoService
     /** Eager-load columns for vendor on public {@see BusinessInfoResource} payloads. */
     private const PUBLIC_VENDOR_USER_COLUMNS = 'user:id,name,email,phone,role,uuid';
 
-    /** Businesses within this radius (km) from the search anchor are listed first. */
-    private const NEARBY_PRIORITY_RADIUS_KM = 0.804672;
-
     /*
     |--------------------------------------------------------------------------
     | Dependencies
@@ -92,8 +89,7 @@ class BusinessInfoService
             });
         }
 
-        $this->applyPublicProximityOrdering($query, $validated, $listingContext);
-        $this->applyPublicBoostPriorityOrdering($query, $listingContext);
+        $this->applyPublicBoostPriorityOrdering($query, $validated, $listingContext);
 
         return $query->paginate($perPage);
     }
@@ -119,7 +115,7 @@ class BusinessInfoService
             $this->boostListingPriority->scopeActiveCampaign($campaignQuery, $scopeLocationId);
         });
 
-        $this->applyPublicBoostPriorityOrdering($boostedQuery, $listingContext);
+        $this->applyPublicBoostPriorityOrdering($boostedQuery, $validated, $listingContext);
 
         $boosted = $boostedQuery->limit($limit)->get();
 
@@ -128,7 +124,7 @@ class BusinessInfoService
         }
 
         $fallback = clone $base;
-        $this->applyPublicBoostPriorityOrdering($fallback, $listingContext);
+        $this->applyPublicBoostPriorityOrdering($fallback, $validated, $listingContext);
 
         return $fallback->limit($limit)->get();
     }
@@ -167,8 +163,7 @@ class BusinessInfoService
             $this->applyPublicSearchFilter($query, trim((string) $validated['search']));
         }
 
-        $this->applyPublicProximityOrdering($query, $validated, $listingContext);
-        $this->applyPublicBoostPriorityOrdering($query, $listingContext);
+        $this->applyPublicBoostPriorityOrdering($query, $validated, $listingContext);
 
         return $query->paginate($perPage);
     }
@@ -198,8 +193,7 @@ class BusinessInfoService
 
         $this->applyPublicGeoRadiusFilter($query, $validated);
 
-        $this->applyPublicProximityOrdering($query, $validated, $listingContext);
-        $this->applyPublicBoostPriorityOrdering($query, $listingContext);
+        $this->applyPublicBoostPriorityOrdering($query, $validated, $listingContext);
 
         return $query->paginate($perPage);
     }
@@ -1200,7 +1194,14 @@ class BusinessInfoService
             throw new \RuntimeException('No business profile found for this account.');
         }
 
-        if ($isActive && ! $this->subscriptionService->hasActivePremium($business)) {
+        if ($isActive && ! $this->subscriptionService->canUseBoost($business)) {
+            if (
+                $this->subscriptionService->hasActivePremium($business)
+                && ! $this->subscriptionService->isBusinessVerified($business)
+            ) {
+                throw new \RuntimeException('Business verification is required to boost your profile.');
+            }
+
             throw new \RuntimeException('An active premium subscription is required to boost your profile.');
         }
 
@@ -1286,33 +1287,6 @@ class BusinessInfoService
     /**
      * @param  array<string, mixed>  $validated
      * @param  array{location_id?: int, location_ids?: list<int>, resolved_from_search?: bool}  $listingContext
-     */
-    private function applyPublicProximityOrdering(Builder $query, array $validated, array $listingContext): void
-    {
-        $anchor = $this->resolvePublicProximityAnchor($validated, $listingContext);
-        if ($anchor === null) {
-            return;
-        }
-
-        $lat = $anchor['lat'];
-        $lng = $anchor['lng'];
-        $nearKm = self::NEARBY_PRIORITY_RADIUS_KM;
-
-        $businessLat = 'COALESCE(business_info.latitude, (SELECT l.latitude FROM locations l WHERE l.id = business_info.location_id LIMIT 1))';
-        $businessLng = 'COALESCE(business_info.longitude, (SELECT l.longitude FROM locations l WHERE l.id = business_info.location_id LIMIT 1))';
-
-        $distanceSql = "(6371 * acos(LEAST(1, GREATEST(-1, cos(radians(?)) * cos(radians({$businessLat})) * cos(radians({$businessLng}) - radians(?)) + sin(radians(?)) * sin(radians({$businessLat}))))))";
-
-        $query->orderByRaw(
-            "CASE WHEN {$businessLat} IS NOT NULL AND {$businessLng} IS NOT NULL AND ({$distanceSql}) <= ? THEN 0 ELSE 1 END ASC",
-            [$lat, $lng, $lat, $nearKm],
-        );
-        $query->orderByRaw("({$distanceSql}) ASC", [$lat, $lng, $lat]);
-    }
-
-    /**
-     * @param  array<string, mixed>  $validated
-     * @param  array{location_id?: int, location_ids?: list<int>, resolved_from_search?: bool}  $listingContext
      * @return array{lat: float, lng: float}|null
      */
     private function resolvePublicProximityAnchor(array $validated, array $listingContext): ?array
@@ -1356,10 +1330,16 @@ class BusinessInfoService
     }
 
     /**
+     * @param  array<string, mixed>  $validated
      * @param  array<string, mixed>  $context
      */
-    private function applyPublicBoostPriorityOrdering(Builder $query, array $context = []): void
+    private function applyPublicBoostPriorityOrdering(Builder $query, array $validated, array $context = []): void
     {
+        $anchor = $this->resolvePublicProximityAnchor($validated, $context);
+        if ($anchor !== null) {
+            $context['proximity'] = $anchor;
+        }
+
         $this->boostListingPriority->applyToQuery($query, $context);
     }
 }

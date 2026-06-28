@@ -8,6 +8,7 @@ use App\Enums\PaymentPurpose;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V1\BoostPurchaseRequestResource;
 use App\Http\Resources\Api\V1\LocationResource;
+use App\Models\BusinessInfo;
 use App\Services\BoostPurchaseService;
 use App\Services\BusinessInfoService;
 use App\Services\PaymentService;
@@ -77,7 +78,7 @@ class VendorBoostController extends Controller
             if (! $this->subscriptionService->canUseBoost($business)) {
                 return sendResponse(
                     false,
-                    'An active premium subscription is required. Add boost during premium checkout or upgrade first.',
+                    $this->boostAccessDeniedMessage($business),
                     null,
                     Response::HTTP_FORBIDDEN,
                 );
@@ -141,7 +142,7 @@ class VendorBoostController extends Controller
             $business = $this->businessInfoService->resolveBusinessFromRequest($request);
 
             if (! $this->subscriptionService->canUseBoost($business)) {
-                $message = 'An active premium subscription is required.';
+                $message = $this->boostAccessDeniedMessage($business);
 
                 Log::warning('vendor.boost.payment.init.forbidden', array_merge($logContext, [
                     'business_id' => $business->id,
@@ -286,5 +287,18 @@ class VendorBoostController extends Controller
             'source_campaign_id' => ['nullable', 'integer', 'exists:boost_purchase_requests,id'],
             'gateway' => ['nullable', 'string', Rule::in(PaymentGateway::values())],
         ]);
+    }
+
+    private function boostAccessDeniedMessage(BusinessInfo $business): string
+    {
+        if (! $this->subscriptionService->hasActivePremium($business)) {
+            return 'An active premium subscription is required. Add boost during premium checkout or upgrade first.';
+        }
+
+        if (! $this->subscriptionService->isBusinessVerified($business)) {
+            return 'Business verification is required before you can boost your listing.';
+        }
+
+        return 'You are not eligible to boost this business.';
     }
 }

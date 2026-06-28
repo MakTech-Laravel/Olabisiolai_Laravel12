@@ -9,8 +9,14 @@ use App\Enums\VerificationStatus;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * Orders public marketplace listings so active boost campaigns surface first.
- * Dynamic boosts rotate fairly within the same LGA; legacy slot tiers remain supported.
+ * Orders public marketplace listings using the Gidira search hierarchy:
+ * 1. Premium + Verified + Boosted
+ * 2. Premium + Verified
+ * 3. Premium
+ * 4. Verified
+ * 5. Free
+ *
+ * Within the same tier: proximity (nearest first), then highest active boost daily budget.
  */
 class BoostListingPriorityService
 {
@@ -24,19 +30,33 @@ class BoostListingPriorityService
 
     public const TIER_RANK_NONE = 999;
 
+    private const NEARBY_PRIORITY_RADIUS_KM = 0.804672;
+
     /**
-     * @param  array<string, mixed>  $context  Supports `location_id` (int) for LGA-scoped boosts.
+     * @param  array<string, mixed>  $context
+     *   Supports `location_id` (int), `location_ids` (list<int>), and optional
+     *   `proximity` => ['lat' => float, 'lng' => float].
      */
     public function applyToQuery(Builder $query, array $context = []): void
     {
         [$locationId, $locationIds] = $this->normalizeLocationContext($context);
 
         $prioritySql = $this->activeTierPrioritySubquerySql($locationId, $locationIds);
-        $rotationSql = $this->dynamicRotationRankSql($locationId, $locationIds);
+        $dailyBudgetSql = $this->activeDailyBudgetSubquerySql($locationId, $locationIds);
 
-        $query->orderByRaw('('.$this->trustTierRankSql().') ASC');
+        $query->orderByRaw('('.$this->searchHierarchyRankSql($locationId, $locationIds).') ASC');
+
+        $proximity = $context['proximity'] ?? null;
+        if (is_array($proximity) && isset($proximity['lat'], $proximity['lng'])) {
+            $this->applyProximityOrdering(
+                $query,
+                (float) $proximity['lat'],
+                (float) $proximity['lng'],
+            );
+        }
+
+        $query->orderByRaw("({$dailyBudgetSql}) DESC");
         $query->orderByRaw("({$prioritySql}) ASC");
-        $query->orderByRaw("({$rotationSql}) ASC");
         $query->orderByDesc('sort_order');
         $query->orderByDesc('average_rating');
         $query->orderByDesc('created_at');
@@ -72,8 +92,8 @@ class BoostListingPriorityService
         $locationIds = [];
         if (isset($context['location_ids']) && is_array($context['location_ids'])) {
             $locationIds = array_values(array_unique(array_filter(
-                array_map(static fn($id): int => (int) $id, $context['location_ids']),
-                static fn(int $id): bool => $id > 0,
+                array_map(static fn ($id): int => (int) $id, $context['location_ids']),
+                static fn (int $id): bool => $id > 0,
             )));
         }
 
@@ -87,9 +107,27 @@ class BoostListingPriorityService
     /**
      * @param  list<int>  $filterLocationIds
      */
+    private function activeCampaignLocationClause(?int $filterLocationId, array $filterLocationIds = []): string
+    {
+        if ($filterLocationId !== null) {
+            return 'AND bpr.location_id = '.(int) $filterLocationId;
+        }
+
+        if ($filterLocationIds !== []) {
+            return 'AND bpr.location_id IN ('.implode(',', $filterLocationIds).')'
+                .' AND bpr.location_id = business_info.location_id';
+        }
+
+        return 'AND bpr.location_id = business_info.location_id';
+    }
+
+    /**
+     * @param  list<int>  $filterLocationIds
+     */
     private function activeTierPrioritySubquerySql(?int $filterLocationId, array $filterLocationIds = []): string
     {
         $approved = BoostPurchaseRequestStatus::Approved->value;
+        $locationClause = $this->activeCampaignLocationClause($filterLocationId, $filterLocationIds);
 
         $tierCase = 'CASE bpr.tier_key
                 WHEN \'top_1\' THEN '.self::TIER_RANK_TOP_1.'
@@ -98,15 +136,6 @@ class BoostListingPriorityService
                 WHEN \'dynamic\' THEN '.self::TIER_RANK_DYNAMIC.'
                 ELSE 99
             END';
-
-        if ($filterLocationId !== null) {
-            $locationClause = 'AND bpr.location_id = ' . (int) $filterLocationId;
-        } elseif ($filterLocationIds !== []) {
-            $locationClause = 'AND bpr.location_id IN (' . implode(',', $filterLocationIds) . ')'
-                . ' AND bpr.location_id = business_info.location_id';
-        } else {
-            $locationClause = 'AND bpr.location_id = business_info.location_id';
-        }
 
         return "COALESCE((
             SELECT MIN({$tierCase})
@@ -122,26 +151,20 @@ class BoostListingPriorityService
     }
 
     /**
-     * Fair rotation among active boosted listings in the same LGA.
-     *
      * @param  list<int>  $filterLocationIds
      */
-    private function dynamicRotationRankSql(?int $filterLocationId, array $filterLocationIds = []): string
+    private function activeDailyBudgetSubquerySql(?int $filterLocationId, array $filterLocationIds = []): string
     {
         $approved = BoostPurchaseRequestStatus::Approved->value;
-        $window = max(60, (int) config('boost.dynamic.rotation_window_seconds', 300));
+        $locationClause = $this->activeCampaignLocationClause($filterLocationId, $filterLocationIds);
 
-        if ($filterLocationId !== null) {
-            $locationClause = 'AND bpr.location_id = '.(int) $filterLocationId;
-        } elseif ($filterLocationIds !== []) {
-            $locationClause = 'AND bpr.location_id IN ('.implode(',', $filterLocationIds).')'
-                .' AND bpr.location_id = business_info.location_id';
-        } else {
-            $locationClause = 'AND bpr.location_id = business_info.location_id';
-        }
+        $budgetExpression = 'COALESCE(
+            CAST(JSON_UNQUOTE(JSON_EXTRACT(bpr.metadata, \'$.daily_budget\')) AS DECIMAL(12,2)),
+            CASE WHEN bpr.duration_days > 0 THEN bpr.amount / bpr.duration_days ELSE bpr.amount END
+        )';
 
         return "COALESCE((
-            SELECT MOD(business_info.id + FLOOR(UNIX_TIMESTAMP() / {$window}), 1000)
+            SELECT MAX({$budgetExpression})
             FROM boost_purchase_requests bpr
             WHERE bpr.business_info_id = business_info.id
               AND bpr.status = '{$approved}'
@@ -150,30 +173,52 @@ class BoostListingPriorityService
               AND bpr.ends_at IS NOT NULL
               AND bpr.ends_at > NOW()
               {$locationClause}
-            LIMIT 1
-        ), 1000)";
+        ), 0)";
     }
 
     /**
-     * Verified + premium listings rank above verified free, then unverified.
-     * Active boost tiers still apply within each trust band via {@see applyToQuery}.
+     * @param  list<int>  $filterLocationIds
      */
-    private function trustTierRankSql(): string
+    private function searchHierarchyRankSql(?int $filterLocationId, array $filterLocationIds = []): string
     {
         $approved = VerificationStatus::Approved->value;
         $premiumPlan = SubscriptionPlan::Premium->value;
         $activeStatus = SubscriptionStatus::Active->value;
+        $activeBoostSql = $this->activeTierPrioritySubquerySql($filterLocationId, $filterLocationIds);
+
+        $hasPremium = "EXISTS (
+            SELECT 1 FROM business_subscriptions bs
+            WHERE bs.business_info_id = business_info.id
+              AND bs.plan = '{$premiumPlan}'
+              AND bs.status = '{$activeStatus}'
+              AND (bs.expires_at IS NULL OR bs.expires_at > NOW())
+        )";
+
+        $isVerified = "business_info.verification_status = '{$approved}'";
+        $hasActiveBoost = "({$activeBoostSql}) < ".self::TIER_RANK_NONE;
 
         return "CASE
-            WHEN business_info.verification_status = '{$approved}' AND EXISTS (
-                SELECT 1 FROM business_subscriptions bs
-                WHERE bs.business_info_id = business_info.id
-                  AND bs.plan = '{$premiumPlan}'
-                  AND bs.status = '{$activeStatus}'
-                  AND (bs.expires_at IS NULL OR bs.expires_at > NOW())
-            ) THEN 1
-            WHEN business_info.verification_status = '{$approved}' THEN 2
-            ELSE 3
+            WHEN {$hasPremium} AND {$isVerified} AND {$hasActiveBoost} THEN 1
+            WHEN {$hasPremium} AND {$isVerified} THEN 2
+            WHEN {$hasPremium} THEN 3
+            WHEN {$isVerified} THEN 4
+            ELSE 5
         END";
+    }
+
+    private function applyProximityOrdering(Builder $query, float $lat, float $lng): void
+    {
+        $nearKm = self::NEARBY_PRIORITY_RADIUS_KM;
+
+        $businessLat = 'COALESCE(business_info.latitude, (SELECT l.latitude FROM locations l WHERE l.id = business_info.location_id LIMIT 1))';
+        $businessLng = 'COALESCE(business_info.longitude, (SELECT l.longitude FROM locations l WHERE l.id = business_info.location_id LIMIT 1))';
+
+        $distanceSql = "(6371 * acos(LEAST(1, GREATEST(-1, cos(radians(?)) * cos(radians({$businessLat})) * cos(radians({$businessLng}) - radians(?)) + sin(radians(?)) * sin(radians({$businessLat}))))))";
+
+        $query->orderByRaw(
+            "CASE WHEN {$businessLat} IS NOT NULL AND {$businessLng} IS NOT NULL AND ({$distanceSql}) <= ? THEN 0 ELSE 1 END ASC",
+            [$lat, $lng, $lat, $nearKm],
+        );
+        $query->orderByRaw("({$distanceSql}) ASC", [$lat, $lng, $lat]);
     }
 }

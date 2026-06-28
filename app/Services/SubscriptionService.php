@@ -102,7 +102,7 @@ class SubscriptionService
 
     public function canUseBoost(BusinessInfo $business): bool
     {
-        return $this->hasActivePremium($business);
+        return $this->hasActivePremium($business) && $this->isBusinessVerified($business);
     }
 
     public function requiresPayment(BusinessInfo $business): bool
