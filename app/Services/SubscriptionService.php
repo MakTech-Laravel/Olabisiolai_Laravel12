@@ -102,7 +102,7 @@ class SubscriptionService
 
     public function canUseBoost(BusinessInfo $business): bool
     {
-        return $this->hasActivePremium($business) && $this->isBusinessVerified($business);
+        return $this->hasActivePremium($business);
     }
 
     public function requiresPayment(BusinessInfo $business): bool
@@ -232,8 +232,7 @@ class SubscriptionService
                 }
 
                 $this->boostPurchaseService->assertDynamicBoost($boostDurationDays, $boostBudgetAmount);
-                $this->boostPurchaseService->assertLocationHasBoostEnabled($business->location);
-                $pricing = $this->boostPurchaseService->resolveDynamicBoostPrice($boostBudgetAmount);
+                $pricing = $this->boostPurchaseService->resolveDynamicBoostPrice($boostBudgetAmount, $boostDurationDays);
                 $boostTierKey = $this->boostPurchaseService->dynamicTierKey();
             } else {
                 $lgaBoost = $this->boostPurchaseService->assertBoostAvailableForLocation(
@@ -261,6 +260,8 @@ class SubscriptionService
                     'location_label' => $business->location->full_name,
                     'boost_model' => $this->boostPurchaseService->isDynamicTier($boostTierKey) ? 'dynamic' : 'slot_tier',
                     'boost_budget_amount' => $boostBudgetAmount,
+                    'boost_daily_budget' => $pricing['daily_budget'],
+                    'boost_total_amount' => $pricing['amount'],
                 ],
                 $boostTierKey,
                 $gateway,

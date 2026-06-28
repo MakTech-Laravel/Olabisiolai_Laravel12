@@ -13,7 +13,9 @@ use App\Services\BusinessInfoService;
 use App\Services\PaymentService;
 use App\Services\SubscriptionService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
@@ -73,11 +75,12 @@ class VendorBoostController extends Controller
             $business = $this->businessInfoService->resolveBusinessFromRequest($request);
 
             if (! $this->subscriptionService->canUseBoost($business)) {
-                $message = $this->subscriptionService->hasActivePremium($business)
-                    ? 'Verify your business before activating boost campaigns.'
-                    : 'An active premium subscription is required. Add boost during premium checkout or upgrade first.';
-
-                return sendResponse(false, $message, null, Response::HTTP_FORBIDDEN);
+                return sendResponse(
+                    false,
+                    'An active premium subscription is required. Add boost during premium checkout or upgrade first.',
+                    null,
+                    Response::HTTP_FORBIDDEN,
+                );
             }
 
             if (! empty($validated['renew_type'])) {
@@ -119,6 +122,18 @@ class VendorBoostController extends Controller
 
     public function initPayment(Request $request)
     {
+        $logContext = [
+            'user_id' => $request->user('api')?->id,
+            'payload' => $request->only([
+                'duration_days',
+                'budget_amount',
+                'location_id',
+                'renew_type',
+                'source_campaign_id',
+                'gateway',
+            ]),
+        ];
+
         try {
             $validated = $this->validateDynamicBoostPayload($request);
 
@@ -126,12 +141,20 @@ class VendorBoostController extends Controller
             $business = $this->businessInfoService->resolveBusinessFromRequest($request);
 
             if (! $this->subscriptionService->canUseBoost($business)) {
-                $message = $this->subscriptionService->hasActivePremium($business)
-                    ? 'Verify your business before paying for boost campaigns.'
-                    : 'An active premium subscription is required.';
+                $message = 'An active premium subscription is required.';
+
+                Log::warning('vendor.boost.payment.init.forbidden', array_merge($logContext, [
+                    'business_id' => $business->id,
+                    'reason' => $message,
+                ]));
 
                 return sendResponse(false, $message, null, Response::HTTP_FORBIDDEN);
             }
+
+            Log::info('vendor.boost.payment.init.start', array_merge($logContext, [
+                'business_id' => $business->id,
+                'validated' => $validated,
+            ]));
 
             $result = $this->boostPurchaseService->initBoostPayment(
                 $vendor,
@@ -145,13 +168,34 @@ class VendorBoostController extends Controller
                 (float) $validated['budget_amount'],
             );
 
+            Log::info('vendor.boost.payment.init.success', array_merge($logContext, [
+                'business_id' => $business->id,
+                'payment_id' => $result['payment']->id,
+                'request_id' => $result['request']->id,
+                'amount' => $result['payment']->amount,
+            ]));
+
             return sendResponse(true, 'Boost payment initialized successfully.', [
                 'payment' => $this->paymentService->toArray($result['payment']),
                 'request' => new BoostPurchaseRequestResource($result['request']->load(['location', 'businessInfo'])),
             ], Response::HTTP_CREATED);
+        } catch (ValidationException $exception) {
+            Log::warning('vendor.boost.payment.init.validation_failed', array_merge($logContext, [
+                'errors' => $exception->errors(),
+            ]));
+
+            throw $exception;
         } catch (RuntimeException $exception) {
+            Log::warning('vendor.boost.payment.init.rejected', array_merge($logContext, [
+                'reason' => $exception->getMessage(),
+            ]));
+
             return sendResponse(false, $exception->getMessage(), null, Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (Throwable $throwable) {
+            Log::error('vendor.boost.payment.init.failed', array_merge($logContext, [
+                'reason' => $throwable->getMessage(),
+            ]));
+
             report($throwable);
 
             return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);

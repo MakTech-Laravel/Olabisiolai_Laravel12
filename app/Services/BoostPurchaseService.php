@@ -18,6 +18,7 @@ use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class BoostPurchaseService
@@ -50,17 +51,19 @@ class BoostPurchaseService
         return array_values(array_map('intval', config('boost.dynamic.durations', [1, 3, 7])));
     }
 
-    public function assertDynamicBoost(int $durationDays, float $budgetAmount): void
+    public function assertDynamicBoost(int $durationDays, float $dailyBudget): void
     {
-        if (! in_array($durationDays, $this->dynamicDurations(), true)) {
-            throw new RuntimeException('Select a valid boost duration (1, 3, or 7 days).');
+        $durations = $this->dynamicDurations();
+
+        if (! in_array($durationDays, $durations, true)) {
+            throw new RuntimeException('Select a valid boost duration ('.implode(', ', $durations).' days).');
         }
 
         $min = (float) config('boost.dynamic.budget_min', 500);
         $max = (float) config('boost.dynamic.budget_max', 5000);
 
-        if ($budgetAmount < $min || $budgetAmount > $max) {
-            throw new RuntimeException('Boost budget must be between ₦'.number_format($min).' and ₦'.number_format($max).'.');
+        if ($dailyBudget < $min || $dailyBudget > $max) {
+            throw new RuntimeException('Daily boost budget must be between ₦'.number_format($min).' and ₦'.number_format($max).'.');
         }
     }
 
@@ -71,6 +74,14 @@ class BoostPurchaseService
 
         if ($lgaBoost === null || ! $lgaBoost->enabled) {
             $label = trim((string) ($location->full_name ?? $location->lga_name ?? 'this location'));
+
+            Log::warning('boost.location_not_enabled', [
+                'location_id' => $location->id,
+                'lga_name' => $location->lga_name,
+                'has_lga_boost_record' => $lgaBoost !== null,
+                'enabled' => $lgaBoost?->enabled,
+            ]);
+
             throw new RuntimeException("Boost is not enabled for {$label}. Choose another LGA or contact support.");
         }
 
@@ -78,25 +89,21 @@ class BoostPurchaseService
     }
 
     /**
-     * @return array{amount: float, tier_label: string}
+     * @return array{amount: float, daily_budget: float, tier_label: string}
      */
-    public function resolveDynamicBoostPrice(float $budgetAmount): array
+    public function resolveDynamicBoostPrice(float $dailyBudget, int $durationDays): array
     {
-        $min = (float) config('boost.dynamic.budget_min', 500);
-        $max = (float) config('boost.dynamic.budget_max', 5000);
-
-        if ($budgetAmount < $min || $budgetAmount > $max) {
-            throw new RuntimeException('Boost budget must be between ₦'.number_format($min).' and ₦'.number_format($max).'.');
-        }
+        $this->assertDynamicBoost($durationDays, $dailyBudget);
 
         return [
-            'amount' => round($budgetAmount, 2),
+            'amount' => round($dailyBudget * $durationDays, 2),
+            'daily_budget' => round($dailyBudget, 2),
             'tier_label' => (string) config('boost.dynamic.tier_label', 'Dynamic Boost'),
         ];
     }
 
     /**
-     * @return array{payment: Payment, request: BoostPurchaseRequest}
+     * @return BoostPurchaseRequest|null
      */
     public function findResumablePendingPaymentRequest(
         BusinessInfo $business,
@@ -166,11 +173,16 @@ class BoostPurchaseService
             $tierKey,
         );
 
-        if ($existing?->payment !== null && $existing->payment->status === PaymentStatus::Pending) {
-            return [
-                'payment' => $existing->payment,
-                'request' => $existing,
-            ];
+        if ($existing !== null) {
+            $existing->loadMissing('payment');
+            $existingPayment = $existing->payment;
+
+            if ($existingPayment !== null && $existingPayment->status === PaymentStatus::Pending) {
+                return [
+                    'payment' => $existingPayment,
+                    'request' => $existing,
+                ];
+            }
         }
 
         if ($this->isDynamicTier($tierKey)) {
@@ -178,14 +190,13 @@ class BoostPurchaseService
                 throw new RuntimeException('Boost budget is required.');
             }
             $this->assertDynamicBoost($durationDays, $budgetAmount);
-            $this->assertLocationHasBoostEnabled($location);
-            $pricing = $this->resolveDynamicBoostPrice($budgetAmount);
+            $pricing = $this->resolveDynamicBoostPrice($budgetAmount, $durationDays);
         } else {
             $lgaBoost = $this->assertBoostAvailableForLocation($location, $tierKey, $durationDays, $forBusinessId, $renewType);
             $pricing = $this->resolveTierDurationPrice($lgaBoost, $tierKey, $durationDays);
         }
 
-        $payment = $this->paymentService->initBoostPayment($user, $business, $pricing['amount'], [
+        $paymentMetadata = [
             'boost_tier_key' => $tierKey,
             'boost_tier_label' => $pricing['tier_label'],
             'boost_duration_days' => $durationDays,
@@ -193,7 +204,14 @@ class BoostPurchaseService
             'source_campaign_id' => $sourceCampaignId,
             'location_label' => $location->full_name,
             'boost_model' => $this->isDynamicTier($tierKey) ? 'dynamic' : 'slot_tier',
-        ], null, $gateway);
+        ];
+
+        if ($this->isDynamicTier($tierKey) && $budgetAmount !== null) {
+            $paymentMetadata['boost_daily_budget'] = $pricing['daily_budget'];
+            $paymentMetadata['boost_total_amount'] = $pricing['amount'];
+        }
+
+        $payment = $this->paymentService->initBoostPayment($user, $business, $pricing['amount'], $paymentMetadata, null, $gateway);
 
         $request = $this->createRequest(
             $user,
@@ -291,7 +309,7 @@ class BoostPurchaseService
         if ($this->isDynamicTier($tierKey)) {
             $this->assertDynamicBoost($durationDays, (float) config('boost.dynamic.budget_min', 500));
 
-            return $this->assertLocationHasBoostEnabled($location);
+            throw new RuntimeException('Dynamic boosts do not use slot availability checks.');
         }
 
         $location->loadMissing('lgaBoost');
@@ -471,8 +489,7 @@ class BoostPurchaseService
                 throw new RuntimeException('Boost budget is required.');
             }
             $this->assertDynamicBoost($durationDays, $budgetAmount);
-            $this->assertLocationHasBoostEnabled($location);
-            $pricing = $this->resolveDynamicBoostPrice($budgetAmount);
+            $pricing = $this->resolveDynamicBoostPrice($budgetAmount, $durationDays);
         } else {
             $lgaBoost = $this->assertBoostAvailableForLocation($location, $tierKey, $durationDays, $forBusinessId, $renewType);
             $pricing = $this->resolveTierDurationPrice($lgaBoost, $tierKey, $durationDays);
@@ -485,6 +502,10 @@ class BoostPurchaseService
             'lga' => $location->lga_name,
             'boost_model' => $this->isDynamicTier($tierKey) ? 'dynamic' : 'slot_tier',
         ];
+
+        if ($this->isDynamicTier($tierKey) && $budgetAmount !== null) {
+            $metadata['daily_budget'] = $pricing['daily_budget'];
+        }
 
         if ($renewType !== null) {
             $metadata['renew_type'] = $renewType;

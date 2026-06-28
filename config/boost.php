@@ -7,7 +7,7 @@ return [
     'dynamic' => [
         'tier_key' => 'dynamic',
         'tier_label' => 'Dynamic Boost',
-        'durations' => [1, 3, 7],
+        'durations' => [1, 3, 7, 14, 30],
         'budget_min' => 500,
         'budget_max' => 5000,
         /** Fair rotation window in seconds for tied boosted listings. */
