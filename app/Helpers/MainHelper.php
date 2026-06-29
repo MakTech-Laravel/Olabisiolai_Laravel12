@@ -105,7 +105,7 @@ if (! function_exists('public_media_url')) {
      *
      * @param  string|null  $default  Fallback when $path is empty; pass null to return null instead.
      */
-    function public_media_url(?string $path, ?string $default = '/images/default.jpg'): ?string
+    function public_media_url(?string $path, ?string $default = 'https://placehold.net/600x400.png'): ?string
     {
         $normalized = is_string($path) ? trim($path) : '';
 

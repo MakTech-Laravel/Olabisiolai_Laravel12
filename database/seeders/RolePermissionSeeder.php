@@ -174,22 +174,24 @@ class RolePermissionSeeder extends Seeder
             'add verification notes',
         ]);
 
-        $admin = Admin::query()->firstOrCreate(
-            ['email' => 'superadmin@dev.com'],
-            [
-                'first_name' => 'Super',
-                'last_name' => 'Admin',
-                'name' => 'Super Admin',
-                'password' => bcrypt('superadmin@dev.com'),
-                'status' => AdminStatus::Active,
-                'email_verified_at' => now(),
-            ]
-        );
+        if (! app()->environment('production')) {
+            $admin = Admin::query()->firstOrCreate(
+                ['email' => 'superadmin@dev.com'],
+                [
+                    'first_name' => 'Super',
+                    'last_name' => 'Admin',
+                    'name' => 'Super Admin',
+                    'password' => bcrypt('superadmin@dev.com'),
+                    'status' => AdminStatus::Active,
+                    'email_verified_at' => now(),
+                ]
+            );
 
-        if (! $admin->email_verified_at) {
-            $admin->forceFill(['email_verified_at' => now()])->save();
+            if (! $admin->email_verified_at) {
+                $admin->forceFill(['email_verified_at' => now()])->save();
+            }
+
+            $admin->assignRole('super-admin');
         }
-
-        $admin->assignRole('super-admin');
     }
 }
