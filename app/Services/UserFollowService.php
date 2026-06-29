@@ -55,12 +55,23 @@ class UserFollowService
         }
 
         /** @var UserFollow|null $existing */
-        $existing = UserFollow::query()
+        $existing = UserFollow::withTrashed()
             ->where('follower_id', $follower->id)
             ->where('business_info_id', $businessInfoId)
             ->first();
 
         if ($existing instanceof UserFollow) {
+            if ($existing->trashed()) {
+                $existing->restore();
+
+                return [
+                    'following' => true,
+                    'following_user_id' => $target->id,
+                    'business_info_id' => $businessInfoId,
+                    'followers_count' => $this->followersCountForBusiness($businessInfoId),
+                ];
+            }
+
             $existing->delete();
 
             return [

@@ -64,6 +64,14 @@ class UserFollowTest extends TestCase
         ]);
         $unfollowResponse->assertOk();
         $unfollowResponse->assertJsonPath('data.following', false);
+
+        $refollowResponse = $this->withToken($token)->postJson('/api/v1/user/follows/toggle', [
+            'following_user_id' => $vendor->id,
+            'business_id' => $business->id,
+        ]);
+        $refollowResponse->assertCreated();
+        $refollowResponse->assertJsonPath('data.following', true);
+        $refollowResponse->assertJsonPath('data.followers_count', 1);
     }
 
     public function test_followers_are_isolated_per_business_page(): void

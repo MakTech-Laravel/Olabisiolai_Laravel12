@@ -7,6 +7,7 @@ use App\Models\BoostPurchaseRequest;
 use App\Models\BusinessInfo;
 use App\Models\BusinessProfileView;
 use App\Models\User;
+use App\Models\UserFollow;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
@@ -44,6 +45,9 @@ class VendorAnalyticsService
         $enquiries = $this->enquiriesInRange($business->id, $vendor->id, $from, $to);
         $previousEnquiries = $this->enquiriesInRange($business->id, $vendor->id, $previousFrom, $previousTo);
         $messagesCount = $this->messagesInRange($business->id, $vendor->id, $from, $to);
+        $previousMessages = $this->messagesInRange($business->id, $vendor->id, $previousFrom, $previousTo);
+        $followersTotal = $this->followersTotalAsOf($business->id, $to);
+        $previousFollowersTotal = $this->followersTotalAsOf($business->id, $previousTo);
         $reviewStats = $this->reviewReplyService->getVendorReviewStats($vendor, $business->id);
 
         $conversionRate = $this->conversionRate($enquiries, $profileViews);
@@ -67,6 +71,15 @@ class VendorAnalyticsService
                 'response_time_improved' => $responseTime['improved'],
                 'total_reviews' => (int) ($reviewStats['total_reviews'] ?? 0),
                 'messages_count' => $messagesCount,
+                'messages_delta_percent' => $this->percentDelta($messagesCount, $previousMessages),
+                'followers_count' => $followersTotal,
+                'followers_delta_percent' => $this->followersDeltaPercent(
+                    $business->id,
+                    $from,
+                    $to,
+                    $followersTotal,
+                    $previousFollowersTotal,
+                ),
             ],
             'traffic_trend' => $this->trafficTrend($business->id, $vendor->id, $from, $to),
             'leads_by_channel' => $this->leadsByChannel($business, $from, $to),
@@ -92,6 +105,12 @@ class VendorAnalyticsService
         $to = Carbon::now();
 
         return match ($range) {
+            '7d' => [
+                $to->copy()->subDays(6)->startOfDay(),
+                $to->copy()->endOfDay(),
+                $to->copy()->subDays(13)->startOfDay(),
+                $to->copy()->subDays(7)->endOfDay(),
+            ],
             'quarter' => [
                 $to->copy()->subMonths(3)->startOfDay(),
                 $to->copy()->endOfDay(),
@@ -116,6 +135,7 @@ class VendorAnalyticsService
     private function rangeLabel(string $range): string
     {
         return match ($range) {
+            '7d' => 'Last 7 Days',
             'quarter' => 'Last Quarter',
             'yearly' => 'Yearly',
             default => 'Last 30 Days',
@@ -155,6 +175,58 @@ class VendorAnalyticsService
         return (int) $this->baseInboundMessageQuery($businessInfoId, $vendorUserId)
             ->whereBetween('messages.created_at', [$from, $to])
             ->count('messages.id');
+    }
+
+    private function followersTotalAsOf(int $businessInfoId, CarbonInterface $asOf): int
+    {
+        if (! Schema::hasTable('user_follows')) {
+            return 0;
+        }
+
+        $query = UserFollow::withTrashed()
+            ->where('business_info_id', $businessInfoId)
+            ->where('created_at', '<=', $asOf);
+
+        if (Schema::hasColumn('user_follows', 'deleted_at')) {
+            $query->where(function ($builder) use ($asOf): void {
+                $builder->whereNull('deleted_at')
+                    ->orWhere('deleted_at', '>', $asOf);
+            });
+        }
+
+        return (int) $query->count();
+    }
+
+    private function followersLostInRange(int $businessInfoId, CarbonInterface $from, CarbonInterface $to): int
+    {
+        if (! Schema::hasTable('user_follows') || ! Schema::hasColumn('user_follows', 'deleted_at')) {
+            return 0;
+        }
+
+        return (int) UserFollow::onlyTrashed()
+            ->where('business_info_id', $businessInfoId)
+            ->whereBetween('deleted_at', [$from, $to])
+            ->count();
+    }
+
+    private function followersDeltaPercent(
+        int $businessInfoId,
+        CarbonInterface $from,
+        CarbonInterface $to,
+        int $currentTotal,
+        int $previousPeriodTotal,
+    ): ?float {
+        if ($previousPeriodTotal > 0 || $currentTotal > 0) {
+            return $this->percentDelta($currentTotal, $previousPeriodTotal);
+        }
+
+        $lostInPeriod = $this->followersLostInRange($businessInfoId, $from, $to);
+
+        if ($lostInPeriod > 0) {
+            return $this->percentDelta(0, $lostInPeriod);
+        }
+
+        return null;
     }
 
     /**

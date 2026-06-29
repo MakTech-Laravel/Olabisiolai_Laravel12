@@ -29,7 +29,7 @@ class VendorAnalyticsController extends Controller
         }
 
         $validated = $request->validate([
-            'range' => ['sometimes', 'string', Rule::in(['30d', 'quarter', 'yearly'])],
+            'range' => ['sometimes', 'string', Rule::in(['7d', '30d', 'quarter', 'yearly'])],
             'business_id' => ['sometimes', 'integer', 'min:1'],
         ]);
 
