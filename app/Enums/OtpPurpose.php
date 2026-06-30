@@ -9,6 +9,7 @@ enum OtpPurpose: string
     case NewDevice = 'new_device';
     case ForgotPassword = 'forgot_password';
     case EmailVerify = 'email_verify';
+    case TwoFactorLogin = 'two_factor_login';
 
     public static function values(): array
     {

@@ -19,6 +19,7 @@ use App\Http\Requests\Api\V1\VerifyTwoFactorLoginRequest;
 use App\Http\Resources\Api\V1\AdminResource;
 use App\Http\Resources\Api\V1\UserResource;
 use App\Models\Admin;
+use App\Models\AuthOtp;
 use App\Models\User;
 use App\Services\AuthService;
 use App\Services\ReferralService;
@@ -166,11 +167,7 @@ class AuthController extends Controller
             );
 
             if ($result['two_factor_required']) {
-                return sendResponse(true, 'Two-factor authentication required.', [
-                    'two_factor_required' => true,
-                    'two_factor_token' => $result['two_factor_token'],
-                    'verification_status' => 'two_factor_required',
-                ]);
+                return sendResponse(true, 'Two-factor authentication required.', $this->twoFactorLoginPayload($result));
             }
 
             $this->authService->rememberTrustedDevice(
@@ -291,16 +288,12 @@ class AuthController extends Controller
             }
 
             if ($this->twoFactor->isEnabled($user)) {
-                $challengeToken = $this->authService->initiateTwoFactorLogin(
+                $challenge = $this->authService->initiateTwoFactorLogin(
                     $user,
                     $validated['role'] ?? null,
                 );
 
-                return sendResponse(true, 'Two-factor authentication required.', [
-                    'two_factor_required' => true,
-                    'two_factor_token' => $challengeToken,
-                    'verification_status' => 'two_factor_required',
-                ]);
+                return sendResponse(true, 'Two-factor authentication required.', $this->twoFactorLoginPayload($challenge));
             }
 
             $token = $this->authService->issueAccessToken($user);
@@ -394,17 +387,42 @@ class AuthController extends Controller
             }
 
             if ($result['two_factor_required']) {
-                return sendResponse(true, 'Two-factor authentication required.', [
-                    'two_factor_required' => true,
-                    'two_factor_token' => $result['two_factor_token'],
-                    'verification_status' => 'two_factor_required',
-                ]);
+                return sendResponse(true, 'Two-factor authentication required.', $this->twoFactorLoginPayload($result));
             }
 
             return sendResponse(true, 'Login successful.', [
                 'token' => $result['token'],
                 'verification_status' => 'verified',
                 'user' => UserResource::make($user),
+            ]);
+        } catch (ValidationException $exception) {
+            return sendResponse(
+                false,
+                $exception->validator->errors()->first(),
+                ['errors' => $exception->validator->errors()->toArray()],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    public function resendTwoFactorLoginOtp(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'two_factor_token' => ['required', 'string', 'min:32', 'max:128'],
+            ]);
+
+            $delivery = $this->authService->resendTwoFactorLoginOtp($validated['two_factor_token']);
+
+            return sendResponse(true, 'A new verification code has been sent.', [
+                'verification_channel' => $delivery['verification_channel'],
+                'masked_email' => $delivery['masked_email'],
+                'masked_phone' => $delivery['masked_phone'],
+                'otp' => $delivery['otp']?->code,
             ]);
         } catch (ValidationException $exception) {
             return sendResponse(
@@ -443,6 +461,37 @@ class AuthController extends Controller
         }
     }
 
+    public function verifyAdminTwoFactorLogin(VerifyTwoFactorLoginRequest $request)
+    {
+        try {
+            $validated = $request->validated();
+
+            $admin = $this->authService->completeAdminTwoFactorLogin(
+                $validated['two_factor_token'],
+                $validated['code'],
+            );
+
+            $token = $this->authService->issueAdminAccessToken($admin);
+
+            return sendResponse(true, 'Admin login successful.', [
+                'token' => $token,
+                'verification_status' => 'verified',
+                'admin' => AdminResource::make($admin),
+            ]);
+        } catch (ValidationException $exception) {
+            return sendResponse(
+                false,
+                $exception->validator->errors()->first(),
+                ['errors' => $exception->validator->errors()->toArray()],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
     public function adminLogin(LoginRequest $request)
     {
         try {
@@ -456,6 +505,12 @@ class AuthController extends Controller
                 return sendResponse(false, 'Please verify your account via OTP before logging in.', [
                     'verification_status' => 'unverified',
                 ], Response::HTTP_FORBIDDEN);
+            }
+
+            if ($this->twoFactor->isEnabled($admin)) {
+                $challenge = $this->authService->initiateAdminTwoFactorLogin($admin);
+
+                return sendResponse(true, 'Two-factor authentication required.', $this->twoFactorLoginPayload($challenge));
             }
 
             $token = $this->authService->issueAdminAccessToken($admin);
@@ -682,5 +737,28 @@ class AuthController extends Controller
 
             return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $challenge
+     * @return array<string, mixed>
+     */
+    private function twoFactorLoginPayload(array $challenge): array
+    {
+        $token = $challenge['token'] ?? $challenge['two_factor_token'] ?? '';
+        $channel = $challenge['verification_channel'] ?? $challenge['two_factor_channel'] ?? 'email';
+        $maskedEmail = $challenge['masked_email'] ?? $challenge['two_factor_masked_email'] ?? null;
+        $maskedPhone = $challenge['masked_phone'] ?? $challenge['two_factor_masked_phone'] ?? null;
+        $otp = $challenge['otp'] ?? $challenge['two_factor_otp'] ?? null;
+
+        return [
+            'two_factor_required' => true,
+            'two_factor_token' => $token,
+            'verification_status' => 'two_factor_required',
+            'verification_channel' => $channel,
+            'masked_email' => $maskedEmail,
+            'masked_phone' => $maskedPhone,
+            'otp' => $otp instanceof AuthOtp ? $otp->code : null,
+        ];
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Admin;
 use App\Models\User;
 use BaconQrCode\Renderer\Image\SvgImageBackEnd;
 use BaconQrCode\Renderer\ImageRenderer;
@@ -17,20 +18,20 @@ class TwoFactorAuthenticationService
         private readonly Google2FA $google2fa,
     ) {}
 
-    public function isEnabled(User $user): bool
+    public function isEnabled(User|Admin $account): bool
     {
-        return $user->two_factor_confirmed_at !== null
-            && filled($user->two_factor_secret);
+        return $account->two_factor_confirmed_at !== null
+            && filled($account->two_factor_secret);
     }
 
     /**
      * @return array{secret: string, qr_code: string}
      */
-    public function enable(User $user): array
+    public function enable(User|Admin $account): array
     {
         $secret = $this->google2fa->generateSecretKey();
 
-        $user->forceFill([
+        $account->forceFill([
             'two_factor_secret' => $secret,
             'two_factor_recovery_codes' => null,
             'two_factor_confirmed_at' => null,
@@ -38,7 +39,7 @@ class TwoFactorAuthenticationService
 
         $otpauthUrl = $this->google2fa->getQRCodeUrl(
             (string) config('app.name', 'Gidira'),
-            $user->email,
+            (string) $account->email,
             $secret,
         );
 
@@ -52,9 +53,9 @@ class TwoFactorAuthenticationService
     /**
      * @return array{recovery_codes: list<string>}
      */
-    public function confirm(User $user, string $code): array
+    public function confirm(User|Admin $account, string $code): array
     {
-        if (! $this->verifyCode($user, $code)) {
+        if (! $this->verifyCode($account, $code)) {
             throw ValidationException::withMessages([
                 'code' => ['The provided two factor authentication code was invalid.'],
             ]);
@@ -62,7 +63,7 @@ class TwoFactorAuthenticationService
 
         $recoveryCodes = $this->generateRecoveryCodes();
 
-        $user->forceFill([
+        $account->forceFill([
             'two_factor_confirmed_at' => now(),
             'two_factor_recovery_codes' => $recoveryCodes,
         ])->save();
@@ -70,41 +71,41 @@ class TwoFactorAuthenticationService
         return ['recovery_codes' => $recoveryCodes];
     }
 
-    public function disable(User $user): void
+    public function disable(User|Admin $account): void
     {
-        $user->forceFill([
+        $account->forceFill([
             'two_factor_secret' => null,
             'two_factor_recovery_codes' => null,
             'two_factor_confirmed_at' => null,
         ])->save();
     }
 
-    public function verify(User $user, string $code): bool
+    public function verify(User|Admin $account, string $code): bool
     {
-        return $this->verifyCode($user, $code) || $this->verifyRecoveryCode($user, $code);
+        return $this->verifyCode($account, $code) || $this->verifyRecoveryCode($account, $code);
     }
 
-    public function verifyCode(User $user, string $code): bool
+    public function verifyCode(User|Admin $account, string $code): bool
     {
-        $secret = $this->decryptedSecret($user);
+        $secret = $this->decryptedSecret($account);
         if ($secret === null || $secret === '') {
             return false;
         }
 
         $normalized = preg_replace('/\s+/', '', $code) ?? $code;
 
-        return $this->google2fa->verifyKey($secret, $normalized);
+        return $this->google2fa->verifyKey($secret, $normalized, 2);
     }
 
-    public function verifyRecoveryCode(User $user, string $code): bool
+    public function verifyRecoveryCode(User|Admin $account, string $code): bool
     {
-        $codes = $this->recoveryCodes($user);
+        $codes = $this->recoveryCodes($account);
         $normalized = Str::lower(trim($code));
 
         foreach ($codes as $index => $stored) {
             if (hash_equals(Str::lower($stored), $normalized)) {
                 unset($codes[$index]);
-                $user->forceFill([
+                $account->forceFill([
                     'two_factor_recovery_codes' => array_values($codes),
                 ])->save();
 
@@ -118,13 +119,13 @@ class TwoFactorAuthenticationService
     /**
      * @return list<string>
      */
-    public function recoveryCodes(User $user): array
+    public function recoveryCodes(User|Admin $account): array
     {
-        if (! filled($user->two_factor_recovery_codes)) {
+        if (! filled($account->two_factor_recovery_codes)) {
             return [];
         }
 
-        $decoded = $user->two_factor_recovery_codes;
+        $decoded = $account->two_factor_recovery_codes;
         if (! is_array($decoded)) {
             return [];
         }
@@ -156,9 +157,9 @@ class TwoFactorAuthenticationService
         return $codes;
     }
 
-    private function decryptedSecret(User $user): ?string
+    private function decryptedSecret(User|Admin $account): ?string
     {
-        $secret = $user->two_factor_secret;
+        $secret = $account->two_factor_secret;
 
         return is_string($secret) && $secret !== '' ? $secret : null;
     }

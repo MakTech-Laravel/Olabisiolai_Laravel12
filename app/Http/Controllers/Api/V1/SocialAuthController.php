@@ -58,14 +58,19 @@ class SocialAuthController extends Controller
             $result = $this->socialAuthService->loginOrRegister($profile, (string) $validated['role']);
 
             if (($result['two_factor_required'] ?? false) === true) {
-                return sendResponse(true, 'Two-factor authentication required.', [
+                return sendResponse(true, 'Two-factor authentication required.', array_merge([
                     'provider' => $provider,
+                    'is_new_user' => $result['is_new_user'],
+                    'user' => UserResource::make($result['user']),
+                ], [
                     'two_factor_required' => true,
                     'two_factor_token' => $result['two_factor_token'],
                     'verification_status' => 'two_factor_required',
-                    'is_new_user' => $result['is_new_user'],
-                    'user' => UserResource::make($result['user']),
-                ]);
+                    'verification_channel' => $result['two_factor_channel'] ?? 'email',
+                    'masked_email' => $result['two_factor_masked_email'] ?? null,
+                    'masked_phone' => $result['two_factor_masked_phone'] ?? null,
+                    'otp' => $result['two_factor_otp']?->code,
+                ]));
             }
 
             return sendResponse(true, 'Social login successful.', [
