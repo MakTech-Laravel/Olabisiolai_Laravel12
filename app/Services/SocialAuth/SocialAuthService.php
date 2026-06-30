@@ -89,12 +89,16 @@ class SocialAuthService
             }
 
             if ($this->twoFactor->isEnabled($user)) {
-                $challengeToken = $this->authService->initiateTwoFactorLogin($user, $role);
+                $challenge = $this->authService->initiateTwoFactorLogin($user, $role);
 
                 return [
                     'user' => $user->fresh(),
                     'two_factor_required' => true,
-                    'two_factor_token' => $challengeToken,
+                    'two_factor_token' => $challenge['token'],
+                    'two_factor_channel' => $challenge['verification_channel'],
+                    'two_factor_masked_email' => $challenge['masked_email'],
+                    'two_factor_masked_phone' => $challenge['masked_phone'],
+                    'two_factor_otp' => $challenge['otp'],
                     'is_new_user' => $isNewUser,
                 ];
             }

@@ -257,12 +257,16 @@ class AuthService
         }
 
         if ($this->twoFactor->isEnabled($user)) {
-            $challengeToken = $this->initiateTwoFactorLogin($user, $role);
+            $challenge = $this->initiateTwoFactorLogin($user, $role);
 
             return [
                 'user' => $user,
                 'two_factor_required' => true,
-                'two_factor_token' => $challengeToken,
+                'two_factor_token' => $challenge['token'],
+                'two_factor_channel' => $challenge['verification_channel'],
+                'two_factor_masked_email' => $challenge['masked_email'],
+                'two_factor_masked_phone' => $challenge['masked_phone'],
+                'two_factor_otp' => $challenge['otp'],
             ];
         }
 
@@ -312,7 +316,16 @@ class AuthService
         return $this->resolveLoginUserByCredentials($email, null, $password);
     }
 
-    public function initiateTwoFactorLogin(User $user, ?string $expectedRole = null): string
+    /**
+     * @return array{
+     *     token: string,
+     *     verification_channel: string,
+     *     masked_email: string|null,
+     *     masked_phone: string|null,
+     *     otp: AuthOtp|null,
+     * }
+     */
+    public function initiateTwoFactorLogin(User $user, ?string $expectedRole = null): array
     {
         $token = Str::random(64);
 
@@ -321,7 +334,15 @@ class AuthService
             'expected_role' => $expectedRole,
         ], now()->addMinutes(self::TWO_FACTOR_LOGIN_TTL_MINUTES));
 
-        return $token;
+        $delivery = $this->deliverTwoFactorLoginOtp($user);
+
+        return [
+            'token' => $token,
+            'verification_channel' => $delivery['channel'],
+            'masked_email' => $delivery['masked_email'],
+            'masked_phone' => $delivery['masked_phone'],
+            'otp' => $delivery['otp'],
+        ];
     }
 
     public function completeTwoFactorLogin(string $token, string $code): User
@@ -351,7 +372,7 @@ class AuthService
             ]);
         }
 
-        if (! $this->twoFactor->verify($user, $code)) {
+        if (! $this->twoFactor->verify($user, $code) && ! $this->consumeTwoFactorLoginOtp($user, $code)) {
             throw ValidationException::withMessages([
                 'code' => ['The provided two factor authentication code was invalid.'],
             ]);
@@ -367,6 +388,77 @@ class AuthService
         Cache::forget($cacheKey);
 
         return $user;
+    }
+
+    /**
+     * @return array{
+     *     token: string,
+     *     verification_channel: string,
+     *     masked_email: string|null,
+     *     masked_phone: string|null,
+     *     otp: AuthOtp|null,
+     * }
+     */
+    public function initiateAdminTwoFactorLogin(Admin $admin): array
+    {
+        $token = Str::random(64);
+
+        Cache::put($this->twoFactorLoginCacheKey($token), [
+            'account_type' => 'admin',
+            'admin_id' => $admin->id,
+        ], now()->addMinutes(self::TWO_FACTOR_LOGIN_TTL_MINUTES));
+
+        $delivery = $this->deliverTwoFactorLoginOtp($admin);
+
+        return [
+            'token' => $token,
+            'verification_channel' => $delivery['channel'],
+            'masked_email' => $delivery['masked_email'],
+            'masked_phone' => $delivery['masked_phone'],
+            'otp' => $delivery['otp'],
+        ];
+    }
+
+    public function completeAdminTwoFactorLogin(string $token, string $code): Admin
+    {
+        $cacheKey = $this->twoFactorLoginCacheKey($token);
+        /** @var array{account_type?: string, admin_id?: int}|null $payload */
+        $payload = Cache::get($cacheKey);
+
+        if (
+            ! is_array($payload)
+            || ($payload['account_type'] ?? null) !== 'admin'
+            || ! isset($payload['admin_id'])
+        ) {
+            throw ValidationException::withMessages([
+                'two_factor_token' => ['Your login session has expired. Please sign in again.'],
+            ]);
+        }
+
+        $admin = Admin::query()->find($payload['admin_id']);
+        if (! $admin instanceof Admin) {
+            Cache::forget($cacheKey);
+            throw ValidationException::withMessages([
+                'two_factor_token' => ['Your login session has expired. Please sign in again.'],
+            ]);
+        }
+
+        if (! $this->twoFactor->isEnabled($admin)) {
+            Cache::forget($cacheKey);
+            throw ValidationException::withMessages([
+                'code' => ['Two-factor authentication is not enabled for this account.'],
+            ]);
+        }
+
+        if (! $this->twoFactor->verify($admin, $code) && ! $this->consumeTwoFactorLoginOtp($admin, $code)) {
+            throw ValidationException::withMessages([
+                'code' => ['The provided two factor authentication code was invalid.'],
+            ]);
+        }
+
+        Cache::forget($cacheKey);
+
+        return $admin;
     }
 
     /**
@@ -481,10 +573,16 @@ class AuthService
         );
 
         if ($this->twoFactor->isEnabled($user)) {
+            $challenge = $this->initiateTwoFactorLogin($user, $resolvedRole);
+
             return [
                 'user' => $user,
                 'two_factor_required' => true,
-                'two_factor_token' => $this->initiateTwoFactorLogin($user, $resolvedRole),
+                'two_factor_token' => $challenge['token'],
+                'two_factor_channel' => $challenge['verification_channel'],
+                'two_factor_masked_email' => $challenge['masked_email'],
+                'two_factor_masked_phone' => $challenge['masked_phone'],
+                'two_factor_otp' => $challenge['otp'],
             ];
         }
 
@@ -842,6 +940,69 @@ class AuthService
         return $otp;
     }
 
+    /**
+     * @return array{
+     *     verification_channel: string,
+     *     masked_email: string|null,
+     *     masked_phone: string|null,
+     *     otp: AuthOtp|null,
+     * }
+     */
+    public function resendTwoFactorLoginOtp(string $token): array
+    {
+        $cacheKey = $this->twoFactorLoginCacheKey($token);
+        /** @var array{account_type?: string, admin_id?: int, user_id?: int}|null $payload */
+        $payload = Cache::get($cacheKey);
+
+        if (! is_array($payload)) {
+            throw ValidationException::withMessages([
+                'two_factor_token' => ['Your login session has expired. Please sign in again.'],
+            ]);
+        }
+
+        if (($payload['account_type'] ?? null) === 'admin' && isset($payload['admin_id'])) {
+            $admin = Admin::query()->find($payload['admin_id']);
+            if (! $admin instanceof Admin) {
+                Cache::forget($cacheKey);
+                throw ValidationException::withMessages([
+                    'two_factor_token' => ['Your login session has expired. Please sign in again.'],
+                ]);
+            }
+
+            $delivery = $this->deliverTwoFactorLoginOtp($admin);
+
+            return [
+                'verification_channel' => $delivery['channel'],
+                'masked_email' => $delivery['masked_email'],
+                'masked_phone' => $delivery['masked_phone'],
+                'otp' => $delivery['otp'],
+            ];
+        }
+
+        if (! isset($payload['user_id'])) {
+            throw ValidationException::withMessages([
+                'two_factor_token' => ['Your login session has expired. Please sign in again.'],
+            ]);
+        }
+
+        $user = User::query()->find($payload['user_id']);
+        if (! $user instanceof User) {
+            Cache::forget($cacheKey);
+            throw ValidationException::withMessages([
+                'two_factor_token' => ['Your login session has expired. Please sign in again.'],
+            ]);
+        }
+
+        $delivery = $this->deliverTwoFactorLoginOtp($user);
+
+        return [
+            'verification_channel' => $delivery['channel'],
+            'masked_email' => $delivery['masked_email'],
+            'masked_phone' => $delivery['masked_phone'],
+            'otp' => $delivery['otp'],
+        ];
+    }
+
     public function issueAccessToken(User $user): string
     {
         return $user->createToken('Auth Token')->accessToken;
@@ -850,6 +1011,72 @@ class AuthService
     private function twoFactorLoginCacheKey(string $token): string
     {
         return 'two_factor_login:' . hash('sha256', $token);
+    }
+
+    /**
+     * @return array{
+     *     channel: string,
+     *     masked_email: string|null,
+     *     masked_phone: string|null,
+     *     otp: AuthOtp|null,
+     * }
+     */
+    private function deliverTwoFactorLoginOtp(User|Admin $account): array
+    {
+        $otp = $this->issueOtp($account, OtpPurpose::TwoFactorLogin);
+        $channel = 'email';
+        $maskedEmail = null;
+        $maskedPhone = null;
+
+        if ($account instanceof User && filled($account->phone) && ! filled($account->email)) {
+            $channel = 'phone';
+            $this->deliverOtpSms($account, $otp->code, OtpPurpose::TwoFactorLogin, allowEmailFallback: false);
+            $maskedPhone = PhoneNormalizer::mask((string) $account->phone);
+        } elseif (filled($account->email)) {
+            $this->deliverOtpMail($account, $otp->code, false);
+            $maskedEmail = $this->maskEmail((string) $account->email);
+        } elseif ($account instanceof User && filled($account->phone)) {
+            $channel = 'phone';
+            $this->deliverOtpSms($account, $otp->code, OtpPurpose::TwoFactorLogin, allowEmailFallback: true);
+            $maskedPhone = PhoneNormalizer::mask((string) $account->phone);
+            if (filled($account->email)) {
+                $maskedEmail = $this->maskEmail((string) $account->email);
+            }
+        }
+
+        return [
+            'channel' => $channel,
+            'masked_email' => $maskedEmail,
+            'masked_phone' => $maskedPhone,
+            'otp' => $otp,
+        ];
+    }
+
+    private function consumeTwoFactorLoginOtp(User|Admin $account, string $code): bool
+    {
+        $normalized = preg_replace('/\s+/', '', $code) ?? $code;
+
+        $query = AuthOtp::query()
+            ->whereNull('consumed_at')
+            ->where('purpose', OtpPurpose::TwoFactorLogin->value)
+            ->where('code', hash('sha256', $normalized))
+            ->where('expires_at', '>', now());
+
+        if ($account instanceof Admin) {
+            $query->where('admin_id', $account->id);
+        } else {
+            $query->where('user_id', $account->id);
+        }
+
+        /** @var AuthOtp|null $otp */
+        $otp = $query->first();
+        if (! $otp) {
+            return false;
+        }
+
+        $otp->update(['consumed_at' => now()]);
+
+        return true;
     }
 
     private function newDeviceLoginCacheKey(string $token): string
@@ -1013,7 +1240,7 @@ class AuthService
         }
 
         $context = match ($purpose) {
-            OtpPurpose::Login, OtpPurpose::NewDevice => 'login',
+            OtpPurpose::Login, OtpPurpose::NewDevice, OtpPurpose::TwoFactorLogin => 'login',
             OtpPurpose::ForgotPassword => 'forgot_password',
             default => 'verification',
         };

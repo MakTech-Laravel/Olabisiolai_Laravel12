@@ -28,7 +28,9 @@ class AuthTwoFactorLoginTest extends TestCase
 
     public function test_login_requires_two_factor_challenge_when_enabled(): void
     {
-        $user = $this->userWithTwoFactor('vendor@example.com');
+        Mail::fake();
+
+        $this->userWithTwoFactor('vendor@example.com');
 
         $response = $this->postJson('/api/v1/auth/login', [
             'email' => 'vendor@example.com',
@@ -41,7 +43,10 @@ class AuthTwoFactorLoginTest extends TestCase
         $response->assertJsonPath('data.two_factor_required', true);
         $response->assertJsonPath('data.verification_status', 'two_factor_required');
         $this->assertNotEmpty($response->json('data.two_factor_token'));
+        $this->assertNotEmpty($response->json('data.otp'));
         $this->assertNull($response->json('data.token'));
+
+        Mail::assertQueued(\App\Mail\OtpVerificationMail::class);
     }
 
     public function test_two_factor_verify_issues_token_with_valid_code(): void

@@ -16,6 +16,9 @@ Route::controller(AuthController::class)->group(function () {
         Route::post('/phone/verify-otp', 'verifyPhoneLoginOtp')->middleware('throttle:10,1');
         Route::post('/phone/resend-otp', 'resendPhoneLoginOtp')->middleware('throttle:3,1');
         Route::post('/two-factor/verify', 'verifyTwoFactorLogin');
+        Route::post('/two-factor/resend-otp', 'resendTwoFactorLoginOtp')->middleware('throttle:5,1');
+        Route::post('/admin/two-factor/verify', 'verifyAdminTwoFactorLogin');
+        Route::post('/admin/two-factor/resend-otp', 'resendTwoFactorLoginOtp')->middleware('throttle:5,1');
         Route::post('/device/verify-otp', 'verifyNewDeviceLogin')->middleware('throttle:10,1');
         Route::post('/device/resend-otp', 'resendNewDeviceLoginOtp')->middleware('throttle:5,1');
         Route::post('/admin/login', 'adminLogin');

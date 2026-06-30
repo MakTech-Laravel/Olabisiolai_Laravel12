@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\Api\V1\Admin\AdminProfileController;
+use App\Http\Controllers\Api\V1\Admin\AdminTwoFactorController;
 use App\Http\Controllers\Api\V1\Admin\AdminAccountController;
 use App\Http\Controllers\Api\V1\Admin\AdminBoostRequestController;
 use App\Http\Controllers\Api\V1\Admin\AdminMessagingController;
@@ -28,6 +30,16 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::prefix('admin')->name('admin.')->group(function () {
+    Route::get('/profile', [AdminProfileController::class, 'show'])->name('profile.show');
+    Route::put('/profile', [AdminProfileController::class, 'update'])->name('profile.update');
+
+    Route::prefix('two-factor')->name('two-factor.')->group(function () {
+        Route::get('/', [AdminTwoFactorController::class, 'status'])->name('status');
+        Route::post('/enable', [AdminTwoFactorController::class, 'enable'])->name('enable');
+        Route::post('/confirm', [AdminTwoFactorController::class, 'confirm'])->name('confirm');
+        Route::delete('/', [AdminTwoFactorController::class, 'disable'])->name('disable');
+    });
+
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('/sidebar-counts', [DashboardController::class, 'sidebarCounts'])->name('sidebar-counts');
 
