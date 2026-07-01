@@ -28,9 +28,7 @@ RUN cp .env.example .env || touch .env \
     && npm run build \
     && php artisan storage:link --force --ansi \
     && chown -R www-data:www-data /var/www \
-    && chmod -R 775 storage bootstrap/cache \
-    && chmod 660 /var/www/storage/oauth-public.key \
-    && chmod 660 /var/www/storage/oauth-private.key
+    && chmod -R 775 storage bootstrap/cache 
 
 COPY ./docker/nginx.conf /etc/nginx/nginx.conf
 COPY ./docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
