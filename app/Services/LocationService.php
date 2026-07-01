@@ -65,24 +65,23 @@ class LocationService
                 'address_components_json' => $googleData['address_components_json'],
             ]);
 
-            // Create LgaBoost if boost config is provided
-            if ($boostConfig['enabled'] ?? false) {
-                $tiers = $this->transformBoostTiers($boostConfig['tiers'] ?? []);
-                $durations = $this->transformBoostDurations($boostConfig['durations'] ?? []);
-                $stats = $this->computeBoostStats($tiers);
+            // Always create boost record so admin can toggle availability later.
+            $enabled = (bool) ($boostConfig['enabled'] ?? false);
+            $tiers = $this->transformBoostTiers($boostConfig['tiers'] ?? []);
+            $durations = $this->transformBoostDurations($boostConfig['durations'] ?? []);
+            $stats = $this->computeBoostStats($tiers);
 
-                LgaBoost::create([
-                    'location_id' => $location->id,
-                    'enabled' => $boostConfig['enabled'] ?? true,
-                    'tiers' => $tiers,
-                    'durations' => $durations,
-                    'total_slots' => $stats['total_slots'],
-                    'slots_sold' => $stats['slots_sold'],
-                    'slots_remaining' => $stats['slots_remaining'],
-                    'active_boosts' => $stats['active_boosts'],
-                    'expired_boosts' => $stats['expired_boosts'],
-                ]);
-            }
+            LgaBoost::create([
+                'location_id' => $location->id,
+                'enabled' => $enabled,
+                'tiers' => $tiers,
+                'durations' => $durations,
+                'total_slots' => $stats['total_slots'],
+                'slots_sold' => $stats['slots_sold'],
+                'slots_remaining' => $stats['slots_remaining'],
+                'active_boosts' => $stats['active_boosts'],
+                'expired_boosts' => $stats['expired_boosts'],
+            ]);
 
             return $location->fresh(['lgaBoost']);
         });
@@ -212,7 +211,7 @@ class LocationService
 
             $location->forceFill($locationUpdate)->save();
 
-            // Update boost configuration if provided
+            // Update boost availability when provided (pricing tiers are no longer managed here).
             if ($boostConfig !== null) {
                 $tiers = $this->transformBoostTiers($boostConfig['tiers'] ?? []);
                 $durations = $this->transformBoostDurations($boostConfig['durations'] ?? []);
@@ -220,16 +219,23 @@ class LocationService
 
                 $lgaBoost = $location->lgaBoost ?? new LgaBoost(['location_id' => $location->id]);
 
-                $lgaBoost->forceFill([
-                    'enabled' => $boostConfig['enabled'] ?? true,
-                    'tiers' => $tiers,
-                    'durations' => $durations,
+                $update = [
+                    'enabled' => $boostConfig['enabled'] ?? $lgaBoost->enabled ?? false,
                     'total_slots' => $stats['total_slots'],
                     'slots_sold' => $lgaBoost->exists ? $lgaBoost->slots_sold : $stats['slots_sold'],
                     'slots_remaining' => $stats['total_slots'] - ($lgaBoost->exists ? $lgaBoost->slots_sold : $stats['slots_sold']),
                     'active_boosts' => $lgaBoost->exists ? $lgaBoost->active_boosts : $stats['active_boosts'],
                     'expired_boosts' => $lgaBoost->exists ? $lgaBoost->expired_boosts : $stats['expired_boosts'],
-                ])->save();
+                ];
+
+                if ($tiers !== [] || ! $lgaBoost->exists) {
+                    $update['tiers'] = $tiers;
+                }
+                if ($durations !== [] || ! $lgaBoost->exists) {
+                    $update['durations'] = $durations;
+                }
+
+                $lgaBoost->forceFill($update)->save();
             }
 
             return $location->fresh(['lgaBoost']);
@@ -294,13 +300,46 @@ class LocationService
     public function toggleBoostActive(int $locationId, bool $active): Location
     {
         $location = $this->findLocation($locationId);
-        $lgaBoost = $location->lgaBoost ?? new LgaBoost(['location_id' => $location->id]);
+        $lgaBoost = $location->lgaBoost;
 
-        $lgaBoost->forceFill([
-            'enabled' => $active,
-        ])->save();
+        if ($lgaBoost === null) {
+            LgaBoost::query()->create(array_merge(
+                $this->emptyLgaBoostDefaults($active),
+                ['location_id' => $location->id],
+            ));
+        } else {
+            $lgaBoost->forceFill(['enabled' => $active])->save();
+        }
 
         return $location->fresh(['lgaBoost']);
+    }
+
+    /**
+     * Default boost row for availability-only management (no tier pricing).
+     *
+     * @return array{
+     *     enabled: bool,
+     *     tiers: array<int, mixed>,
+     *     durations: array<int, mixed>,
+     *     total_slots: int,
+     *     slots_sold: int,
+     *     slots_remaining: int,
+     *     active_boosts: int,
+     *     expired_boosts: int
+     * }
+     */
+    private function emptyLgaBoostDefaults(bool $enabled): array
+    {
+        return [
+            'enabled' => $enabled,
+            'tiers' => [],
+            'durations' => [],
+            'total_slots' => 0,
+            'slots_sold' => 0,
+            'slots_remaining' => 0,
+            'active_boosts' => 0,
+            'expired_boosts' => 0,
+        ];
     }
 
     /**
@@ -363,7 +402,7 @@ class LocationService
             $payload = [
                 'key' => $tier['key'],
                 'label' => $tier['label'],
-                'total_slots' => (int) $tier['total_slots'],
+                'total_slots' => (int) ($tier['total_slots'] ?? 0),
                 'price_amount' => (int) ($tier['price_amount'] ?? 0),
             ];
 
@@ -406,12 +445,10 @@ class LocationService
      */
     private function computeBoostStats(?array $tiers): array
     {
-        $totalSlots = collect($tiers ?? [])->sum('total_slots');
-
         return [
-            'total_slots' => $totalSlots,
+            'total_slots' => 0,
             'slots_sold' => 0,
-            'slots_remaining' => $totalSlots,
+            'slots_remaining' => 0,
             'active_boosts' => 0,
             'expired_boosts' => 0,
         ];

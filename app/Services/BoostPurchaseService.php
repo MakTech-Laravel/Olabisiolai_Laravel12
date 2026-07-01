@@ -189,6 +189,7 @@ class BoostPurchaseService
             if ($budgetAmount === null) {
                 throw new RuntimeException('Boost budget is required.');
             }
+            $this->assertLocationHasBoostEnabled($location);
             $this->assertDynamicBoost($durationDays, $budgetAmount);
             $pricing = $this->resolveDynamicBoostPrice($budgetAmount, $durationDays);
         } else {
@@ -488,6 +489,7 @@ class BoostPurchaseService
             if ($budgetAmount === null) {
                 throw new RuntimeException('Boost budget is required.');
             }
+            $this->assertLocationHasBoostEnabled($location);
             $this->assertDynamicBoost($durationDays, $budgetAmount);
             $pricing = $this->resolveDynamicBoostPrice($budgetAmount, $durationDays);
         } else {
@@ -788,15 +790,21 @@ class BoostPurchaseService
                 'deactivated_at' => null,
             ]);
 
-            if (! $skipSlotIncrement && ! $this->isDynamicTier($request->tier_key)) {
+            if (! $skipSlotIncrement) {
                 $location = Location::query()->with('lgaBoost')->find($request->location_id);
                 if ($location?->lgaBoost instanceof LgaBoost) {
                     $lgaBoost = $location->lgaBoost;
-                    $lgaBoost->update([
-                        'slots_sold' => min($lgaBoost->total_slots, $lgaBoost->slots_sold + 1),
-                        'slots_remaining' => max(0, $lgaBoost->slots_remaining - 1),
-                        'active_boosts' => $lgaBoost->active_boosts + 1,
-                    ]);
+                    if ($this->isDynamicTier($request->tier_key)) {
+                        $lgaBoost->update([
+                            'active_boosts' => $lgaBoost->active_boosts + 1,
+                        ]);
+                    } else {
+                        $lgaBoost->update([
+                            'slots_sold' => min($lgaBoost->total_slots, $lgaBoost->slots_sold + 1),
+                            'slots_remaining' => max(0, $lgaBoost->slots_remaining - 1),
+                            'active_boosts' => $lgaBoost->active_boosts + 1,
+                        ]);
+                    }
                 }
             }
 

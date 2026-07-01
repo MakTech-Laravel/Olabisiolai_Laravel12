@@ -9,6 +9,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V1\BoostPurchaseRequestResource;
 use App\Http\Resources\Api\V1\LocationResource;
 use App\Models\BusinessInfo;
+use App\Models\Location;
 use App\Services\BoostPurchaseService;
 use App\Services\BusinessInfoService;
 use App\Services\PaymentService;
@@ -44,8 +45,18 @@ class VendorBoostController extends Controller
 
             $campaigns = $this->boostPurchaseService->listForVendor($business);
 
+            $boostLocations = Location::query()
+                ->whereHas('lgaBoost', function ($query): void {
+                    $query->where('enabled', true);
+                })
+                ->with('lgaBoost')
+                ->orderBy('state_name')
+                ->orderBy('lga_name')
+                ->get();
+
             return sendResponse(true, 'Boost catalog retrieved successfully.', [
                 'location' => new LocationResource($business->location),
+                'boost_locations' => LocationResource::collection($boostLocations)->resolve(),
                 'pending_request' => $this->boostPurchaseService->latestOpenRequestForBusiness($business),
                 'is_premium_active' => $this->subscriptionService->hasActivePremium($business),
                 'is_verified' => $this->subscriptionService->isBusinessVerified($business),

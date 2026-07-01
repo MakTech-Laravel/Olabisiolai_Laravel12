@@ -27,21 +27,21 @@ class DatabaseSeeder extends Seeder
         ]);
 
         // --- Local demo data (disabled for production onboarding) ---
-        // $this->call([
-        //     AdminSeeder::class,
-        //     UsersSeeder::class,
-        //     FeaturedBusinessSeeder::class,
-        //     BusinessSocialAccountsSeeder::class,
-        //     BusinessHoursSeeder::class,
-        // ]);
+        $this->call([
+            AdminSeeder::class,
+            UsersSeeder::class,
+            FeaturedBusinessSeeder::class,
+            BusinessSocialAccountsSeeder::class,
+            BusinessHoursSeeder::class,
+        ]);
 
         // --- Local messaging / presence demos ---
-        // if (! app()->environment('production')) {
-        //     $this->call([
-        //         ConversationSeeder::class,
-        //         MessageSeeder::class,
-        //         UserStatusSeeder::class,
-        //     ]);
-        // }
+        if (! app()->environment('production')) {
+            $this->call([
+                ConversationSeeder::class,
+                MessageSeeder::class,
+                UserStatusSeeder::class,
+            ]);
+        }
     }
 }

@@ -62,7 +62,7 @@ class StoreLocationRequest extends FormRequest
             'boost_config.tiers' => ['nullable', 'array'],
             'boost_config.tiers.*.key' => ['required_with:boost_config.tiers', 'string', 'max:30'],
             'boost_config.tiers.*.label' => ['required_with:boost_config.tiers', 'string', 'max:60'],
-            'boost_config.tiers.*.total_slots' => ['required_with:boost_config.tiers', 'integer', 'min:0'],
+            'boost_config.tiers.*.total_slots' => ['nullable', 'integer', 'min:0'],
             'boost_config.tiers.*.price_amount' => ['nullable', 'numeric', 'min:0'],
             'boost_config.tiers.*.durations' => ['nullable', 'array'],
             'boost_config.tiers.*.durations.*.days' => ['required_with:boost_config.tiers.*.durations', 'integer', 'in:7,14,30'],
