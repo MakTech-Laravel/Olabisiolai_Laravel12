@@ -25,8 +25,8 @@ class UserReviewsController extends Controller
         /** @var User $user */
         $user = $request->user('api');
 
-        if (! $user?->isUser()) {
-            return sendResponse(false, 'Access denied.', null, Response::HTTP_FORBIDDEN);
+        if ($user === null) {
+            return sendResponse(false, 'Unauthenticated.', null, Response::HTTP_UNAUTHORIZED);
         }
 
         try {
