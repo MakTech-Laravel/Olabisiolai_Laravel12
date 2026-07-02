@@ -4,6 +4,7 @@ namespace App\Services;
 
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class PaystackService
@@ -30,7 +31,7 @@ class PaystackService
      */
     public function verify(string $reference): array
     {
-        $reference = trim($reference);
+        $reference = strtolower(trim($reference));
         if ($reference === '') {
             throw new RuntimeException('Paystack reference is required for verification.');
         }
@@ -38,8 +39,16 @@ class PaystackService
         $res = $this->client()->get('/transaction/verify/' . urlencode($reference));
         $json = $res->json();
 
+        Log::info('Paystack verification response', ['reference' => $reference]);
+        Log::info('Paystack verification response', ['response' => $json]);
+
         if (! $res->ok() || ! is_array($json) || ($json['status'] ?? false) !== true) {
             $message = is_array($json) ? (string) ($json['message'] ?? 'Paystack verification failed.') : 'Paystack verification failed.';
+            if (stripos($message, 'reference not found') !== false) {
+                throw new RuntimeException(
+                    'Paystack could not find this transaction. Use the reference from your Paystack receipt or bank alert.',
+                );
+            }
             throw new RuntimeException($message);
         }
 
@@ -47,5 +56,22 @@ class PaystackService
         $data = is_array($json['data'] ?? null) ? $json['data'] : [];
 
         return $data;
+    }
+
+    public function isValidWebhookSignature(string $payload, ?string $signature): bool
+    {
+        $signature = trim((string) $signature);
+        if ($signature === '') {
+            return false;
+        }
+
+        $secret = (string) config('services.paystack.secret', '');
+        if ($secret === '') {
+            return false;
+        }
+
+        $computed = hash_hmac('sha512', $payload, $secret);
+
+        return hash_equals($computed, $signature);
     }
 }

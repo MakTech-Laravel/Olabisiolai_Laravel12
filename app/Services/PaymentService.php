@@ -136,6 +136,8 @@ class PaymentService
             throw new RuntimeException('This payment has failed and cannot be confirmed.');
         }
 
+        $this->assertGatewayTransactionAvailable($gatewayTransactionId, $payment);
+
         $payment->update([
             'status' => PaymentStatus::Completed,
             'gateway' => $gateway,
@@ -160,6 +162,71 @@ class PaymentService
         }
 
         return $payment;
+    }
+
+    /**
+     * Ensure a gateway reference has not already been used by another completed checkout.
+     */
+    public function assertGatewayTransactionAvailable(string $gatewayTransactionId, Payment $payment): void
+    {
+        $gatewayTransactionId = strtolower(trim($gatewayTransactionId));
+        if ($gatewayTransactionId === '') {
+            throw new RuntimeException('Payment reference is required.');
+        }
+
+        if (
+            $payment->status === PaymentStatus::Completed
+            && strtolower((string) ($payment->gateway_transaction_id ?? '')) === $gatewayTransactionId
+        ) {
+            return;
+        }
+
+        $allowedPaymentIds = $this->relatedBundledPaymentIds($payment);
+
+        $conflict = Payment::query()
+            ->where('status', PaymentStatus::Completed)
+            ->whereNotIn('id', $allowedPaymentIds)
+            ->where(function ($query) use ($gatewayTransactionId): void {
+                $query->whereRaw('LOWER(gateway_transaction_id) = ?', [$gatewayTransactionId])
+                    ->orWhereRaw('LOWER(tx_ref) = ?', [$gatewayTransactionId]);
+            })
+            ->first();
+
+        if ($conflict !== null) {
+            throw new RuntimeException('This payment reference has already been used.');
+        }
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function relatedBundledPaymentIds(Payment $payment): array
+    {
+        $ids = [$payment->id];
+        $meta = is_array($payment->metadata) ? $payment->metadata : [];
+
+        $boostPaymentId = (int) ($meta['boost_payment_id'] ?? 0);
+        if ($boostPaymentId > 0) {
+            $ids[] = $boostPaymentId;
+        }
+
+        $subscriptionPaymentId = (int) ($meta['subscription_payment_id'] ?? 0);
+        if ($subscriptionPaymentId > 0) {
+            $ids[] = $subscriptionPaymentId;
+        }
+
+        $checkoutGroupId = $meta['checkout_group_id'] ?? null;
+        if (is_string($checkoutGroupId) && $checkoutGroupId !== '') {
+            $groupMemberIds = Payment::query()
+                ->where('user_id', $payment->user_id)
+                ->where('metadata->checkout_group_id', $checkoutGroupId)
+                ->pluck('id')
+                ->all();
+
+            $ids = array_merge($ids, $groupMemberIds);
+        }
+
+        return array_values(array_unique($ids));
     }
 
     public function markFailed(Payment $payment): Payment

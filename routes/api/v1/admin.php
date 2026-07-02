@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\V1\Admin\AdminAccountController;
 use App\Http\Controllers\Api\V1\Admin\AdminBoostRequestController;
 use App\Http\Controllers\Api\V1\Admin\AdminMessagingController;
 use App\Http\Controllers\Api\V1\Admin\AdminPaymentsController;
+use App\Http\Controllers\Api\V1\Admin\AdminSubscriptionController;
 use App\Http\Controllers\Api\V1\Admin\AdminPricingController;
 use App\Http\Controllers\Api\V1\Admin\BusinessInfoController;
 use App\Http\Controllers\Api\V1\Admin\CategoryController;
@@ -113,7 +114,13 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/', [AdminPaymentsController::class, 'index'])->name('index');
         Route::get('/analytics', [AdminPaymentsController::class, 'analytics'])->name('analytics');
         Route::get('/export', [AdminPaymentsController::class, 'export'])->name('export');
+        Route::post('/{payment}/apply', [AdminSubscriptionController::class, 'applyPayment'])->name('apply');
+        Route::post('/{payment}/reconcile', [AdminSubscriptionController::class, 'reconcilePayment'])->name('reconcile');
         Route::get('/{payment}', [AdminPaymentsController::class, 'show'])->name('show');
+    });
+
+    Route::prefix('subscriptions')->name('subscriptions.')->group(function () {
+        Route::post('/grant-premium', [AdminSubscriptionController::class, 'grantPremium'])->name('grant-premium');
     });
 
     Route::prefix('pricing')->name('pricing.')->group(function () {
