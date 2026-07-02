@@ -104,6 +104,7 @@ Route::prefix('vendor')->name('vendor.')->group(function () {
                 Route::post('/payment/init', [VendorSubscriptionController::class, 'initPayment'])->name('payment.init');
                 Route::post('/payment/resume', [VendorSubscriptionController::class, 'resumePayment'])->name('payment.resume');
                 Route::post('/payment/confirm', [VendorSubscriptionController::class, 'confirmPayment'])->name('payment.confirm');
+                Route::post('/payment/reconcile', [VendorSubscriptionController::class, 'reconcilePayment'])->name('payment.reconcile');
             });
         });
     });
