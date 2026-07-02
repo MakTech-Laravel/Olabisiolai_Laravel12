@@ -5,7 +5,6 @@ cd /var/www
 
 echo "[entrypoint] Starting Gidira API container..."
 
-# ─── Merge runtime env vars into .env (Coolify injects at boot) ───────────────
 if [ -f .env ]; then
     cp .env .env.backup
 fi
@@ -33,6 +32,11 @@ fi
 
 php artisan migrate --force --no-interaction || echo "[entrypoint] WARNING: migrate failed (will continue)"
 
+# ── Broad storage permissions FIRST ─────────────────────────────
+chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
+chmod -R 775 /var/www/storage /var/www/bootstrap/cache
+
+# ── Passport keys AFTER, so their strict 600 perms aren't overwritten ──
 # shellcheck source=/dev/null
 source /usr/local/bin/ensure-passport.sh
 ensure_passport_keys
@@ -42,9 +46,6 @@ php artisan storage:link --force --ansi 2>/dev/null || true
 
 php artisan config:cache 2>/dev/null || true
 php artisan event:cache 2>/dev/null || true
-
-chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
-chmod -R 775 /var/www/storage /var/www/bootstrap/cache
 
 echo "[entrypoint] Launching: $*"
 exec "$@"

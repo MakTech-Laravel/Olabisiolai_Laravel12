@@ -6,6 +6,7 @@
 /storage/*.key
 /storage/api-docs
 /storage/pail
+/storage/api-docs
 /vendor
 .env
 .env.*
