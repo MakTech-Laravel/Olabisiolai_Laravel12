@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V1\CategoryResource;
 use App\Models\Category;
 use Illuminate\Http\Response;
+use OpenApi\Attributes as OA;
 use Throwable;
 
 /**
@@ -13,6 +14,26 @@ use Throwable;
  */
 class PublicCategoryCatalogController extends Controller
 {
+    #[OA\Get(
+        path: '/v1/categories',
+        summary: 'List all business categories',
+        tags: ['Public'],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Categories retrieved successfully',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'categories', type: 'array', items: new OA\Items(type: 'object')),
+                        new OA\Property(property: 'count', type: 'integer'),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function index()
     {
         try {
@@ -31,6 +52,29 @@ class PublicCategoryCatalogController extends Controller
         }
     }
 
+    #[OA\Get(
+        path: '/v1/categories/{category}',
+        summary: 'Get a single category',
+        tags: ['Public'],
+        parameters: [
+            new OA\Parameter(name: 'category', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Category retrieved successfully',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'category', type: 'object'),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 404, description: 'Category not found', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function show(Category $category)
     {
         try {

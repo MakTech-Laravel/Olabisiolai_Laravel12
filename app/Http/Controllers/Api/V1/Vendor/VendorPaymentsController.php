@@ -11,6 +11,7 @@ use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use OpenApi\Attributes as OA;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
@@ -23,6 +24,44 @@ class VendorPaymentsController extends Controller
         private readonly PaymentService $paymentService,
     ) {}
 
+    #[OA\Get(
+        path: '/v1/vendor/payments',
+        summary: 'List the vendor\'s payment history',
+        tags: ['Billing'],
+        security: [['passport' => []]],
+        parameters: [
+            new OA\Parameter(name: 'per_page', in: 'query', required: false, schema: new OA\Schema(type: 'integer', minimum: 1, maximum: 100, default: 15)),
+            new OA\Parameter(name: 'purpose', in: 'query', required: false, schema: new OA\Schema(type: 'string', enum: ['verification', 'boosting', 'subscription', 'wallet_topup'])),
+            new OA\Parameter(name: 'month', in: 'query', required: false, description: 'Calendar month filter, format YYYY-MM.', schema: new OA\Schema(type: 'string', example: '2026-07')),
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Payments retrieved successfully',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'items', type: 'array', items: new OA\Items(ref: '#/components/schemas/Payment')),
+                        new OA\Property(property: 'pagination', properties: [
+                            new OA\Property(property: 'current_page', type: 'integer'),
+                            new OA\Property(property: 'last_page', type: 'integer'),
+                            new OA\Property(property: 'per_page', type: 'integer'),
+                            new OA\Property(property: 'total', type: 'integer'),
+                        ], type: 'object'),
+                        new OA\Property(property: 'subscription_month_range', properties: [
+                            new OA\Property(property: 'start_month', type: 'string'),
+                            new OA\Property(property: 'end_month', type: 'string'),
+                            new OA\Property(property: 'has_subscription_history', type: 'boolean'),
+                        ], type: 'object'),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 422, description: 'Month filter outside allowed range, or validation error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function index(Request $request)
     {
         try {
@@ -67,6 +106,27 @@ class VendorPaymentsController extends Controller
         }
     }
 
+    #[OA\Get(
+        path: '/v1/vendor/payments/export',
+        summary: 'Export the vendor\'s payment history as CSV',
+        description: 'Streams a CSV download. Rejects with 422 if the filtered result set exceeds 10,000 rows.',
+        tags: ['Billing'],
+        security: [['passport' => []]],
+        parameters: [
+            new OA\Parameter(name: 'purpose', in: 'query', required: false, schema: new OA\Schema(type: 'string', enum: ['verification', 'boosting', 'subscription', 'wallet_topup'])),
+            new OA\Parameter(name: 'month', in: 'query', required: false, description: 'Calendar month filter, format YYYY-MM.', schema: new OA\Schema(type: 'string', example: '2026-07')),
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'CSV file stream',
+                content: new OA\MediaType(mediaType: 'text/csv', schema: new OA\Schema(type: 'string', format: 'binary')),
+            ),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 422, description: 'Too many rows to export, or validation error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function export(Request $request): JsonResponse|StreamedResponse
     {
         try {
@@ -200,6 +260,31 @@ class VendorPaymentsController extends Controller
         ];
     }
 
+    #[OA\Get(
+        path: '/v1/vendor/payments/{payment}',
+        summary: 'Get a single payment owned by the vendor',
+        tags: ['Billing'],
+        security: [['passport' => []]],
+        parameters: [
+            new OA\Parameter(name: 'payment', in: 'path', required: true, schema: new OA\Schema(type: 'integer'), example: 4821),
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Payment retrieved successfully',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'payment', ref: '#/components/schemas/Payment'),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 404, description: 'Payment not found', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function show(Request $request, int $payment)
     {
         try {

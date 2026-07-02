@@ -17,6 +17,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 use JsonException;
+use OpenApi\Attributes as OA;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
@@ -30,6 +31,27 @@ class UserSettingsController extends Controller
         private readonly BusinessInfoService $businessInfoService,
     ) {}
 
+    #[OA\Get(
+        path: '/v1/user/profile',
+        summary: 'Get the authenticated user\'s profile',
+        description: 'Restricted to accounts with role "user" (vendors use their own settings/dashboard endpoints).',
+        tags: ['Users'],
+        security: [['passport' => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Profile retrieved successfully',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', ref: '#/components/schemas/UserProfile'),
+                ]),
+            ),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 403, description: 'Access denied (not a user account)', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function profileShow(Request $request): Response
     {
         /** @var User $user */
@@ -50,6 +72,34 @@ class UserSettingsController extends Controller
         }
     }
 
+    #[OA\Patch(
+        path: '/v1/user/profile',
+        summary: 'Update the authenticated user\'s profile',
+        tags: ['Users'],
+        security: [['passport' => []]],
+        requestBody: new OA\RequestBody(
+            content: new OA\JsonContent(properties: [
+                new OA\Property(property: 'first_name', type: 'string', maxLength: 120, nullable: true),
+                new OA\Property(property: 'last_name', type: 'string', maxLength: 120, nullable: true),
+                new OA\Property(property: 'phone', type: 'string', maxLength: 20, nullable: true),
+            ]),
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Profile updated successfully',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', ref: '#/components/schemas/UserProfile'),
+                ]),
+            ),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 403, description: 'Access denied (not a user account)', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 422, description: 'Validation error', content: new OA\JsonContent(ref: '#/components/schemas/ValidationError')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function profileUpdate(UpdateUserProfileRequest $request): Response
     {
         /** @var User $user */
@@ -73,7 +123,7 @@ class UserSettingsController extends Controller
             }
 
             if (isset($validated['first_name']) || isset($validated['last_name'])) {
-                $user->name = trim($user->first_name . ' ' . $user->last_name);
+                $user->name = trim($user->first_name.' '.$user->last_name);
             }
 
             $user->save();
@@ -87,6 +137,39 @@ class UserSettingsController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: '/v1/user/password',
+        summary: 'Change the authenticated user\'s password',
+        tags: ['Users'],
+        security: [['passport' => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['current_password', 'password', 'password_confirmation'],
+                properties: [
+                    new OA\Property(property: 'current_password', type: 'string', format: 'password'),
+                    new OA\Property(property: 'password', type: 'string', format: 'password', minLength: 8),
+                    new OA\Property(property: 'password_confirmation', type: 'string', format: 'password'),
+                ],
+                example: [
+                    'current_password' => 'OldPassw0rd123',
+                    'password' => 'NewPassw0rd123',
+                    'password_confirmation' => 'NewPassw0rd123',
+                ],
+            ),
+        ),
+        responses: [
+            new OA\Response(response: 200, description: 'Password updated successfully', content: new OA\JsonContent(ref: '#/components/schemas/ApiResponse')),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 403, description: 'Access denied (not a user account)', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(
+                response: 422,
+                description: 'Incorrect current password, new password matches old, or validation error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse'),
+            ),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function changePassword(ChangeUserPasswordRequest $request): Response
     {
         /** @var User $user */
@@ -131,6 +214,30 @@ class UserSettingsController extends Controller
         }
     }
 
+    #[OA\Get(
+        path: '/v1/user/settings',
+        summary: 'Get the authenticated user\'s or vendor\'s account settings',
+        description: 'Available before registration OTP is confirmed. Accessible to both "user" and "vendor" roles.',
+        tags: ['Users'],
+        security: [['passport' => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Settings retrieved successfully',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'profile', ref: '#/components/schemas/UserProfile'),
+                        new OA\Property(property: 'settings', type: 'object'),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 403, description: 'Access denied', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function show(Request $request): Response
     {
         /** @var User $user */
@@ -151,6 +258,59 @@ class UserSettingsController extends Controller
         }
     }
 
+    #[OA\Patch(
+        path: '/v1/user/settings',
+        summary: 'Update the authenticated user\'s or vendor\'s account settings',
+        description: 'Accepts either PATCH with JSON, or POST with multipart/form-data when uploading an image '
+            .'(PHP/nginx do not parse files on PATCH in production). Merges nested `settings` recursively rather than replacing it.',
+        tags: ['Users'],
+        security: [['passport' => []]],
+        requestBody: new OA\RequestBody(
+            content: new OA\MediaType(
+                mediaType: 'multipart/form-data',
+                schema: new OA\Schema(properties: [
+                    new OA\Property(property: 'first_name', type: 'string', maxLength: 120, nullable: true),
+                    new OA\Property(property: 'last_name', type: 'string', maxLength: 120, nullable: true),
+                    new OA\Property(property: 'phone', type: 'string', maxLength: 20, nullable: true),
+                    new OA\Property(property: 'wants_marketing_emails', type: 'boolean', nullable: true),
+                    new OA\Property(property: 'location', type: 'string', maxLength: 255, nullable: true),
+                    new OA\Property(property: 'image', type: 'string', format: 'binary', nullable: true, description: 'Max 10MB image file.'),
+                    new OA\Property(
+                        property: 'settings',
+                        type: 'object',
+                        nullable: true,
+                        properties: [
+                            new OA\Property(property: 'notifications', properties: [
+                                new OA\Property(property: 'email', type: 'boolean'),
+                                new OA\Property(property: 'push', type: 'boolean'),
+                                new OA\Property(property: 'sms', type: 'boolean'),
+                                new OA\Property(property: 'whatsapp', type: 'boolean'),
+                            ], type: 'object'),
+                            new OA\Property(property: 'active_business_id', type: 'integer', nullable: true),
+                        ],
+                    ),
+                ]),
+            ),
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Settings updated successfully',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'profile', ref: '#/components/schemas/UserProfile'),
+                        new OA\Property(property: 'settings', type: 'object'),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 403, description: 'Access denied', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 422, description: 'Validation error', content: new OA\JsonContent(ref: '#/components/schemas/ValidationError')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function update(UpdateUserSettingsRequest $request): Response
     {
         /** @var User $user */
@@ -190,7 +350,7 @@ class UserSettingsController extends Controller
             }
 
             if (isset($validated['first_name']) || isset($validated['last_name'])) {
-                $user->name = trim($user->first_name . ' ' . $user->last_name);
+                $user->name = trim($user->first_name.' '.$user->last_name);
             }
 
             if (isset($validated['settings'])) {
@@ -223,8 +383,8 @@ class UserSettingsController extends Controller
             if ($request->hasFile('image')) {
                 $newImagePath = $this->handleFileUpload(
                     $request->file('image'),
-                    'users/' . $user->id . '/profile',
-                    $user->first_name . ' ' . $user->last_name . ' avatar'
+                    'users/'.$user->id.'/profile',
+                    $user->first_name.' '.$user->last_name.' avatar'
                 );
                 $user->image = $newImagePath;
             }

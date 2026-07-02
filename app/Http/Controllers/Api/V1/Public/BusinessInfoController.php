@@ -9,6 +9,7 @@ use App\Services\BusinessInfoService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Validation\ValidationException;
+use OpenApi\Attributes as OA;
 use Throwable;
 
 /**
@@ -22,10 +23,47 @@ class BusinessInfoController extends Controller
         private readonly BoostCampaignAnalyticsService $boostCampaignAnalytics,
     ) {}
 
-    /**
-     * Get businesses for home page display.
-     * Returns active businesses (verified badge shown only when verification is approved).
-     */
+    #[OA\Get(
+        path: '/v1/businesses/home',
+        summary: 'List businesses for the home page',
+        description: 'Public, unauthenticated. Returns active businesses (verified badge shown only when verification is approved).',
+        tags: ['Public'],
+        parameters: [
+            new OA\Parameter(name: 'category_id', in: 'query', required: false, schema: new OA\Schema(type: 'integer')),
+            new OA\Parameter(name: 'subcategory', in: 'query', required: false, schema: new OA\Schema(type: 'string', maxLength: 255)),
+            new OA\Parameter(name: 'location_id', in: 'query', required: false, schema: new OA\Schema(type: 'integer')),
+            new OA\Parameter(name: 'lat', in: 'query', required: false, description: 'Requires lng.', schema: new OA\Schema(type: 'number', format: 'float', minimum: -90, maximum: 90)),
+            new OA\Parameter(name: 'lng', in: 'query', required: false, description: 'Requires lat.', schema: new OA\Schema(type: 'number', format: 'float', minimum: -180, maximum: 180)),
+            new OA\Parameter(name: 'radius_km', in: 'query', required: false, schema: new OA\Schema(type: 'number', format: 'float', minimum: 1, maximum: 200)),
+            new OA\Parameter(name: 'search', in: 'query', required: false, schema: new OA\Schema(type: 'string', maxLength: 255)),
+            new OA\Parameter(name: 'per_page', in: 'query', required: false, schema: new OA\Schema(type: 'integer', minimum: 1, maximum: 50, default: 12)),
+            new OA\Parameter(name: 'page', in: 'query', required: false, schema: new OA\Schema(type: 'integer', minimum: 1)),
+            new OA\Parameter(name: 'featured', in: 'query', required: false, schema: new OA\Schema(type: 'boolean')),
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Businesses retrieved successfully',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'filter', type: 'object'),
+                        new OA\Property(property: 'count', type: 'integer'),
+                        new OA\Property(property: 'pagination', properties: [
+                            new OA\Property(property: 'current_page', type: 'integer'),
+                            new OA\Property(property: 'per_page', type: 'integer'),
+                            new OA\Property(property: 'last_page', type: 'integer'),
+                            new OA\Property(property: 'total', type: 'integer'),
+                        ], type: 'object'),
+                        new OA\Property(property: 'businesses', type: 'array', items: new OA\Items(type: 'object')),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 422, description: 'Validation error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function homePage(Request $request)
     {
         try {
@@ -103,6 +141,34 @@ class BusinessInfoController extends Controller
     /**
      * Get detailed information about a specific business.
      */
+    #[OA\Get(
+        path: '/v1/businesses/{businessId}',
+        summary: 'Get detailed information about a specific business',
+        description: 'Public, unauthenticated (auth optional — an authenticated caller\'s identity is used for view analytics/personalization only).',
+        tags: ['Public'],
+        parameters: [
+            new OA\Parameter(name: 'businessId', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+            new OA\Parameter(name: 'include_reviews', in: 'query', required: false, schema: new OA\Schema(type: 'boolean')),
+            new OA\Parameter(name: 'reviews_per_page', in: 'query', required: false, schema: new OA\Schema(type: 'integer', minimum: 1, maximum: 20)),
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Business details retrieved successfully',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'business', type: 'object'),
+                        new OA\Property(property: 'reviews_summary', type: 'object'),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 404, description: 'Business not found or not available', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 422, description: 'Validation error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function show(Request $request, $businessId)
     {
         try {
@@ -146,6 +212,31 @@ class BusinessInfoController extends Controller
     /**
      * Get featured businesses for home page showcase.
      */
+    #[OA\Get(
+        path: '/v1/businesses/featured',
+        summary: 'List featured businesses for the home page showcase',
+        tags: ['Public'],
+        parameters: [
+            new OA\Parameter(name: 'limit', in: 'query', required: false, schema: new OA\Schema(type: 'integer', minimum: 1, maximum: 20, default: 8)),
+            new OA\Parameter(name: 'category_id', in: 'query', required: false, schema: new OA\Schema(type: 'integer')),
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Featured businesses retrieved successfully',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'businesses', type: 'array', items: new OA\Items(type: 'object')),
+                        new OA\Property(property: 'count', type: 'integer'),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 422, description: 'Validation error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function featured(Request $request)
     {
         try {
@@ -191,6 +282,43 @@ class BusinessInfoController extends Controller
     /**
      * Get all businesses for filter page (no status restrictions).
      */
+    #[OA\Get(
+        path: '/v1/businesses/all',
+        summary: 'List all businesses for the filter page (no status restrictions)',
+        tags: ['Public'],
+        parameters: [
+            new OA\Parameter(name: 'category_id', in: 'query', required: false, schema: new OA\Schema(type: 'integer')),
+            new OA\Parameter(name: 'subcategory', in: 'query', required: false, schema: new OA\Schema(type: 'string', maxLength: 255)),
+            new OA\Parameter(name: 'location_id', in: 'query', required: false, schema: new OA\Schema(type: 'integer')),
+            new OA\Parameter(name: 'lat', in: 'query', required: false, schema: new OA\Schema(type: 'number', format: 'float', minimum: -90, maximum: 90)),
+            new OA\Parameter(name: 'lng', in: 'query', required: false, schema: new OA\Schema(type: 'number', format: 'float', minimum: -180, maximum: 180)),
+            new OA\Parameter(name: 'radius_km', in: 'query', required: false, schema: new OA\Schema(type: 'number', format: 'float', minimum: 1, maximum: 200)),
+            new OA\Parameter(name: 'verification_status', in: 'query', required: false, schema: new OA\Schema(type: 'string', enum: ['none', 'pending', 'verified', 'approved'])),
+            new OA\Parameter(name: 'business_status', in: 'query', required: false, schema: new OA\Schema(type: 'string', enum: ['active', 'inactive', 'suspended'])),
+            new OA\Parameter(name: 'is_flagged', in: 'query', required: false, schema: new OA\Schema(type: 'boolean')),
+            new OA\Parameter(name: 'search', in: 'query', required: false, schema: new OA\Schema(type: 'string', maxLength: 255)),
+            new OA\Parameter(name: 'per_page', in: 'query', required: false, schema: new OA\Schema(type: 'integer', minimum: 1, maximum: 100, default: 20)),
+            new OA\Parameter(name: 'page', in: 'query', required: false, schema: new OA\Schema(type: 'integer', minimum: 1)),
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Businesses retrieved successfully',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'filter', type: 'object'),
+                        new OA\Property(property: 'count', type: 'integer'),
+                        new OA\Property(property: 'pagination', type: 'object'),
+                        new OA\Property(property: 'businesses', type: 'array', items: new OA\Items(type: 'object')),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 422, description: 'Validation error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function all(Request $request)
     {
         try {
@@ -274,6 +402,40 @@ class BusinessInfoController extends Controller
     /**
      * Search businesses with advanced filters.
      */
+    #[OA\Get(
+        path: '/v1/businesses/search',
+        summary: 'Search businesses with advanced filters',
+        tags: ['Public'],
+        parameters: [
+            new OA\Parameter(name: 'query', in: 'query', required: true, schema: new OA\Schema(type: 'string', maxLength: 255)),
+            new OA\Parameter(name: 'category_id', in: 'query', required: false, schema: new OA\Schema(type: 'integer')),
+            new OA\Parameter(name: 'location_id', in: 'query', required: false, schema: new OA\Schema(type: 'integer')),
+            new OA\Parameter(name: 'lat', in: 'query', required: false, schema: new OA\Schema(type: 'number', format: 'float', minimum: -90, maximum: 90)),
+            new OA\Parameter(name: 'lng', in: 'query', required: false, schema: new OA\Schema(type: 'number', format: 'float', minimum: -180, maximum: 180)),
+            new OA\Parameter(name: 'radius_km', in: 'query', required: false, schema: new OA\Schema(type: 'number', format: 'float', minimum: 1, maximum: 200)),
+            new OA\Parameter(name: 'per_page', in: 'query', required: false, schema: new OA\Schema(type: 'integer', minimum: 1, maximum: 50, default: 12)),
+            new OA\Parameter(name: 'page', in: 'query', required: false, schema: new OA\Schema(type: 'integer', minimum: 1)),
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Businesses found successfully',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'search_query', type: 'string'),
+                        new OA\Property(property: 'filter', type: 'object'),
+                        new OA\Property(property: 'count', type: 'integer'),
+                        new OA\Property(property: 'pagination', type: 'object'),
+                        new OA\Property(property: 'businesses', type: 'array', items: new OA\Items(type: 'object')),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 422, description: 'Validation error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function search(Request $request)
     {
         try {
