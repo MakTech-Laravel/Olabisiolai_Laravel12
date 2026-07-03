@@ -131,7 +131,7 @@ class WalletService
             'package_id' => 'wallet_topup',
             'amount' => $amount,
             'currency' => config('subscription.currency', 'NGN'),
-            'tx_ref' => 'wallet_' . $user->id . '_' . now()->timestamp . '_' . random_int(1000, 9999),
+            'tx_ref' => 'wallet_'.$user->id.'_'.now()->timestamp.'_'.random_int(1000, 9999),
             'gateway' => $gateway ?? PaymentGateway::Paystack,
             'status' => PaymentStatus::Pending,
             'metadata' => [
@@ -195,5 +195,28 @@ class WalletService
         $this->debit($user, $amount, $description, $reference);
 
         return true;
+    }
+
+    /**
+     * Pay a pending checkout entirely from the user's wallet and mark it completed,
+     * reusing the same completion path (status, notification) as a gateway confirm.
+     */
+    public function payForPendingPayment(User $user, Payment $payment, string $description): Payment
+    {
+        if ($payment->user_id !== $user->id) {
+            throw new RuntimeException('Payment does not belong to this user.');
+        }
+
+        if ($payment->status !== PaymentStatus::Pending) {
+            throw new RuntimeException('This payment is not awaiting payment.');
+        }
+
+        $this->debit($user, (float) $payment->amount, $description, $payment->tx_ref);
+
+        return $this->paymentService->confirmPayment(
+            $payment,
+            'wallet_'.$payment->tx_ref,
+            PaymentGateway::Wallet,
+        );
     }
 }

@@ -168,6 +168,32 @@ class VendorBoostController extends Controller
                 'validated' => $validated,
             ]));
 
+            if ($request->boolean('use_wallet')) {
+                $result = $this->boostPurchaseService->payBoostFromWallet(
+                    $vendor,
+                    $business,
+                    $this->boostPurchaseService->dynamicTierKey(),
+                    (int) $validated['duration_days'],
+                    isset($validated['renew_type']) ? (string) $validated['renew_type'] : null,
+                    isset($validated['source_campaign_id']) ? (int) $validated['source_campaign_id'] : null,
+                    isset($validated['location_id']) ? (int) $validated['location_id'] : null,
+                    (float) $validated['budget_amount'],
+                );
+
+                Log::info('vendor.boost.payment.init.paid_from_wallet', array_merge($logContext, [
+                    'business_id' => $business->id,
+                    'payment_id' => $result['payment']->id,
+                    'request_id' => $result['request']->id,
+                    'amount' => $result['payment']->amount,
+                ]));
+
+                return sendResponse(true, 'Payment received. An admin will assign your boost shortly.', [
+                    'payment' => $this->paymentService->toArray($result['payment']),
+                    'request' => new BoostPurchaseRequestResource($result['request']),
+                    'paid_from_wallet' => true,
+                ]);
+            }
+
             $result = $this->boostPurchaseService->initBoostPayment(
                 $vendor,
                 $business,
@@ -297,6 +323,7 @@ class VendorBoostController extends Controller
             'renew_type' => ['nullable', 'string', 'in:extend,boost_again'],
             'source_campaign_id' => ['nullable', 'integer', 'exists:boost_purchase_requests,id'],
             'gateway' => ['nullable', 'string', Rule::in(PaymentGateway::values())],
+            'use_wallet' => ['sometimes', 'boolean'],
         ]);
     }
 

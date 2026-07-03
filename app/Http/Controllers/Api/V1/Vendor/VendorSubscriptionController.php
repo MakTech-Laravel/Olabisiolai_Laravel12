@@ -96,6 +96,7 @@ class VendorSubscriptionController extends Controller
 
                 return sendResponse(true, 'Premium subscription paid from wallet successfully.', [
                     'business' => new BusinessInfoResource($walletCheckout['business']),
+                    'subscription' => $this->subscriptionService->subscriptionPayload($walletCheckout['business']),
                     'wallet_balance' => $walletCheckout['wallet_balance'],
                     'paid_from_wallet' => true,
                 ]);

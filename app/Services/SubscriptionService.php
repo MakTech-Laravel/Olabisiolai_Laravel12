@@ -330,8 +330,8 @@ class SubscriptionService
         $subscriptionPayment->update([
             'status' => PaymentStatus::Completed,
             'paid_at' => now(),
-            'gateway_transaction_id' => 'wallet_' . $subscriptionPayment->tx_ref,
-            'gateway' => PaymentGateway::Paystack,
+            'gateway_transaction_id' => 'wallet_'.$subscriptionPayment->tx_ref,
+            'gateway' => PaymentGateway::Wallet,
         ]);
 
         $activatedBusiness = $this->activatePremiumAfterPayment($subscriptionPayment, $vendor);
@@ -341,8 +341,8 @@ class SubscriptionService
             $boostPayment->update([
                 'status' => PaymentStatus::Completed,
                 'paid_at' => now(),
-                'gateway_transaction_id' => 'wallet_' . $boostPayment->tx_ref,
-                'gateway' => PaymentGateway::Paystack,
+                'gateway_transaction_id' => 'wallet_'.$boostPayment->tx_ref,
+                'gateway' => PaymentGateway::Wallet,
             ]);
             $this->paymentService->consumePayment($boostPayment);
         }
