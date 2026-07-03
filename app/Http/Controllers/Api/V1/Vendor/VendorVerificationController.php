@@ -10,6 +10,7 @@ use App\Services\BusinessInfoService;
 use App\Services\PaymentService;
 use App\Services\PricingPackageService;
 use App\Services\VerificationService;
+use App\Services\WalletService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -24,6 +25,7 @@ class VendorVerificationController extends Controller
         private readonly BusinessInfoService $businessInfoService,
         private readonly PaymentService $paymentService,
         private readonly PricingPackageService $pricingPackageService,
+        private readonly WalletService $walletService,
     ) {}
 
     public function packages()
@@ -43,7 +45,7 @@ class VendorVerificationController extends Controller
             if (! $this->verificationService->canApply($business)) {
                 return sendResponse(
                     false,
-                    'Your business is not eligible to pay for verification at this time. Current status: ' . $business->verification_status->label(),
+                    'Your business is not eligible to pay for verification at this time. Current status: '.$business->verification_status->label(),
                     null,
                     Response::HTTP_UNPROCESSABLE_ENTITY,
                 );
@@ -52,6 +54,7 @@ class VendorVerificationController extends Controller
             $validated = $request->validate([
                 'package_id' => ['required', 'string', Rule::in($this->pricingPackageService->verificationPackageKeys())],
                 'gateway' => ['nullable', 'string', Rule::in(PaymentGateway::values())],
+                'use_wallet' => ['sometimes', 'boolean'],
             ]);
 
             $payment = $this->paymentService->initPayment(
@@ -63,6 +66,19 @@ class VendorVerificationController extends Controller
                 null,
                 isset($validated['gateway']) ? PaymentGateway::from((string) $validated['gateway']) : null,
             );
+
+            if ($request->boolean('use_wallet')) {
+                $payment = $this->walletService->payForPendingPayment($vendor, $payment, 'Verification checkout');
+
+                $statusData = $this->verificationService->getVendorVerificationStatus($business);
+
+                return sendResponse(true, 'Payment confirmed successfully.', [
+                    'payment' => $this->paymentService->toArray($payment->fresh()),
+                    'awaiting_document_submission' => (bool) ($statusData['awaiting_document_submission'] ?? false),
+                    'consumable_payment_id' => $statusData['consumable_payment_id'] ?? null,
+                    'paid_from_wallet' => true,
+                ], Response::HTTP_CREATED);
+            }
 
             return sendResponse(true, 'Payment initialized successfully.', [
                 'payment' => $this->paymentService->toArray($payment),
@@ -171,7 +187,7 @@ class VendorVerificationController extends Controller
             );
 
             return sendResponse(true, 'Verification application submitted successfully. We will review your documents shortly.', [
-                'documents' => collect($created)->map(fn($doc) => [
+                'documents' => collect($created)->map(fn ($doc) => [
                     'id' => $doc->id,
                     'document_type' => $doc->document_type,
                     'title' => $doc->title,
