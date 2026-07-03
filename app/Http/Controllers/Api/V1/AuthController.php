@@ -27,6 +27,7 @@ use App\Services\TwoFactorAuthenticationService;
 use App\Support\LoginRoleCompatibility;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
@@ -42,9 +43,10 @@ class AuthController extends Controller
     public function register(RegisterRequest $request)
     {
         try {
+            $referralCode = $request->input('ref');
             ['user' => $user, 'otp' => $otp, 'verification_channel' => $channel] = $this->authService->register($request->validated());
 
-            $this->referralService->attachReferralOnRegister($user, $request->input('ref'));
+            $this->referralService->attachReferralOnRegister($user, $referralCode);
 
             return sendResponse(true, 'Registration successful. Verify OTP to activate your account.', [
                 'verification_status' => 'unverified',

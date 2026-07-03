@@ -6,6 +6,7 @@ enum PaymentGateway: string
 {
     case Flutterwave = 'flutterwave';
     case Paystack = 'paystack';
+    case Wallet = 'wallet';
 
     /**
      * @return list<string>

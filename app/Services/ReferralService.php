@@ -7,6 +7,7 @@ use App\Models\ReferralCode;
 use App\Models\ReferralInvite;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -27,10 +28,10 @@ class ReferralService
 
         $base = Str::slug(Str::before($user->email ?? $user->name ?? 'user', '@'));
         $base = Str::upper(Str::substr(preg_replace('/[^a-z0-9]/i', '', $base) ?: 'GID', 0, 8));
-        $code = $base . Str::upper(Str::random(4));
+        $code = $base.Str::upper(Str::random(4));
 
         while (ReferralCode::query()->where('code', $code)->exists()) {
-            $code = $base . Str::upper(Str::random(4));
+            $code = $base.Str::upper(Str::random(4));
         }
 
         return ReferralCode::query()->create([
@@ -79,6 +80,7 @@ class ReferralService
 
     public function attachReferralOnRegister(User $invitee, ?string $rawCode): void
     {
+        Log::info('Attaching referral on register', ['invitee_id' => $invitee->id, 'raw_code' => $rawCode]);
         $code = Str::upper(trim((string) $rawCode));
         if ($code === '') {
             return;
@@ -130,7 +132,7 @@ class ReferralService
             return;
         }
 
-        DB::transaction(function () use ($invite, $business): void {
+        DB::transaction(function () use ($invitee, $invite, $business): void {
             $locked = ReferralInvite::query()->whereKey($invite->id)->lockForUpdate()->first();
             if ($locked === null || $locked->status === 'paid') {
                 return;
@@ -145,8 +147,16 @@ class ReferralService
                 $referrer,
                 self::CREDIT_AMOUNT,
                 'Referral reward',
-                'referral_' . $locked->id,
+                'referral_'.$locked->id,
                 ['invitee_user_id' => $locked->invitee_user_id, 'business_info_id' => $business->id],
+            );
+
+            $this->walletService->credit(
+                $invitee,
+                self::CREDIT_AMOUNT,
+                'Referral welcome reward',
+                'referral_invitee_'.$locked->id,
+                ['referrer_user_id' => $locked->referrer_user_id, 'business_info_id' => $business->id],
             );
 
             $locked->update([

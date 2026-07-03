@@ -6,7 +6,6 @@ use App\Enums\BoostPurchaseRequestStatus;
 use App\Enums\PaymentGateway;
 use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
-use Illuminate\Support\Carbon;
 use App\Models\Admin;
 use App\Models\Boost;
 use App\Models\BoostPurchaseRequest;
@@ -16,6 +15,7 @@ use App\Models\Location;
 use App\Models\Payment;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -27,6 +27,7 @@ class BoostPurchaseService
         private readonly PaymentService $paymentService,
         private readonly BoostCampaignAnalyticsService $campaignAnalytics,
         private readonly LocationService $locationService,
+        private readonly WalletService $walletService,
     ) {}
 
     public function dynamicTierKey(): string
@@ -102,9 +103,6 @@ class BoostPurchaseService
         ];
     }
 
-    /**
-     * @return BoostPurchaseRequest|null
-     */
     public function findResumablePendingPaymentRequest(
         BusinessInfo $business,
         ?string $renewType = null,
@@ -114,9 +112,9 @@ class BoostPurchaseService
         return BoostPurchaseRequest::query()
             ->where('business_info_id', $business->id)
             ->where('status', BoostPurchaseRequestStatus::PendingPayment)
-            ->when($tierKey !== null, fn($query) => $query->where('tier_key', $tierKey))
-            ->when($renewType !== null, fn($query) => $query->where('metadata->renew_type', $renewType))
-            ->when($sourceCampaignId !== null, fn($query) => $query->where('metadata->source_campaign_id', $sourceCampaignId))
+            ->when($tierKey !== null, fn ($query) => $query->where('tier_key', $tierKey))
+            ->when($renewType !== null, fn ($query) => $query->where('metadata->renew_type', $renewType))
+            ->when($sourceCampaignId !== null, fn ($query) => $query->where('metadata->source_campaign_id', $sourceCampaignId))
             ->with('payment')
             ->latest('id')
             ->first();
@@ -233,6 +231,45 @@ class BoostPurchaseService
         ];
     }
 
+    /**
+     * @return array{payment: Payment, request: BoostPurchaseRequest}
+     */
+    public function payBoostFromWallet(
+        User $user,
+        BusinessInfo $business,
+        string $tierKey,
+        int $durationDays,
+        ?string $renewType = null,
+        ?int $sourceCampaignId = null,
+        ?int $targetLocationId = null,
+        ?float $budgetAmount = null,
+    ): array {
+        $result = $this->initBoostPayment(
+            $user,
+            $business,
+            $tierKey,
+            $durationDays,
+            $renewType,
+            $sourceCampaignId,
+            $targetLocationId,
+            null,
+            $budgetAmount,
+        );
+
+        $payment = $this->walletService->payForPendingPayment($user, $result['payment'], 'Boost checkout');
+
+        $request = $this->markPaidAndQueueForAdmin($payment);
+
+        if ($request === null) {
+            throw new RuntimeException('Boost request was not found for this payment.');
+        }
+
+        return [
+            'payment' => $payment->fresh(),
+            'request' => $request->fresh(['location', 'businessInfo']),
+        ];
+    }
+
     public function confirmBoostPayment(Payment $payment, string $gatewayTransactionId, PaymentGateway $gateway): BoostPurchaseRequest
     {
         if ($payment->purpose !== PaymentPurpose::Boost) {
@@ -261,7 +298,7 @@ class BoostPurchaseService
     public function resolveTierDurationPrice(LgaBoost $lgaBoost, string $tierKey, int $durationDays): array
     {
         $tiers = collect($lgaBoost->tiers ?? []);
-        $tier = $tiers->first(fn(array $row): bool => ($row['key'] ?? '') === $tierKey);
+        $tier = $tiers->first(fn (array $row): bool => ($row['key'] ?? '') === $tierKey);
 
         if ($tier === null) {
             throw new RuntimeException('Selected boost plan is not available for this location.');
@@ -269,7 +306,7 @@ class BoostPurchaseService
 
         $tierLabel = (string) ($tier['label'] ?? $tierKey);
         $tierDurations = collect($tier['durations'] ?? []);
-        $durationRow = $tierDurations->first(fn(array $row): bool => (int) ($row['days'] ?? 0) === $durationDays);
+        $durationRow = $tierDurations->first(fn (array $row): bool => (int) ($row['days'] ?? 0) === $durationDays);
 
         if ($durationRow !== null) {
             if (! ($durationRow['enabled'] ?? true)) {
@@ -283,7 +320,7 @@ class BoostPurchaseService
         }
 
         $globalDurations = collect($lgaBoost->durations ?? []);
-        $globalRow = $globalDurations->first(fn(array $row): bool => (int) ($row['days'] ?? 0) === $durationDays);
+        $globalRow = $globalDurations->first(fn (array $row): bool => (int) ($row['days'] ?? 0) === $durationDays);
 
         if ($globalRow !== null && ($globalRow['enabled'] ?? false)) {
             $amount = (float) ($globalRow['price_amount'] ?? 0);
@@ -328,7 +365,7 @@ class BoostPurchaseService
         $this->resolveTierDurationPrice($lgaBoost, $tierKey, $durationDays);
 
         $tiers = collect($lgaBoost->tiers ?? []);
-        $tier = $tiers->first(fn(array $row): bool => ($row['key'] ?? '') === $tierKey);
+        $tier = $tiers->first(fn (array $row): bool => ($row['key'] ?? '') === $tierKey);
         $totalSlots = (int) ($tier['total_slots'] ?? 0);
         $tierLabel = (string) ($tier['label'] ?? $tierKey);
 
@@ -364,8 +401,8 @@ class BoostPurchaseService
         return BoostPurchaseRequest::query()
             ->where('location_id', $locationId)
             ->where('tier_key', $tierKey)
-            ->when($excludeRequestId !== null, fn($query) => $query->where('id', '!=', $excludeRequestId))
-            ->when($forBusinessId !== null, fn($query) => $query->where('business_info_id', '!=', $forBusinessId))
+            ->when($excludeRequestId !== null, fn ($query) => $query->where('id', '!=', $excludeRequestId))
+            ->when($forBusinessId !== null, fn ($query) => $query->where('business_info_id', '!=', $forBusinessId))
             ->where(function ($query): void {
                 $query->where(function ($active): void {
                     $active->where('status', BoostPurchaseRequestStatus::Approved)
@@ -386,7 +423,7 @@ class BoostPurchaseService
         return BoostPurchaseRequest::query()
             ->where('business_info_id', $business->id)
             ->where('tier_key', $tierKey)
-            ->when($locationId !== null, fn($query) => $query->where('location_id', $locationId))
+            ->when($locationId !== null, fn ($query) => $query->where('location_id', $locationId))
             ->where('status', BoostPurchaseRequestStatus::Approved)
             ->where('ends_at', '>', now())
             ->latest('id')
@@ -400,7 +437,7 @@ class BoostPurchaseService
         ?int $forBusinessId = null,
     ): int {
         $tiers = collect($lgaBoost->tiers ?? []);
-        $tier = $tiers->first(fn(array $row): bool => ($row['key'] ?? '') === $tierKey);
+        $tier = $tiers->first(fn (array $row): bool => ($row['key'] ?? '') === $tierKey);
 
         if ($tier === null) {
             return 0;
@@ -616,7 +653,7 @@ class BoostPurchaseService
                 'businessInfo.user:id,name,email',
                 'location:id,lga_name,state_name,city_name',
             ])
-            ->when($status !== null && $status !== '', fn($q) => $q->where('status', $status))
+            ->when($status !== null && $status !== '', fn ($q) => $q->where('status', $status))
             ->orderByDesc('created_at')
             ->paginate($perPage);
     }
@@ -715,9 +752,9 @@ class BoostPurchaseService
             : null;
         $extendSource = $renewType === 'extend' && $sourceCampaignId
             ? BoostPurchaseRequest::query()
-            ->where('id', $sourceCampaignId)
-            ->where('business_info_id', $request->business_info_id)
-            ->first()
+                ->where('id', $sourceCampaignId)
+                ->where('business_info_id', $request->business_info_id)
+                ->first()
             : null;
 
         $lgaBoost = $request->location?->lgaBoost;
