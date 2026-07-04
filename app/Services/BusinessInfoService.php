@@ -989,6 +989,7 @@ class BusinessInfoService
         ?string $businessStatus = null,
         ?int $categoryId = null,
         ?string $boostStatus = null,
+        ?string $subscriptionPlan = null,
     ): Builder {
         return BusinessInfo::query()
             ->when($search !== null && trim($search) !== '', function ($query) use ($search): void {
@@ -1032,7 +1033,37 @@ class BusinessInfoService
                         });
                 });
             })
+            ->tap(fn (Builder $query) => $this->applyAdminSubscriptionPlanFilter($query, $subscriptionPlan))
             ->latest();
+    }
+
+    private function applyAdminSubscriptionPlanFilter(Builder $query, ?string $subscriptionPlan): void
+    {
+        if ($subscriptionPlan === null || $subscriptionPlan === '' || $subscriptionPlan === 'all') {
+            return;
+        }
+
+        if ($subscriptionPlan === SubscriptionPlan::Premium->value) {
+            $query->whereHas('subscription', function (Builder $inner): void {
+                $inner->where('plan', SubscriptionPlan::Premium->value)
+                    ->where('status', SubscriptionStatus::Active->value);
+            });
+
+            return;
+        }
+
+        if ($subscriptionPlan === SubscriptionPlan::Free->value) {
+            $query->where(function (Builder $outer): void {
+                $outer->whereDoesntHave('subscription')
+                    ->orWhereHas('subscription', function (Builder $inner): void {
+                        $inner->where('plan', SubscriptionPlan::Free->value)
+                            ->orWhere(function (Builder $sub): void {
+                                $sub->where('plan', SubscriptionPlan::Premium->value)
+                                    ->where('status', SubscriptionStatus::PendingPayment->value);
+                            });
+                    });
+            });
+        }
     }
 
     /**
@@ -1040,6 +1071,7 @@ class BusinessInfoService
      *     verification_statuses: list<array{value: string, label: string}>,
      *     business_statuses: list<array{value: string, label: string}>,
      *     boost_statuses: list<array{value: string, label: string}>,
+     *     subscription_plans: list<array{value: string, label: string}>,
      *     categories: list<array{id: int, name: string}>
      * }
      */
@@ -1078,6 +1110,10 @@ class BusinessInfoService
                 ['value' => 'active', 'label' => 'Active boost'],
                 ['value' => 'none', 'label' => 'No boost'],
             ],
+            'subscription_plans' => [
+                ['value' => SubscriptionPlan::Premium->value, 'label' => 'Premium'],
+                ['value' => SubscriptionPlan::Free->value, 'label' => 'Free'],
+            ],
             'categories' => $categories,
         ];
     }
@@ -1091,8 +1127,16 @@ class BusinessInfoService
         ?string $businessStatus = null,
         ?int $categoryId = null,
         ?string $boostStatus = null,
+        ?string $subscriptionPlan = null,
     ): array {
-        $base = $this->adminBusinessListBaseQuery($search, $verificationStatus, $businessStatus, $categoryId, $boostStatus);
+        $base = $this->adminBusinessListBaseQuery(
+            $search,
+            $verificationStatus,
+            $businessStatus,
+            $categoryId,
+            $boostStatus,
+            $subscriptionPlan,
+        );
 
         return [
             'total' => (clone $base)->count(),
@@ -1122,14 +1166,23 @@ class BusinessInfoService
         ?int $categoryId = null,
         ?int $page = null,
         ?string $boostStatus = null,
+        ?string $subscriptionPlan = null,
     ): LengthAwarePaginator {
         $page = max(1, $page ?? 1);
 
-        return $this->adminBusinessListBaseQuery($search, $verificationStatus, $businessStatus, $categoryId, $boostStatus)
+        return $this->adminBusinessListBaseQuery(
+            $search,
+            $verificationStatus,
+            $businessStatus,
+            $categoryId,
+            $boostStatus,
+            $subscriptionPlan,
+        )
             ->with([
                 'category:id,name,subcategories',
                 'location:id,lga_name,state_name,city_name,country_name,latitude,longitude,formatted_address',
                 'user:id,first_name,last_name,name,email,phone,role',
+                'subscription',
                 'boost:id,business_info_id,is_active,activated_at,deactivated_at',
             ])
             ->paginate($perPage, ['*'], 'page', $page);
