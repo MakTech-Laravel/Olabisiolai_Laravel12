@@ -5,6 +5,7 @@ namespace App\Http\Resources\Api\V1;
 use App\Models\VerificationDocument;
 use App\Models\VerificationNote;
 use App\Models\VerificationWorkflow;
+use App\Services\VerificationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -15,6 +16,10 @@ class VerificationResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        /** @var VerificationService $verificationService */
+        $verificationService = app(VerificationService::class);
+        $approval = $verificationService->canApproveVerification($this->resource);
+
         return [
             'id' => $this->id,
             'business_name' => $this->business_name,
@@ -36,9 +41,13 @@ class VerificationResource extends JsonResource
             ),
             'logo_url' => $this->logo_path ? public_media_url($this->logo_path, null) : null,
             'verification_status' => $this->verification_status->value,
-            'verification_status_label' => $this->verification_status->value === 'approved'
-                ? $this->verification_status->label()
-                : ($this->is_flagged ? 'Flagged' : $this->verification_status->label()),
+            'verification_status_label' => $verificationService->displayStatusLabel($this->resource),
+            'needs_admin_reapproval' => $verificationService->needsAdminReapproval($this->resource),
+            'has_open_document_review' => $verificationService->hasOpenDocumentReview($this->resource),
+            'needs_document_action' => $verificationService->needsVendorDocumentAction($this->resource),
+            'has_unused_verification_payment' => $verificationService->resolveConsumableVerificationPayment($this->resource) !== null,
+            'can_approve_all' => $approval['can_approve'],
+            'approve_all_block_reason' => $approval['reason'],
             'is_flagged' => (bool) $this->is_flagged,
             'is_approved' => $this->verification_status->value === 'approved',
             'business_status' => $this->business_status->value,

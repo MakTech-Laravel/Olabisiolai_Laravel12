@@ -83,6 +83,15 @@ final class RealtimeNotificationService
         ));
     }
 
+    public function verificationReverificationGranted(User $vendor, string $businessName, string $reason): void
+    {
+        $this->notifyUser($vendor, RealtimeNotification::verificationReverificationGranted(
+            recipientUserId: (int) $vendor->id,
+            businessName: $businessName,
+            reason: $reason,
+        ));
+    }
+
     public function verificationSubmittedToAdmins(
         int $businessInfoId,
         string $businessName,

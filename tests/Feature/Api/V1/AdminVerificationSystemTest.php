@@ -99,6 +99,7 @@ class AdminVerificationSystemTest extends TestCase
         $confirm = $this->withToken($token)->postJson('/api/v1/vendor/verification/payment/confirm', [
             'payment_id' => $paymentId,
             'gateway_transaction_id' => 'FLW-TEST-12345',
+            'gateway' => 'flutterwave',
         ]);
 
         $confirm->assertOk();
@@ -321,6 +322,15 @@ class AdminVerificationSystemTest extends TestCase
         $this->actingAsAdmin();
         [$vendor, $business] = $this->makeVendorWithBusiness('approved');
 
+        foreach (['business_registration', 'address_proof'] as $type) {
+            VerificationDocument::factory()->create([
+                'business_info_id' => $business->id,
+                'uploaded_by' => $vendor->id,
+                'document_type' => $type,
+                'status' => VerificationDocumentStatus::Approved,
+            ]);
+        }
+
         $docId = VerificationDocument::factory()->create([
             'business_info_id' => $business->id,
             'uploaded_by' => $vendor->id,
@@ -338,6 +348,50 @@ class AdminVerificationSystemTest extends TestCase
         $this->assertDatabaseHas('verification_documents', [
             'id' => $docId,
             'status' => VerificationDocumentStatus::Approved->value,
+        ]);
+    }
+
+    public function test_admin_cannot_approve_verification_with_rejected_documents(): void
+    {
+        $this->actingAsAdmin();
+        [$vendor, $business] = $this->makeVendorWithBusiness('pending');
+
+        VerificationDocument::factory()->create([
+            'business_info_id' => $business->id,
+            'uploaded_by' => $vendor->id,
+            'document_type' => 'business_registration',
+            'status' => VerificationDocumentStatus::Rejected,
+            'rejection_reason' => 'It is a fake document.',
+        ]);
+
+        VerificationDocument::factory()->create([
+            'business_info_id' => $business->id,
+            'uploaded_by' => $vendor->id,
+            'document_type' => 'identity_proof',
+            'status' => VerificationDocumentStatus::Rejected,
+            'rejection_reason' => 'Please submit again.',
+        ]);
+
+        VerificationDocument::factory()->create([
+            'business_info_id' => $business->id,
+            'uploaded_by' => $vendor->id,
+            'document_type' => 'address_proof',
+            'status' => VerificationDocumentStatus::Approved,
+        ]);
+
+        $response = $this->postJson('/api/v1/admin/verifications/approve', [
+            'business_info_id' => $business->id,
+        ]);
+
+        $response->assertStatus(422);
+        $message = (string) $response->json('message');
+        $this->assertStringContainsString('Cannot approve verification while rejected documents remain', $message);
+        $this->assertStringContainsString('business registration', $message);
+        $this->assertStringContainsString('identity proof', $message);
+
+        $this->assertDatabaseHas('business_info', [
+            'id' => $business->id,
+            'verification_status' => 'pending',
         ]);
     }
 
@@ -404,6 +458,85 @@ class AdminVerificationSystemTest extends TestCase
         ]);
 
         $this->assertEquals(2, VerificationDocument::query()->where('business_info_id', $business->id)->count());
+    }
+
+    public function test_vendor_can_reupload_rejected_document_after_verification_reset(): void
+    {
+        [$vendor, $business, $token] = $this->makeVendorWithBusiness('none');
+        $this->makeCompletedVerificationPayment($vendor, $business);
+
+        $rejected = VerificationDocument::factory()->create([
+            'business_info_id' => $business->id,
+            'uploaded_by' => $vendor->id,
+            'document_type' => 'business_registration',
+            'title' => 'Business Registration',
+            'status' => VerificationDocumentStatus::Rejected,
+            'rejection_reason' => 'not valid',
+        ]);
+
+        VerificationDocument::factory()->create([
+            'business_info_id' => $business->id,
+            'uploaded_by' => $vendor->id,
+            'document_type' => 'identity_proof',
+            'status' => VerificationDocumentStatus::Approved,
+        ]);
+
+        $response = $this->withToken($token)->post('/api/v1/vendor/verification/documents/upload', [
+            'document_type' => 'business_registration',
+            'title' => 'Business Registration',
+            'parent_document_id' => $rejected->id,
+            'document' => UploadedFile::fake()->create('replacement.pdf', 200, 'application/pdf'),
+        ], ['Accept' => 'application/json']);
+
+        $response->assertCreated();
+        $response->assertJsonPath('data.document.status', 'pending');
+
+        $this->assertDatabaseHas('business_info', [
+            'id' => $business->id,
+            'verification_status' => 'pending',
+        ]);
+    }
+
+    public function test_admin_can_review_documents_when_verification_status_is_none(): void
+    {
+        $this->actingAsAdmin();
+        [$vendor, $business] = $this->makeVendorWithBusiness('none');
+        $this->makeCompletedVerificationPayment($vendor, $business);
+
+        VerificationDocument::factory()->create([
+            'business_info_id' => $business->id,
+            'uploaded_by' => $vendor->id,
+            'document_type' => 'business_registration',
+            'status' => VerificationDocumentStatus::Rejected,
+        ]);
+
+        VerificationDocument::factory()->create([
+            'business_info_id' => $business->id,
+            'uploaded_by' => $vendor->id,
+            'document_type' => 'identity_proof',
+            'status' => VerificationDocumentStatus::Approved,
+        ]);
+
+        VerificationDocument::factory()->create([
+            'business_info_id' => $business->id,
+            'uploaded_by' => $vendor->id,
+            'document_type' => 'address_proof',
+            'status' => VerificationDocumentStatus::Approved,
+        ]);
+
+        $view = $this->postJson('/api/v1/admin/verifications/view', [
+            'business_info_id' => $business->id,
+        ]);
+
+        $view->assertOk();
+        $view->assertJsonPath('data.verification.has_open_document_review', true);
+        $view->assertJsonPath('data.verification.can_approve_all', false);
+
+        $approve = $this->postJson('/api/v1/admin/verifications/approve', [
+            'business_info_id' => $business->id,
+        ]);
+
+        $approve->assertStatus(422);
     }
 
     public function test_admin_can_delete_verification_and_vendor_becomes_unverified(): void

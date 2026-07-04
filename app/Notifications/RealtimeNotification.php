@@ -165,6 +165,26 @@ final class RealtimeNotification extends Notification implements ShouldBroadcast
         );
     }
 
+    public static function verificationReverificationGranted(
+        int $recipientUserId,
+        string $businessName,
+        string $reason,
+    ): self {
+        return self::forUser(
+            userId: $recipientUserId,
+            type: RealtimeNotificationType::VerificationReverificationGranted,
+            title: 'Free re-verification granted',
+            message: sprintf(
+                'You can complete verification for "%s" again at no cost. %s',
+                $businessName,
+                $reason,
+            ),
+            data: ['business_name' => $businessName, 'reason' => $reason],
+            actionUrl: '/vendor/verification',
+            tone: 'info',
+        );
+    }
+
     public static function verificationSubmitted(
         int $recipientAdminId,
         int $businessInfoId,

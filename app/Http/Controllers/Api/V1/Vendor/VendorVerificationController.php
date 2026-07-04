@@ -42,10 +42,13 @@ class VendorVerificationController extends Controller
             $vendor = $request->user('api');
             $business = $this->businessInfoService->resolveBusinessFromRequest($request);
 
-            if (! $this->verificationService->canApply($business)) {
+            if (! $this->verificationService->canInitVerificationPayment($business)) {
+                $reason = $this->verificationService->verificationPaymentBlockReason($business)
+                    ?? 'Your business is not eligible to pay for verification at this time.';
+
                 return sendResponse(
                     false,
-                    'Your business is not eligible to pay for verification at this time. Current status: '.$business->verification_status->label(),
+                    $reason,
                     null,
                     Response::HTTP_UNPROCESSABLE_ENTITY,
                 );

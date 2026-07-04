@@ -11,6 +11,7 @@ enum RealtimeNotificationType: string
     case VerificationApproved = 'verification_approved';
     case VerificationFlagged = 'verification_flagged';
     case VerificationRevoked = 'verification_revoked';
+    case VerificationReverificationGranted = 'verification_reverification_granted';
     case VerificationSubmitted = 'verification_submitted';
     case PaymentCompleted = 'payment_completed';
     case ReferralRewardPaid = 'referral_reward_paid';
@@ -24,6 +25,7 @@ enum RealtimeNotificationType: string
             self::VerificationApproved => 'Verification approved',
             self::VerificationFlagged => 'Verification update',
             self::VerificationRevoked => 'Verification revoked',
+            self::VerificationReverificationGranted => 'Re-verification granted',
             self::VerificationSubmitted => 'New verification request',
             self::PaymentCompleted => 'Payment received',
             self::ReferralRewardPaid => 'Referral reward',
@@ -37,7 +39,7 @@ enum RealtimeNotificationType: string
             self::NewMessage, self::NewFollow => 'info',
             self::VerificationApproved, self::PaymentCompleted, self::ReferralRewardPaid => 'success',
             self::VerificationFlagged, self::VerificationRevoked => 'warning',
-            self::VerificationSubmitted => 'info',
+            self::VerificationReverificationGranted, self::VerificationSubmitted => 'info',
             self::SystemAnnouncement => 'info',
         };
     }
