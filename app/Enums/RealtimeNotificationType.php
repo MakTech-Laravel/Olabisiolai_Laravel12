@@ -13,6 +13,7 @@ enum RealtimeNotificationType: string
     case VerificationRevoked = 'verification_revoked';
     case VerificationSubmitted = 'verification_submitted';
     case PaymentCompleted = 'payment_completed';
+    case ReferralRewardPaid = 'referral_reward_paid';
     case SystemAnnouncement = 'system_announcement';
 
     public function defaultTitle(): string
@@ -25,6 +26,7 @@ enum RealtimeNotificationType: string
             self::VerificationRevoked => 'Verification revoked',
             self::VerificationSubmitted => 'New verification request',
             self::PaymentCompleted => 'Payment received',
+            self::ReferralRewardPaid => 'Referral reward',
             self::SystemAnnouncement => 'Announcement',
         };
     }
@@ -33,7 +35,7 @@ enum RealtimeNotificationType: string
     {
         return match ($this) {
             self::NewMessage, self::NewFollow => 'info',
-            self::VerificationApproved, self::PaymentCompleted => 'success',
+            self::VerificationApproved, self::PaymentCompleted, self::ReferralRewardPaid => 'success',
             self::VerificationFlagged, self::VerificationRevoked => 'warning',
             self::VerificationSubmitted => 'info',
             self::SystemAnnouncement => 'info',

@@ -212,6 +212,36 @@ final class RealtimeNotification extends Notification implements ShouldBroadcast
         );
     }
 
+    public static function referralRewardPaid(
+        int $recipientUserId,
+        string $role,
+        float $amount,
+        string $currency,
+        string $counterpartyName,
+        string $formattedAmount,
+    ): self {
+        $message = $role === 'referrer'
+            ? sprintf('You earned %s because %s completed verification.', $formattedAmount, $counterpartyName)
+            : sprintf('You received %s welcome reward for joining via referral.', $formattedAmount);
+
+        $title = $role === 'referrer' ? 'Referral reward paid' : 'Welcome reward paid';
+
+        return self::forUser(
+            userId: $recipientUserId,
+            type: RealtimeNotificationType::ReferralRewardPaid,
+            title: $title,
+            message: $message,
+            data: [
+                'role' => $role,
+                'amount' => $amount,
+                'currency' => $currency,
+                'counterparty_name' => $counterpartyName,
+            ],
+            actionUrl: '/user/wallet',
+            tone: 'success',
+        );
+    }
+
     /**
      * @param  Payload  $data
      * @param  Payload  $topLevelPayload

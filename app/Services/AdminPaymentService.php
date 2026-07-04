@@ -227,6 +227,7 @@ class AdminPaymentService
             'subscription' => PaymentPurpose::Subscription,
             'boost', 'boosting' => PaymentPurpose::Boost,
             'verification' => PaymentPurpose::Verification,
+            'wallet_top_up', 'wallet_topup' => PaymentPurpose::WalletTopUp,
             default => null,
         };
     }

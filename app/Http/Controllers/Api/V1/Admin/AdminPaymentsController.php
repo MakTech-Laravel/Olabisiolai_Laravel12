@@ -28,7 +28,7 @@ class AdminPaymentsController extends Controller
                 'page' => ['sometimes', 'integer', 'min:1'],
                 'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
                 'status' => ['sometimes', 'string', 'in:all,' . implode(',', PaymentStatus::values())],
-                'purpose' => ['sometimes', 'string', 'in:all,subscription,boost,boosting,verification'],
+                'purpose' => ['sometimes', 'string', 'in:all,subscription,boost,boosting,verification,wallet_top_up,wallet_topup'],
                 'search' => ['sometimes', 'string', 'max:120'],
             ]);
 
@@ -86,7 +86,7 @@ class AdminPaymentsController extends Controller
         try {
             $validated = $request->validate([
                 'status' => ['sometimes', 'string', 'in:all,' . implode(',', PaymentStatus::values())],
-                'purpose' => ['sometimes', 'string', 'in:all,subscription,boost,boosting,verification'],
+                'purpose' => ['sometimes', 'string', 'in:all,subscription,boost,boosting,verification,wallet_top_up,wallet_topup'],
                 'search' => ['sometimes', 'string', 'max:120'],
             ]);
 
