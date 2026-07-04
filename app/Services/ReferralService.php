@@ -17,6 +17,7 @@ class ReferralService
 
     public function __construct(
         private readonly WalletService $walletService,
+        private readonly RealtimeNotificationService $realtimeNotifications,
     ) {}
 
     public function getOrCreateCode(User $user): ReferralCode
@@ -132,10 +133,10 @@ class ReferralService
             return;
         }
 
-        DB::transaction(function () use ($invitee, $invite, $business): void {
+        $result = DB::transaction(function () use ($invitee, $invite, $business): ?array {
             $locked = ReferralInvite::query()->whereKey($invite->id)->lockForUpdate()->first();
             if ($locked === null || $locked->status === 'paid') {
-                return;
+                return null;
             }
 
             $referrer = User::query()->find($locked->referrer_user_id);
@@ -164,6 +165,21 @@ class ReferralService
                 'credited_amount' => self::CREDIT_AMOUNT,
                 'credited_at' => now(),
             ]);
+
+            return [
+                'referrer' => $referrer->fresh(),
+                'invitee' => $invitee->fresh(),
+            ];
         });
+
+        if (! is_array($result)) {
+            return;
+        }
+
+        $this->realtimeNotifications->referralRewardsPaid(
+            $result['referrer'],
+            $result['invitee'],
+            self::CREDIT_AMOUNT,
+        );
     }
 }

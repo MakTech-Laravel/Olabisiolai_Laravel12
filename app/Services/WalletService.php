@@ -156,22 +156,27 @@ class WalletService
             throw new RuntimeException('Invalid wallet top-up payment.');
         }
 
-        if ($payment->isCompleted()) {
-            return $this->getOrCreateWallet($payment->user);
-        }
-
-        $payment->update([
-            'status' => PaymentStatus::Completed,
-            'gateway' => $gateway,
-            'gateway_transaction_id' => $gatewayTransactionId,
-            'paid_at' => now(),
-            'is_consumed' => true,
-        ]);
-
         $user = $payment->user;
         if ($user === null) {
             throw new RuntimeException('Wallet top-up user not found.');
         }
+
+        if ($payment->isCompleted() && $payment->is_consumed) {
+            return $this->getOrCreateWallet($user);
+        }
+
+        $this->paymentService->assertGatewayTransactionAvailable($gatewayTransactionId, $payment);
+
+        if ($payment->status === PaymentStatus::Pending) {
+            $this->paymentService->confirmPayment($payment, $gatewayTransactionId, $gateway);
+            $payment = $payment->fresh();
+        }
+
+        if ($payment->is_consumed) {
+            return $this->getOrCreateWallet($user);
+        }
+
+        $payment->update(['is_consumed' => true]);
 
         return $this->credit(
             $user,

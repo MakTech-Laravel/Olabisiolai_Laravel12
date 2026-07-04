@@ -67,8 +67,8 @@ Route::prefix('user')->name('user.')->group(function () {
         Route::delete('/businesses/{businessInfo}', [UserBusinessController::class, 'destroy'])->name('businesses.destroy');
 
         Route::get('/wallet', [UserWalletController::class, 'show'])->name('wallet.show');
-        // Manual top-up is disabled: wallet balance comes from referral rewards only.
-        // UserWalletController::initTopUp/confirmTopUp are kept but intentionally unrouted.
+        Route::post('/wallet/top-up', [UserWalletController::class, 'initTopUp'])->name('wallet.top-up');
+        Route::post('/wallet/top-up/confirm', [UserWalletController::class, 'confirmTopUp'])->name('wallet.top-up.confirm');
 
         Route::get('/referrals', [UserReferralController::class, 'show'])->name('referrals.show');
 

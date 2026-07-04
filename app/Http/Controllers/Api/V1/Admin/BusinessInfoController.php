@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1\Admin;
 
 use App\Enums\BusinessStatus;
+use App\Enums\SubscriptionPlan;
 use App\Enums\VerificationStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\AdminVendorMessageResource;
@@ -39,6 +40,7 @@ class BusinessInfoController extends Controller
                 'business_status' => ['nullable', 'string', Rule::in(BusinessStatus::values())],
                 'category_id' => ['nullable', 'integer', 'exists:categories,id'],
                 'boost_status' => ['nullable', 'string', Rule::in(['active', 'none'])],
+                'subscription_plan' => ['nullable', 'string', Rule::in(SubscriptionPlan::values())],
                 'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
                 'page' => ['nullable', 'integer', 'min:1'],
             ]);
@@ -47,6 +49,7 @@ class BusinessInfoController extends Controller
             $search = $search === '' ? null : $search;
 
             $boostStatus = $validated['boost_status'] ?? null;
+            $subscriptionPlan = $validated['subscription_plan'] ?? null;
 
             $businessProfiles = $this->businessInfoService->paginateForAdmin(
                 $search,
@@ -56,6 +59,7 @@ class BusinessInfoController extends Controller
                 isset($validated['category_id']) ? (int) $validated['category_id'] : null,
                 isset($validated['page']) ? (int) $validated['page'] : null,
                 $boostStatus,
+                $subscriptionPlan,
             );
 
             $summary = $this->businessInfoService->getAdminBusinessListSummary(
@@ -64,6 +68,7 @@ class BusinessInfoController extends Controller
                 $validated['business_status'] ?? null,
                 isset($validated['category_id']) ? (int) $validated['category_id'] : null,
                 $boostStatus,
+                $subscriptionPlan,
             );
 
             $items = $businessProfiles->items();
@@ -80,6 +85,7 @@ class BusinessInfoController extends Controller
                     'business_status' => $validated['business_status'] ?? 'all',
                     'category_id' => $validated['category_id'] ?? null,
                     'boost_status' => $boostStatus ?? 'all',
+                    'subscription_plan' => $subscriptionPlan ?? 'all',
                 ],
                 'filter_options' => $this->businessInfoService->getAdminBusinessFilterOptions(),
                 'summary' => $summary,
