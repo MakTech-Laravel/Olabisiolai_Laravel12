@@ -6,6 +6,7 @@ use App\Enums\VerificationNoteType;
 use App\Enums\VerificationStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V1\VerificationResource;
+use App\Services\PaymentService;
 use App\Services\VerificationService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -25,7 +26,7 @@ class VerificationController extends Controller
             }
 
             $validated = $request->validate([
-                'verification_status' => ['nullable', 'string', Rule::in([...VerificationStatus::values(), 'flagged', 'queue', 'all'])],
+                'verification_status' => ['nullable', 'string', Rule::in([...VerificationStatus::values(), 'flagged', 'queue', 'all', 'needs_reverification'])],
                 'search' => ['nullable', 'string', 'max:255'],
                 'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
             ]);
@@ -103,19 +104,11 @@ class VerificationController extends Controller
             $note = isset($validated['note']) ? trim((string) $validated['note']) : null;
 
             if ($business->verification_status === VerificationStatus::Approved) {
-                if ($this->verificationService->countPendingDocuments($business) === 0) {
-                    return sendResponse(false, 'All documents are already approved.', null, Response::HTTP_UNPROCESSABLE_ENTITY);
-                }
-
                 $updated = $this->verificationService->approveAllPendingDocuments($business, $admin, $note);
 
                 return sendResponse(true, 'All pending documents approved successfully.', [
                     'verification' => new VerificationResource($updated),
                 ]);
-            }
-
-            if ($business->verification_status !== VerificationStatus::Pending) {
-                return sendResponse(false, 'Only pending verification requests can be approved.', null, Response::HTTP_UNPROCESSABLE_ENTITY);
             }
 
             $updated = $this->verificationService->approveVerification(
@@ -127,6 +120,8 @@ class VerificationController extends Controller
             return sendResponse(true, 'All documents and business verification approved successfully.', [
                 'verification' => new VerificationResource($updated),
             ]);
+        } catch (\RuntimeException $exception) {
+            return sendResponse(false, $exception->getMessage(), null, Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (ValidationException $exception) {
             return sendResponse(false, $exception->validator->errors()->first(), ['errors' => $exception->errors()], Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (Throwable $throwable) {
@@ -235,6 +230,83 @@ class VerificationController extends Controller
 
             return sendResponse(true, 'Verification removed. Vendor is no longer verified.', [
                 'verification' => new VerificationResource($updated),
+            ]);
+        } catch (\RuntimeException $exception) {
+            return sendResponse(false, $exception->getMessage(), null, Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (ValidationException $exception) {
+            return sendResponse(false, $exception->validator->errors()->first(), ['errors' => $exception->errors()], Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    public function grantReverification(Request $request)
+    {
+        try {
+            $admin = adminAuthCheck($request);
+
+            if (! $admin) {
+                return sendResponse(false, 'Admin access required.', null, Response::HTTP_UNAUTHORIZED);
+            }
+
+            $validated = $request->validate([
+                'business_info_id' => ['required', 'integer', 'exists:business_info,id'],
+                'reason' => ['required', 'string', 'min:3', 'max:2000'],
+            ]);
+
+            $business = $this->verificationService->getVerificationDetailsForAdmin((int) $validated['business_info_id']);
+
+            $result = $this->verificationService->grantReVerificationAccess(
+                $business,
+                $admin,
+                trim((string) $validated['reason']),
+            );
+
+            return sendResponse(true, 'Free re-verification granted. Vendor can upload documents again.', [
+                'payment' => app(PaymentService::class)->toArray($result['payment']),
+                'verification' => new VerificationResource(
+                    $this->verificationService->getVerificationDetailsForAdmin($business->id),
+                ),
+            ], Response::HTTP_CREATED);
+        } catch (\RuntimeException $exception) {
+            return sendResponse(false, $exception->getMessage(), null, Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (ValidationException $exception) {
+            return sendResponse(false, $exception->validator->errors()->first(), ['errors' => $exception->errors()], Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    public function reapprove(Request $request)
+    {
+        try {
+            $admin = adminAuthCheck($request);
+
+            if (! $admin) {
+                return sendResponse(false, 'Admin access required.', null, Response::HTTP_UNAUTHORIZED);
+            }
+
+            $validated = $request->validate([
+                'business_info_id' => ['required', 'integer', 'exists:business_info,id'],
+                'note' => ['nullable', 'string', 'max:2000'],
+            ]);
+
+            $business = $this->verificationService->getVerificationDetailsForAdmin((int) $validated['business_info_id']);
+
+            $updated = $this->verificationService->reapproveVerification(
+                $business,
+                $admin,
+                isset($validated['note']) ? trim((string) $validated['note']) : null,
+            );
+
+            return sendResponse(true, 'Verification re-approved and badge restored.', [
+                'verification' => new VerificationResource(
+                    $this->verificationService->getVerificationDetailsForAdmin($updated->id),
+                ),
             ]);
         } catch (\RuntimeException $exception) {
             return sendResponse(false, $exception->getMessage(), null, Response::HTTP_UNPROCESSABLE_ENTITY);

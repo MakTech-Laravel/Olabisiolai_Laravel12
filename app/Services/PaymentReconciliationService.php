@@ -205,6 +205,10 @@ class PaymentReconciliationService
             $gatewayTransactionId = (string) ($paystackData['reference'] ?? $gatewayTransactionId);
         }
 
+        if ($payment->status === PaymentStatus::Pending) {
+            $this->paymentService->assertGatewayTransactionAvailable($gatewayTransactionId, $payment);
+        }
+
         return match ($payment->purpose) {
             PaymentPurpose::Subscription => $this->adminApplySubscriptionPayment(
                 $payment,
@@ -481,6 +485,279 @@ class PaymentReconciliationService
             return [
                 'payment' => $payment->fresh(),
                 'business' => $activated,
+            ];
+        });
+    }
+
+    /**
+     * Admin manual verification grant (pending checkout or Paystack reference).
+     *
+     * @return array{payment: Payment, business: BusinessInfo, verification: array<string, mixed>}
+     */
+    public function grantVerificationManually(
+        BusinessInfo $business,
+        string $reason,
+        ?int $grantedByAdminId = null,
+        ?string $paystackReference = null,
+        ?int $paymentId = null,
+    ): array {
+        $reason = trim($reason);
+        if ($reason === '') {
+            throw new RuntimeException('A reason is required for manual verification activation.');
+        }
+
+        $vendor = $business->user;
+        if ($vendor === null) {
+            throw new RuntimeException('Business has no owner account.');
+        }
+
+        if ($paystackReference !== null && trim($paystackReference) !== '') {
+            $payment = $this->resolveVerificationPaymentForManualGrant($business, $paymentId);
+            $result = $this->adminApplyGatewayPayment(
+                $payment,
+                PaymentGateway::Paystack,
+                trim($paystackReference),
+                $reason,
+                $grantedByAdminId,
+                true,
+            );
+
+            return [
+                'payment' => $result['payment'],
+                'business' => $result['business'],
+                'verification' => $result['verification'],
+            ];
+        }
+
+        $payment = $this->resolveVerificationPaymentForManualGrant($business, $paymentId);
+
+        return $this->completeAdminVerifiedPendingVerificationPayment(
+            $payment,
+            $vendor,
+            $business,
+            $reason,
+            $grantedByAdminId,
+        );
+    }
+
+    /**
+     * Admin manual boost grant (pending checkout or Paystack reference).
+     *
+     * @return array{payment: Payment, business: BusinessInfo, boost_request: array<string, mixed>|null}
+     */
+    public function grantBoostManually(
+        BusinessInfo $business,
+        string $reason,
+        ?int $grantedByAdminId = null,
+        ?string $paystackReference = null,
+        ?int $paymentId = null,
+    ): array {
+        $reason = trim($reason);
+        if ($reason === '') {
+            throw new RuntimeException('A reason is required for manual boost activation.');
+        }
+
+        $vendor = $business->user;
+        if ($vendor === null) {
+            throw new RuntimeException('Business has no owner account.');
+        }
+
+        if ($paystackReference !== null && trim($paystackReference) !== '') {
+            $payment = $this->resolveBoostPaymentForManualGrant($business, $paymentId);
+            $result = $this->adminApplyGatewayPayment(
+                $payment,
+                PaymentGateway::Paystack,
+                trim($paystackReference),
+                $reason,
+                $grantedByAdminId,
+                true,
+            );
+
+            return [
+                'payment' => $result['payment'],
+                'business' => $result['business'],
+                'boost_request' => $result['boost_request'] ?? null,
+            ];
+        }
+
+        $payment = $this->resolveBoostPaymentForManualGrant($business, $paymentId);
+
+        return $this->completeAdminVerifiedPendingBoostPayment(
+            $payment,
+            $vendor,
+            $business,
+            $reason,
+            $grantedByAdminId,
+        );
+    }
+
+    private function resolveVerificationPaymentForManualGrant(BusinessInfo $business, ?int $paymentId): Payment
+    {
+        if ($paymentId !== null) {
+            $payment = Payment::query()
+                ->whereKey($paymentId)
+                ->where('business_info_id', $business->id)
+                ->where('purpose', PaymentPurpose::Verification)
+                ->first();
+
+            if ($payment === null) {
+                throw new RuntimeException('Verification payment not found for this business.');
+            }
+
+            return $payment;
+        }
+
+        $payment = Payment::query()
+            ->where('business_info_id', $business->id)
+            ->where('purpose', PaymentPurpose::Verification)
+            ->where('status', PaymentStatus::Pending)
+            ->latest('id')
+            ->first();
+
+        if ($payment === null) {
+            throw new RuntimeException('No pending verification checkout was found for this business.');
+        }
+
+        return $payment;
+    }
+
+    private function resolveBoostPaymentForManualGrant(BusinessInfo $business, ?int $paymentId): Payment
+    {
+        if ($paymentId !== null) {
+            $payment = Payment::query()
+                ->whereKey($paymentId)
+                ->where('business_info_id', $business->id)
+                ->where('purpose', PaymentPurpose::Boost)
+                ->first();
+
+            if ($payment === null) {
+                throw new RuntimeException('Boost payment not found for this business.');
+            }
+
+            return $payment;
+        }
+
+        $payment = Payment::query()
+            ->where('business_info_id', $business->id)
+            ->where('purpose', PaymentPurpose::Boost)
+            ->where('status', PaymentStatus::Pending)
+            ->latest('id')
+            ->first();
+
+        if ($payment === null) {
+            throw new RuntimeException('No pending boost checkout was found for this business.');
+        }
+
+        return $payment;
+    }
+
+    /**
+     * @return array{payment: Payment, business: BusinessInfo, verification: array<string, mixed>}
+     */
+    private function completeAdminVerifiedPendingVerificationPayment(
+        Payment $payment,
+        User $vendor,
+        BusinessInfo $business,
+        string $reason,
+        ?int $grantedByAdminId,
+    ): array {
+        if ($payment->purpose !== PaymentPurpose::Verification) {
+            throw new RuntimeException('Only verification payments can be granted manually.');
+        }
+
+        if ($payment->user_id !== $vendor->id) {
+            throw new RuntimeException('Payment does not belong to this vendor.');
+        }
+
+        return DB::transaction(function () use ($payment, $business, $reason, $grantedByAdminId): array {
+            if ($payment->status === PaymentStatus::Pending) {
+                $payment->update([
+                    'status' => PaymentStatus::Completed,
+                    'gateway' => PaymentGateway::Paystack,
+                    'gateway_transaction_id' => $payment->gateway_transaction_id ?: ('admin_verified_' . now()->timestamp),
+                    'paid_at' => now(),
+                    'metadata' => array_merge(is_array($payment->metadata) ? $payment->metadata : [], [
+                        'manual_grant' => true,
+                        'grant_reason' => $reason,
+                        'granted_by_admin_id' => $grantedByAdminId,
+                        'granted_at' => now()->toIso8601String(),
+                    ]),
+                ]);
+                $payment = $payment->fresh();
+            }
+
+            Log::info('verification.payment.granted_manually', [
+                'payment_id' => $payment->id,
+                'business_id' => $business->id,
+                'granted_by_admin_id' => $grantedByAdminId,
+                'reason' => $reason,
+            ]);
+
+            $freshBusiness = $business->fresh();
+
+            return [
+                'payment' => $payment,
+                'business' => $freshBusiness,
+                'verification' => $this->verificationService->getVendorVerificationStatus($freshBusiness),
+            ];
+        });
+    }
+
+    /**
+     * @return array{payment: Payment, business: BusinessInfo, boost_request: array<string, mixed>|null}
+     */
+    private function completeAdminVerifiedPendingBoostPayment(
+        Payment $payment,
+        User $vendor,
+        BusinessInfo $business,
+        string $reason,
+        ?int $grantedByAdminId,
+    ): array {
+        if ($payment->purpose !== PaymentPurpose::Boost) {
+            throw new RuntimeException('Only boost payments can be granted manually.');
+        }
+
+        if ($payment->user_id !== $vendor->id) {
+            throw new RuntimeException('Payment does not belong to this vendor.');
+        }
+
+        return DB::transaction(function () use ($payment, $business, $reason, $grantedByAdminId): array {
+            if ($payment->status === PaymentStatus::Pending) {
+                $payment->update([
+                    'status' => PaymentStatus::Completed,
+                    'gateway' => PaymentGateway::Paystack,
+                    'gateway_transaction_id' => $payment->gateway_transaction_id ?: ('admin_verified_' . now()->timestamp),
+                    'paid_at' => now(),
+                    'metadata' => array_merge(is_array($payment->metadata) ? $payment->metadata : [], [
+                        'manual_grant' => true,
+                        'grant_reason' => $reason,
+                        'granted_by_admin_id' => $grantedByAdminId,
+                        'granted_at' => now()->toIso8601String(),
+                    ]),
+                ]);
+                $payment = $payment->fresh();
+            }
+
+            $boostRequest = $this->boostPurchaseService->markPaidAndQueueForAdmin($payment);
+            if ($boostRequest === null) {
+                throw new RuntimeException('Boost request was not found for this payment.');
+            }
+
+            Log::info('boost.payment.granted_manually', [
+                'payment_id' => $payment->id,
+                'boost_request_id' => $boostRequest->id,
+                'business_id' => $business->id,
+                'granted_by_admin_id' => $grantedByAdminId,
+                'reason' => $reason,
+            ]);
+
+            return [
+                'payment' => $payment,
+                'business' => $business->fresh(),
+                'boost_request' => [
+                    'id' => $boostRequest->id,
+                    'status' => $boostRequest->status->value,
+                ],
             ];
         });
     }

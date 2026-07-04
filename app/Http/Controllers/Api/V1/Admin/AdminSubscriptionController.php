@@ -182,4 +182,94 @@ class AdminSubscriptionController extends Controller
             return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
+
+    public function grantPayment(Request $request, int $payment): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'reason' => ['required', 'string', 'max:500'],
+                'paystack_reference' => ['nullable', 'string', 'max:255'],
+            ]);
+
+            $model = Payment::query()
+                ->with(['user', 'businessInfo'])
+                ->whereKey($payment)
+                ->first();
+
+            if ($model === null) {
+                return sendResponse(false, 'Payment not found.', null, Response::HTTP_NOT_FOUND);
+            }
+
+            $business = $model->businessInfo;
+            if ($business === null) {
+                return sendResponse(false, 'Payment is not linked to a business profile.', null, Response::HTTP_UNPROCESSABLE_ENTITY);
+            }
+
+            $adminId = $request->user('admin_api')?->id;
+            $reason = trim((string) $validated['reason']);
+            $paystackReference = isset($validated['paystack_reference'])
+                ? trim((string) $validated['paystack_reference'])
+                : null;
+
+            $result = match ($model->purpose) {
+                PaymentPurpose::Verification => $this->paymentReconciliation->grantVerificationManually(
+                    $business,
+                    $reason,
+                    $adminId,
+                    $paystackReference !== '' ? $paystackReference : null,
+                    $model->id,
+                ),
+                PaymentPurpose::Boost => $this->paymentReconciliation->grantBoostManually(
+                    $business,
+                    $reason,
+                    $adminId,
+                    $paystackReference !== '' ? $paystackReference : null,
+                    $model->id,
+                ),
+                PaymentPurpose::Subscription => (function () use ($business, $reason, $adminId, $paystackReference): array {
+                    $grant = $this->paymentReconciliation->grantPremiumManually(
+                        $business,
+                        $reason,
+                        $adminId,
+                        null,
+                        $paystackReference !== '' ? $paystackReference : null,
+                    );
+
+                    return [
+                        'payment' => $grant['payment'],
+                        'business' => $grant['business'],
+                    ];
+                })(),
+                default => throw new RuntimeException('This payment type cannot be granted from the admin panel.'),
+            };
+
+            $business = $result['business'] ?? $business;
+            if ($business instanceof BusinessInfo) {
+                $business->load(['category:id,name,subcategories', 'location:id,lga_name,state_name,city_name,country_name']);
+            }
+
+            $message = match ($model->purpose) {
+                PaymentPurpose::Subscription => 'Premium granted successfully.',
+                PaymentPurpose::Verification => 'Verification payment granted successfully.',
+                PaymentPurpose::Boost => 'Boost payment granted and queued for admin approval.',
+                default => 'Payment granted successfully.',
+            };
+
+            return sendResponse(true, $message, [
+                'payment' => $this->adminPaymentService->toAdminDetail($result['payment']),
+                'subscription' => $business instanceof BusinessInfo && $model->purpose === PaymentPurpose::Subscription
+                    ? $this->subscriptionService->subscriptionPayload($business)
+                    : null,
+                'verification' => $result['verification'] ?? null,
+                'boost_request' => $result['boost_request'] ?? null,
+                'business' => $business instanceof BusinessInfo ? new BusinessInfoResource($business) : null,
+            ]);
+        } catch (RuntimeException $exception) {
+            return sendResponse(false, $exception->getMessage(), null, Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
 }

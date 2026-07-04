@@ -115,6 +115,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/analytics', [AdminPaymentsController::class, 'analytics'])->name('analytics');
         Route::get('/export', [AdminPaymentsController::class, 'export'])->name('export');
         Route::post('/{payment}/apply', [AdminSubscriptionController::class, 'applyPayment'])->name('apply');
+        Route::post('/{payment}/grant', [AdminSubscriptionController::class, 'grantPayment'])->name('grant');
         Route::post('/{payment}/reconcile', [AdminSubscriptionController::class, 'reconcilePayment'])->name('reconcile');
         Route::get('/{payment}', [AdminPaymentsController::class, 'show'])->name('show');
     });
@@ -135,6 +136,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('/approve', [VerificationController::class, 'approve'])->name('approve');
         Route::post('/flag', [VerificationController::class, 'flag'])->name('flag');
         Route::post('/delete', [VerificationController::class, 'destroy'])->name('delete');
+        Route::post('/grant-reverification', [VerificationController::class, 'grantReverification'])->name('grant-reverification');
+        Route::post('/reapprove', [VerificationController::class, 'reapprove'])->name('reapprove');
         Route::post('/note', [VerificationController::class, 'addNote'])->name('note');
         Route::post('/documents/review', [VerificationController::class, 'reviewDocument'])->name('documents.review');
     });

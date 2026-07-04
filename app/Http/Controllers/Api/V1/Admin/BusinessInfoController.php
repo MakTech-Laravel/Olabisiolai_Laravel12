@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Http\Resources\MessageResource;
 use App\Services\AdminMessagingService;
 use App\Services\BusinessInfoService;
+use App\Services\VerificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
@@ -25,6 +26,7 @@ class BusinessInfoController extends Controller
     public function __construct(
         private readonly BusinessInfoService $businessInfoService,
         private readonly AdminMessagingService $adminMessaging,
+        private readonly VerificationService $verificationService,
     ) {}
 
     public function allBusinessInfo(Request $request)
@@ -336,14 +338,30 @@ class BusinessInfoController extends Controller
             ]);
 
             $business = BusinessInfo::findOrFail($validated['business_info_id']);
+            $wasVerified = $business->verification_status === VerificationStatus::Approved;
 
             $updateData = array_filter($validated, function ($value, $key) {
                 return ! in_array($key, ['business_info_id']) && $value !== null;
             }, ARRAY_FILTER_USE_BOTH);
 
+            if (isset($updateData['verification_status']) && $updateData['verification_status'] === 'verified') {
+                $updateData['verification_status'] = VerificationStatus::Approved->value;
+            }
+
+            $majorChange = false;
+            if (isset($updateData['business_name']) && (string) $updateData['business_name'] !== (string) $business->business_name) {
+                $majorChange = true;
+            }
+            if (isset($updateData['category_id']) && (int) $updateData['category_id'] !== (int) ($business->category_id ?? 0)) {
+                $majorChange = true;
+            }
+            if (isset($updateData['location_id']) && (int) $updateData['location_id'] !== (int) ($business->location_id ?? 0)) {
+                $majorChange = true;
+            }
+
             // Handle verification status changes
             if (isset($updateData['verification_status'])) {
-                if ($updateData['verification_status'] === 'verified') {
+                if ($updateData['verification_status'] === VerificationStatus::Approved->value) {
                     $updateData['verified_by'] = adminAuthCheck($request)->id;
                     $updateData['verified_at'] = now();
                 } else {
@@ -354,7 +372,14 @@ class BusinessInfoController extends Controller
 
             $business->update($updateData);
 
-            $business->load(['category:id,name,subcategories', 'location:id,lga_name,state_name,city_name,country_name', 'user:id,name,email,phone', 'verifiedBy:id,name,email']);
+            if ($majorChange && $wasVerified) {
+                $this->verificationService->revokeVerificationForMajorBusinessChange(
+                    $business->fresh(),
+                    'Verification badge removed because business name, category, or location was changed by admin. Please complete verification again.',
+                );
+            }
+
+            $business->refresh()->load(['category:id,name,subcategories', 'location:id,lga_name,state_name,city_name,country_name', 'user:id,name,email,phone', 'verifiedBy:id,name,email']);
 
             return sendResponse(true, 'Business profile updated successfully.', [
                 'business' => new BusinessInfoResource($business),
