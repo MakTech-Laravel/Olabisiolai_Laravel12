@@ -29,7 +29,7 @@ class VendorSubscriptionController extends Controller
     ) {}
 
     #[OA\Get(
-        path: '/v1/user/subscription/packages',
+        path: '/v1/vendor/subscription/packages',
         summary: 'List premium subscription packages',
         tags: ['Billing'],
         security: [['passport' => []]],
@@ -58,7 +58,7 @@ class VendorSubscriptionController extends Controller
     }
 
     #[OA\Get(
-        path: '/v1/user/subscription/status',
+        path: '/v1/vendor/subscription/status',
         summary: 'Get the vendor\'s business subscription status',
         tags: ['Billing'],
         security: [['passport' => []]],
@@ -104,10 +104,10 @@ class VendorSubscriptionController extends Controller
     }
 
     #[OA\Post(
-        path: '/v1/user/subscription/payment/init',
+        path: '/v1/vendor/subscription/payment/init',
         summary: 'Initialize a premium subscription payment (optionally bundled with a boost)',
         description: 'Starts a gateway checkout for the premium plan, or pays instantly from the vendor\'s wallet '
-            .'when use_wallet is true. The client confirms the gateway transaction via POST /v1/user/subscription/payment/confirm.',
+            .'when use_wallet is true. The client confirms the gateway transaction via POST /v1/vendor/subscription/payment/confirm.',
         tags: ['Billing'],
         security: [['passport' => []]],
         requestBody: new OA\RequestBody(
@@ -230,7 +230,7 @@ class VendorSubscriptionController extends Controller
     }
 
     #[OA\Post(
-        path: '/v1/user/subscription/payment/resume',
+        path: '/v1/vendor/subscription/payment/resume',
         summary: 'Resume a pending premium subscription payment',
         tags: ['Billing'],
         security: [['passport' => []]],
@@ -302,7 +302,7 @@ class VendorSubscriptionController extends Controller
     }
 
     #[OA\Post(
-        path: '/v1/user/subscription/payment/confirm',
+        path: '/v1/vendor/subscription/payment/confirm',
         summary: 'Confirm a premium subscription payment and activate the plan',
         description: 'Confirms the gateway transaction for a payment created via payment/init (or resumed via '
             .'payment/resume) and activates the premium subscription on success.',
