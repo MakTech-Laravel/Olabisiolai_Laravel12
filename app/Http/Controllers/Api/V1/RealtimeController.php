@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
-use App\Events\ReverbPingEvent;
 use App\Enums\RealtimeNotificationType;
+use App\Events\ReverbPingEvent;
 use App\Http\Controllers\Controller;
 use App\Models\Admin;
 use App\Models\User;
@@ -13,6 +13,7 @@ use App\Notifications\RealtimeNotification;
 use App\Services\RealtimeNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use OpenApi\Attributes as OA;
 use Symfony\Component\HttpFoundation\Response as HttpStatus;
 
 /**
@@ -25,9 +26,31 @@ final class RealtimeController extends Controller
     public function __construct(
         private readonly RealtimeNotificationService $realtimeNotifications,
     ) {}
-    /**
-     * Dispatch a public diagnostic broadcast on the "reverb-ping" channel.
-     */
+
+    #[OA\Get(
+        path: '/v1/realtime/ping',
+        summary: 'Dispatch a public diagnostic broadcast on the "reverb-ping" channel',
+        description: 'Public, unauthenticated. Rate-limited to 30 requests/minute.',
+        tags: ['Public'],
+        parameters: [
+            new OA\Parameter(name: 'message', in: 'query', required: false, schema: new OA\Schema(type: 'string', default: 'Hello from Laravel Reverb 🚀')),
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Event dispatched',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'channel', type: 'string', example: 'reverb-ping'),
+                        new OA\Property(property: 'event', type: 'string', example: 'ping'),
+                        new OA\Property(property: 'payload', type: 'object'),
+                    ], type: 'object'),
+                ]),
+            ),
+        ],
+    )]
     public function ping(Request $request): JsonResponse
     {
         $event = new ReverbPingEvent(
@@ -50,10 +73,29 @@ final class RealtimeController extends Controller
         );
     }
 
-    /**
-     * Expose the effective broadcasting target so deployment issues (wrong
-     * internal host/port/scheme) are diagnosable from the browser.
-     */
+    #[OA\Get(
+        path: '/v1/realtime/health',
+        summary: 'Expose the effective broadcasting configuration for diagnostics',
+        description: 'Public, unauthenticated. Lets deployment issues (wrong internal host/port/scheme) be diagnosed from the browser.',
+        tags: ['Public'],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Broadcasting configuration',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'broadcast_connection', type: 'string', example: 'reverb'),
+                        new OA\Property(property: 'host', type: 'string', nullable: true),
+                        new OA\Property(property: 'port', type: 'integer', nullable: true),
+                        new OA\Property(property: 'scheme', type: 'string', nullable: true),
+                        new OA\Property(property: 'app_key_preview', type: 'string', nullable: true, description: 'First 8 characters of the Reverb app key, followed by "...".'),
+                    ], type: 'object'),
+                ]),
+            ),
+        ],
+    )]
     public function health(): JsonResponse
     {
         $connection = (string) config('broadcasting.default');

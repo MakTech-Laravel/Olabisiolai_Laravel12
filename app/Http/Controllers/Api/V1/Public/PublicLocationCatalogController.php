@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1\Public;
 use App\Http\Controllers\Controller;
 use App\Models\Location;
 use Illuminate\Http\Response;
+use OpenApi\Attributes as OA;
 use Throwable;
 
 /**
@@ -12,6 +13,32 @@ use Throwable;
  */
 class PublicLocationCatalogController extends Controller
 {
+    #[OA\Get(
+        path: '/v1/locations',
+        summary: 'List all locations',
+        tags: ['Public'],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Locations retrieved successfully',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'locations', type: 'array', items: new OA\Items(properties: [
+                            new OA\Property(property: 'id', type: 'integer'),
+                            new OA\Property(property: 'label', type: 'string', example: 'Ikeja, Lagos'),
+                            new OA\Property(property: 'state_name', type: 'string'),
+                            new OA\Property(property: 'city_name', type: 'string'),
+                            new OA\Property(property: 'lga_name', type: 'string'),
+                        ], type: 'object')),
+                        new OA\Property(property: 'count', type: 'integer'),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function index()
     {
         try {
@@ -59,6 +86,6 @@ class PublicLocationCatalogController extends Controller
 
         $formatted = trim((string) ($loc->formatted_address ?? ''));
 
-        return $formatted !== '' ? $formatted : 'Location ' . $loc->id;
+        return $formatted !== '' ? $formatted : 'Location '.$loc->id;
     }
 }

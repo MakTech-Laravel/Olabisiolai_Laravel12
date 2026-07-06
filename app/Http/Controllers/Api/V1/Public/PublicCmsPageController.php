@@ -8,12 +8,54 @@ use App\Http\Resources\Api\V1\CmsPageResource;
 use App\Services\CmsPageService;
 use Illuminate\Http\Response;
 use Illuminate\Validation\ValidationException;
+use OpenApi\Attributes as OA;
 use Throwable;
 
 class PublicCmsPageController extends Controller
 {
     public function __construct(private CmsPageService $cmsPageService) {}
 
+    #[OA\Get(
+        path: '/v1/about',
+        summary: 'Get the "About" CMS page',
+        tags: ['Public'],
+        responses: [
+            new OA\Response(response: 200, description: 'Page retrieved successfully', content: new OA\JsonContent(properties: [
+                new OA\Property(property: 'success', type: 'boolean', example: true),
+                new OA\Property(property: 'message', type: 'string'),
+                new OA\Property(property: 'data', properties: [new OA\Property(property: 'page', type: 'object')], type: 'object'),
+            ])),
+            new OA\Response(response: 404, description: 'CMS page not found', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
+    #[OA\Get(
+        path: '/v1/privacy-policy',
+        summary: 'Get the "Privacy Policy" CMS page',
+        description: 'Shares the same handler/response shape as GET /v1/about.',
+        tags: ['Public'],
+        responses: [
+            new OA\Response(response: 200, description: 'Page retrieved successfully', content: new OA\JsonContent(properties: [
+                new OA\Property(property: 'success', type: 'boolean', example: true),
+                new OA\Property(property: 'message', type: 'string'),
+                new OA\Property(property: 'data', properties: [new OA\Property(property: 'page', type: 'object')], type: 'object'),
+            ])),
+            new OA\Response(response: 404, description: 'CMS page not found', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
+    #[OA\Get(
+        path: '/v1/terms',
+        summary: 'Get the "Terms" CMS page',
+        description: 'Shares the same handler/response shape as GET /v1/about.',
+        tags: ['Public'],
+        responses: [
+            new OA\Response(response: 200, description: 'Page retrieved successfully', content: new OA\JsonContent(properties: [
+                new OA\Property(property: 'success', type: 'boolean', example: true),
+                new OA\Property(property: 'message', type: 'string'),
+                new OA\Property(property: 'data', properties: [new OA\Property(property: 'page', type: 'object')], type: 'object'),
+            ])),
+            new OA\Response(response: 404, description: 'CMS page not found', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function show(string $slug)
     {
         try {

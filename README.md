@@ -11,6 +11,52 @@
 
 This app ships with **nginx + Reverb** in one image (`Dockerfile`, `docker/nginx.conf`). WebSockets use **`wss://` on the same public host/port as the API (443)**; Reverb’s **8089** is internal only. See **[docs/COOLIFY_REVERB.md](docs/COOLIFY_REVERB.md)** and `.env.production.example` before deploying.
 
+## API Documentation (Swagger / OpenAPI)
+
+The API is documented with [darkaonline/l5-swagger](https://github.com/DarkaOnLine/L5-Swagger) using PHP 8 attributes
+(`OpenApi\Attributes`), not YAML/JSON files.
+
+- **Swagger UI:** `/api/documentation`
+- **Raw OpenAPI JSON:** `/docs`
+- **Auth:** the API uses Laravel Passport, not Sanctum. Personal access tokens are issued by
+  `POST /api/v1/auth/login` (and the OTP/2FA/device-verification steps that follow it) and sent as
+  `Authorization: Bearer <token>`. In Swagger UI, click **Authorize** and paste the token.
+
+### Regenerating docs
+
+```bash
+composer docs
+# or
+php artisan l5-swagger:generate
+```
+
+With `L5_SWAGGER_GENERATE_ALWAYS=true` (set in `.env` for local dev), the spec also regenerates automatically on
+every request to `/api/documentation`, so you rarely need to run this by hand locally.
+
+### Adding annotations to a new endpoint
+
+1. Add `use OpenApi\Attributes as OA;` to the controller.
+2. Add an `#[OA\Get(...)]` / `#[OA\Post(...)]` / etc. attribute directly above the controller method, matching the
+   route registered in `routes/api/v1/*.php`. Required fields: `path` (include the `/v1/...` prefix but not
+   `/api`), `summary`, `tags` (group by resource: `Auth`, `Users`, `Admin`, `Billing`, ...), `responses`.
+3. Add `security: [['passport' => []]]` on every operation that sits behind `auth:api` / `auth:admin_api`
+   middleware. Omit it on public routes (register, login, forgot-password, etc.).
+4. Reference shared response shapes instead of redefining them inline:
+   - `#/components/schemas/User`, `Admin`, `Payment`, `Subscription`, `AccessToken` — domain objects
+   - `#/components/schemas/ApiResponse` — generic `{success, message, data}` success envelope
+   - `#/components/schemas/ErrorResponse` — generic `{success: false, message, data}` failure envelope
+   - `#/components/schemas/ValidationError` — Laravel's default 422 shape (`{message, errors}`), used when a
+     `FormRequest` fails validation before the controller runs
+5. To add a new reusable schema, create a class in `app/OpenApi/Schemas/` with an `#[OA\Schema(schema: '...')]`
+   attribute (see the existing files for the pattern), then reference it via `ref: '#/components/schemas/<name>'`.
+6. Run `composer docs` and check `/api/documentation` to confirm the new endpoint renders correctly.
+
+See `app/Http/Controllers/Api/V1/AuthController.php` (e.g. the `login` method) for a fully-worked example
+covering request bodies, multiple response shapes, and error responses.
+
+Base API info (title, server URL, security scheme) lives in `app/OpenApi/BaseInfo.php`, kept separate from
+controllers.
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
