@@ -1,14 +1,16 @@
 <?php
 
-use App\Http\Controllers\Api\V1\Admin\AdminProfileController;
-use App\Http\Controllers\Api\V1\Admin\AdminTwoFactorController;
 use App\Http\Controllers\Api\V1\Admin\AdminAccountController;
 use App\Http\Controllers\Api\V1\Admin\AdminBoostRequestController;
 use App\Http\Controllers\Api\V1\Admin\AdminMessagingController;
 use App\Http\Controllers\Api\V1\Admin\AdminPaymentsController;
-use App\Http\Controllers\Api\V1\Admin\AdminSubscriptionController;
 use App\Http\Controllers\Api\V1\Admin\AdminPricingController;
+use App\Http\Controllers\Api\V1\Admin\AdminProfileController;
+use App\Http\Controllers\Api\V1\Admin\AdminSubscriptionController;
+use App\Http\Controllers\Api\V1\Admin\AdminSubscriptionPlanController;
+use App\Http\Controllers\Api\V1\Admin\AdminTwoFactorController;
 use App\Http\Controllers\Api\V1\Admin\BusinessInfoController;
+use App\Http\Controllers\Api\V1\Admin\BusinessReportController;
 use App\Http\Controllers\Api\V1\Admin\CategoryController;
 use App\Http\Controllers\Api\V1\Admin\CmsPageController;
 use App\Http\Controllers\Api\V1\Admin\ContactMessageController;
@@ -16,7 +18,6 @@ use App\Http\Controllers\Api\V1\Admin\DashboardController;
 use App\Http\Controllers\Api\V1\Admin\LocationController;
 use App\Http\Controllers\Api\V1\Admin\PermissionController;
 use App\Http\Controllers\Api\V1\Admin\ReviewController;
-use App\Http\Controllers\Api\V1\Admin\BusinessReportController;
 use App\Http\Controllers\Api\V1\Admin\ReviewReportController;
 use App\Http\Controllers\Api\V1\Admin\RoleController;
 use App\Http\Controllers\Api\V1\Admin\VerificationController;
@@ -128,6 +129,16 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('/', [AdminPricingController::class, 'index'])->name('index');
         Route::post('/verification/update', [AdminPricingController::class, 'updateVerification'])->name('verification.update');
         Route::post('/subscription/update', [AdminPricingController::class, 'updateSubscription'])->name('subscription.update');
+    });
+
+    Route::prefix('subscription-plans')->name('subscription-plans.')->group(function () {
+        Route::post('/', [AdminSubscriptionPlanController::class, 'index'])->name('index');
+        Route::post('/store', [AdminSubscriptionPlanController::class, 'store'])->name('store');
+        Route::post('/update', [AdminSubscriptionPlanController::class, 'update'])->name('update');
+        Route::post('/delete', [AdminSubscriptionPlanController::class, 'destroy'])->name('delete');
+        Route::post('/toggle-active', [AdminSubscriptionPlanController::class, 'toggleActive'])->name('toggle-active');
+        Route::post('/set-recommended', [AdminSubscriptionPlanController::class, 'setRecommended'])->name('set-recommended');
+        Route::post('/reorder', [AdminSubscriptionPlanController::class, 'reorder'])->name('reorder');
     });
 
     Route::prefix('verifications')->name('verifications.')->group(function () {

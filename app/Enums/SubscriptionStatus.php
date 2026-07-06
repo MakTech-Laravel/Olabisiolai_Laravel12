@@ -7,6 +7,8 @@ enum SubscriptionStatus: string
     case Active = 'active';
     case PendingPayment = 'pending_payment';
     case Expired = 'expired';
+    case Trialing = 'trialing';
+    case Cancelled = 'cancelled';
 
     public static function values(): array
     {
@@ -19,6 +21,8 @@ enum SubscriptionStatus: string
             self::Active => 'Active',
             self::PendingPayment => 'Pending payment',
             self::Expired => 'Expired',
+            self::Trialing => 'Trialing',
+            self::Cancelled => 'Cancelled',
         };
     }
 }

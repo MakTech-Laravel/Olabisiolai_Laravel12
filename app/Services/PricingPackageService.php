@@ -5,7 +5,9 @@ namespace App\Services;
 use App\Enums\PaymentPurpose;
 use App\Enums\PricingPackageType;
 use App\Models\PricingPackage;
+use Database\Seeders\PricingPackageSeeder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 class PricingPackageService
@@ -16,7 +18,7 @@ class PricingPackageService
     public function verificationPackages(): array
     {
         return $this->activePackages(PricingPackageType::Verification)
-            ->map(fn(PricingPackage $package): array => $package->toPackageArray())
+            ->map(fn (PricingPackage $package): array => $package->toPackageArray())
             ->values()
             ->all();
     }
@@ -27,7 +29,7 @@ class PricingPackageService
     public function subscriptionPackages(): array
     {
         return $this->activePackages(PricingPackageType::Subscription)
-            ->map(fn(PricingPackage $package): array => $package->toPackageArray())
+            ->map(fn (PricingPackage $package): array => $package->toPackageArray())
             ->values()
             ->all();
     }
@@ -57,6 +59,23 @@ class PricingPackageService
     public function boostCurrency(): string
     {
         return config('boost.currency', config('subscription.currency', 'NGN'));
+    }
+
+    public function findActiveSubscriptionPackageModel(string $packageKey): ?PricingPackage
+    {
+        return $this->activePackages(PricingPackageType::Subscription)
+            ->firstWhere('package_key', $packageKey);
+    }
+
+    /**
+     * The plan used when a checkout doesn't specify one: the recommended
+     * active plan, or the first active plan by sort order.
+     */
+    public function defaultSubscriptionPackage(): ?PricingPackage
+    {
+        $packages = $this->activePackages(PricingPackageType::Subscription);
+
+        return $packages->firstWhere('is_recommended', true) ?? $packages->first();
     }
 
     /**
@@ -94,7 +113,7 @@ class PricingPackageService
             ->orderBy('type')
             ->orderBy('sort_order')
             ->get()
-            ->map(fn(PricingPackage $package): array => [
+            ->map(fn (PricingPackage $package): array => [
                 'id' => $package->id,
                 'package_key' => $package->package_key,
                 'type' => $package->type->value,
@@ -107,6 +126,131 @@ class PricingPackageService
                 'sort_order' => $package->sort_order,
             ])
             ->all();
+    }
+
+    /**
+     * @return Collection<int, PricingPackage>
+     */
+    public function subscriptionPlansForAdmin(): Collection
+    {
+        return PricingPackage::query()
+            ->where('type', PricingPackageType::Subscription)
+            ->orderBy('sort_order')
+            ->get();
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function createPlan(array $data): PricingPackage
+    {
+        $this->assertUniquePlanKey((string) $data['package_key']);
+
+        $data['type'] = PricingPackageType::Subscription;
+        $data['currency'] = config('subscription.currency', 'NGN');
+        $data['sort_order'] = $data['sort_order'] ?? $this->nextSortOrder();
+
+        $plan = PricingPackage::query()->create($data);
+
+        if ($data['is_recommended'] ?? false) {
+            $this->setRecommended($plan->id);
+            $plan->refresh();
+        }
+
+        return $plan;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function updatePlan(int $id, array $data): PricingPackage
+    {
+        $plan = $this->findSubscriptionPlanOrFail($id);
+
+        if (isset($data['package_key']) && $data['package_key'] !== $plan->package_key) {
+            $this->assertUniquePlanKey((string) $data['package_key'], $id);
+        }
+
+        $plan->update($data);
+
+        if ($data['is_recommended'] ?? false) {
+            $this->setRecommended($plan->id);
+            $plan->refresh();
+        }
+
+        return $plan;
+    }
+
+    public function deletePlan(int $id): void
+    {
+        $plan = $this->findSubscriptionPlanOrFail($id);
+        $plan->delete();
+    }
+
+    public function setActive(int $id, bool $active): PricingPackage
+    {
+        $plan = $this->findSubscriptionPlanOrFail($id);
+        $plan->update(['is_active' => $active]);
+
+        return $plan;
+    }
+
+    public function setRecommended(int $id): PricingPackage
+    {
+        $plan = $this->findSubscriptionPlanOrFail($id);
+
+        DB::transaction(function () use ($plan): void {
+            PricingPackage::query()
+                ->where('type', PricingPackageType::Subscription)
+                ->where('id', '!=', $plan->id)
+                ->update(['is_recommended' => false]);
+
+            $plan->update(['is_recommended' => true]);
+        });
+
+        return $plan->refresh();
+    }
+
+    /**
+     * @param  list<int>  $orderedIds
+     */
+    public function reorder(array $orderedIds): void
+    {
+        DB::transaction(function () use ($orderedIds): void {
+            foreach ($orderedIds as $index => $id) {
+                PricingPackage::query()
+                    ->where('id', $id)
+                    ->where('type', PricingPackageType::Subscription)
+                    ->update(['sort_order' => $index + 1]);
+            }
+        });
+    }
+
+    private function findSubscriptionPlanOrFail(int $id): PricingPackage
+    {
+        return PricingPackage::query()
+            ->where('type', PricingPackageType::Subscription)
+            ->findOrFail($id);
+    }
+
+    private function assertUniquePlanKey(string $packageKey, ?int $ignoreId = null): void
+    {
+        $exists = PricingPackage::query()
+            ->where('type', PricingPackageType::Subscription)
+            ->where('package_key', $packageKey)
+            ->when($ignoreId !== null, fn ($query) => $query->where('id', '!=', $ignoreId))
+            ->exists();
+
+        if ($exists) {
+            throw new RuntimeException("A subscription plan with the key [{$packageKey}] already exists.");
+        }
+    }
+
+    private function nextSortOrder(): int
+    {
+        return 1 + (int) PricingPackage::query()
+            ->where('type', PricingPackageType::Subscription)
+            ->max('sort_order');
     }
 
     /**
@@ -199,7 +343,7 @@ class PricingPackageService
      */
     private function seedFromConfig(PricingPackageType $type): Collection
     {
-        (new \Database\Seeders\PricingPackageSeeder)->run();
+        (new PricingPackageSeeder)->run();
 
         return PricingPackage::query()
             ->where('type', $type)

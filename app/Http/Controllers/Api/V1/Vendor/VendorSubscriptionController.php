@@ -155,11 +155,14 @@ class VendorSubscriptionController extends Controller
             $validated = $request->validate([
                 'gateway' => ['nullable', 'string', Rule::in(PaymentGateway::values())],
                 'business_id' => ['sometimes', 'integer', 'min:1'],
+                'package_key' => ['nullable', 'string', 'max:50'],
                 'boost_tier_key' => ['nullable', 'string', 'max:30'],
                 'boost_duration_days' => ['nullable', 'integer', 'min:1', 'max:30'],
                 'boost_budget_amount' => ['nullable', 'numeric', 'min:500', 'max:5000'],
                 'use_wallet' => ['sometimes', 'boolean'],
             ]);
+
+            $packageKey = isset($validated['package_key']) ? (string) $validated['package_key'] : null;
 
             $boostTierKey = isset($validated['boost_tier_key']) ? (string) $validated['boost_tier_key'] : null;
             $boostDurationDays = isset($validated['boost_duration_days'])
@@ -180,6 +183,7 @@ class VendorSubscriptionController extends Controller
                     $boostTierKey,
                     $boostDurationDays,
                     $boostBudgetAmount,
+                    $packageKey,
                 );
 
                 return sendResponse(true, 'Premium subscription paid from wallet successfully.', [
@@ -197,6 +201,7 @@ class VendorSubscriptionController extends Controller
                 $boostDurationDays,
                 isset($validated['gateway']) ? PaymentGateway::from((string) $validated['gateway']) : null,
                 $boostBudgetAmount,
+                $packageKey,
             );
 
             $subscriptionPayment = $checkout['subscription_payment'];
@@ -386,6 +391,126 @@ class VendorSubscriptionController extends Controller
             return sendResponse(false, $exception->getMessage(), null, Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (ValidationException $exception) {
             return sendResponse(false, $exception->validator->errors()->first(), ['errors' => $exception->errors()], Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    #[OA\Post(
+        path: '/v1/vendor/subscription/trial/start',
+        summary: 'Start a free trial of a Premium plan',
+        description: 'Available to verified vendors who have never used a trial before, on a plan that has trial_eligible set.',
+        tags: ['Billing'],
+        security: [['passport' => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['package_key'],
+                properties: [
+                    new OA\Property(property: 'package_key', type: 'string', maxLength: 50, example: 'premium_yearly'),
+                    new OA\Property(property: 'business_id', type: 'integer', nullable: true),
+                ],
+            ),
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Trial started successfully',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'subscription', ref: '#/components/schemas/Subscription'),
+                        new OA\Property(property: 'business', type: 'object'),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 422, description: 'Not eligible for a trial, or validation error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
+    public function startTrial(Request $request)
+    {
+        try {
+            $business = $this->businessInfoService->resolveBusinessFromRequest($request);
+
+            $validated = $request->validate([
+                'package_key' => ['required', 'string', 'max:50'],
+                'business_id' => ['sometimes', 'integer', 'min:1'],
+            ]);
+
+            $business = $this->subscriptionService->startTrial($business, (string) $validated['package_key']);
+
+            return sendResponse(true, 'Free trial started successfully.', [
+                'subscription' => $this->subscriptionService->subscriptionPayload($business),
+                'business' => new BusinessInfoResource($business),
+            ]);
+        } catch (ValidationException $exception) {
+            return sendResponse(
+                false,
+                $exception->getMessage(),
+                ['errors' => $exception->errors()],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
+        } catch (RuntimeException $exception) {
+            return sendResponse(false, $exception->getMessage(), null, Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    #[OA\Post(
+        path: '/v1/vendor/subscription/cancel',
+        summary: 'Cancel the current Premium plan (including an active trial)',
+        description: 'Immediately reverts the business to the Free plan. There is no refund or proration; this app has no recurring billing.',
+        tags: ['Billing'],
+        security: [['passport' => []]],
+        requestBody: new OA\RequestBody(
+            content: new OA\JsonContent(properties: [
+                new OA\Property(property: 'business_id', type: 'integer', nullable: true),
+            ]),
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Subscription cancelled successfully',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'subscription', ref: '#/components/schemas/Subscription'),
+                        new OA\Property(property: 'business', type: 'object'),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 422, description: 'No active premium subscription, or validation error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
+    public function cancel(Request $request)
+    {
+        try {
+            $business = $this->businessInfoService->resolveBusinessFromRequest($request);
+
+            $business = $this->subscriptionService->cancelSubscription($business);
+
+            return sendResponse(true, 'Premium subscription cancelled successfully.', [
+                'subscription' => $this->subscriptionService->subscriptionPayload($business),
+                'business' => new BusinessInfoResource($business),
+            ]);
+        } catch (ValidationException $exception) {
+            return sendResponse(
+                false,
+                $exception->getMessage(),
+                ['errors' => $exception->errors()],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
+        } catch (RuntimeException $exception) {
+            return sendResponse(false, $exception->getMessage(), null, Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (Throwable $throwable) {
             report($throwable);
 

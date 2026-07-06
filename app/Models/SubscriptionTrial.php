@@ -2,25 +2,18 @@
 
 namespace App\Models;
 
-use App\Enums\SubscriptionPlan;
-use App\Enums\SubscriptionStatus;
-use Database\Factories\BusinessSubscriptionFactory;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
+use App\Enums\TrialEndedReason;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class BusinessSubscription extends Model
+class SubscriptionTrial extends Model
 {
-    /** @use HasFactory<BusinessSubscriptionFactory> */
-    use HasFactory;
-
     protected $fillable = [
         'business_info_id',
         'pricing_package_id',
-        'plan',
-        'status',
-        'expires_at',
-        'trial_ends_at',
+        'started_at',
+        'ends_at',
+        'ended_reason',
     ];
 
     /**
@@ -29,10 +22,9 @@ class BusinessSubscription extends Model
     protected function casts(): array
     {
         return [
-            'plan' => SubscriptionPlan::class,
-            'status' => SubscriptionStatus::class,
-            'expires_at' => 'datetime',
-            'trial_ends_at' => 'datetime',
+            'started_at' => 'datetime',
+            'ends_at' => 'datetime',
+            'ended_reason' => TrialEndedReason::class,
         ];
     }
 
