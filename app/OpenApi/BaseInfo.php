@@ -16,7 +16,7 @@ use OpenApi\Attributes as OA;
         .'Validation failures that are not caught by the controller fall back to Laravel\'s default shape: '
         .'`{"message": string, "errors": {field: string[]}}` with HTTP 422.',
 )]
-#[OA\Server(url: 'http://localhost:8000/api', description: 'Local development server')]
+#[OA\Server(url: L5_SWAGGER_CONST_HOST, description: 'API server')]
 #[OA\SecurityScheme(
     securityScheme: 'passport',
     type: 'http',

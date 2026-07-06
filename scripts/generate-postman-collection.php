@@ -569,12 +569,12 @@ array_unshift($collectionItems, $quickStart);
 $collection = [
     'info' => [
         '_postman_id' => '094a96c6-e4a7-42ac-82a4-b9054b026a04',
-        'name' => 'Olabisiolai Local',
-        'description' => "Olabisiolai / Gidira API (Laravel 12) - local development collection.\n\n## Setup\n1. Set `base_url` (default: `http://localhost:8000/api/v1`).\n2. Run **User Login** or **Admin Login** under `0. Quick Start` - tokens auto-save to `user_token` / `admin_token`.\n3. Authenticated requests use Bearer token automatically.\n\nRegenerated from the live route table + FormRequest validation rules via `scripts/generate-postman-collection.php`. Re-run after route changes.",
+        'name' => 'Gidira API',
+        'description' => "Gidira API (Laravel 12) - local development collection.\n\n## Setup\n1. Set `base_url` (default: `{{base_url}}/api/v1`).\n2. Run **User Login** or **Admin Login** under `0. Quick Start` - tokens auto-save to `user_token` / `admin_token`.\n3. Authenticated requests use Bearer token automatically.\n\nRegenerated from the live route table + FormRequest validation rules via `scripts/generate-postman-collection.php`. Re-run after route changes.",
         'schema' => 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
     ],
     'variable' => [
-        ['key' => 'base_url', 'value' => 'http://localhost:8000/api/v1', 'type' => 'string'],
+        ['key' => 'base_url', 'value' => '{{base_url}}/api/v1', 'type' => 'string'],
         ['key' => 'user_token', 'value' => '', 'type' => 'string'],
         ['key' => 'admin_token', 'value' => '', 'type' => 'string'],
         ['key' => 'user_email', 'value' => 'user@example.com', 'type' => 'string'],
