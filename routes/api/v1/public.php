@@ -1,13 +1,13 @@
 <?php
 
+use App\Http\Controllers\Api\V1\BusinessReportController;
 use App\Http\Controllers\Api\V1\Public\BusinessInfoController;
 use App\Http\Controllers\Api\V1\Public\ContactMessageController;
 use App\Http\Controllers\Api\V1\Public\PublicCategoryCatalogController;
 use App\Http\Controllers\Api\V1\Public\PublicCmsPageController;
 use App\Http\Controllers\Api\V1\Public\PublicLocationCatalogController;
+use App\Http\Controllers\Api\V1\Public\PublicSubscriptionPlanController;
 use App\Http\Controllers\Api\V1\Public\ReviewController;
-use App\Http\Controllers\Api\V1\BusinessReportController;
-use App\Http\Controllers\Api\V1\ReviewReportController;
 use App\Http\Controllers\Api\V1\RealtimeController;
 use App\Http\Controllers\Api\V1\Webhooks\PaystackWebhookController;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
@@ -32,6 +32,7 @@ Route::post('/contact-messages', [ContactMessageController::class, 'store'])
 Route::get('/categories', [PublicCategoryCatalogController::class, 'index'])->name('public.categories');
 Route::get('/categories/{category}', [PublicCategoryCatalogController::class, 'show'])->name('public.categories.show');
 Route::get('/locations', [PublicLocationCatalogController::class, 'index'])->name('public.locations');
+Route::get('/subscription-packages', [PublicSubscriptionPlanController::class, 'index'])->name('public.subscription-packages');
 
 Route::prefix('businesses')->name('businesses.')->group(function () {
     Route::get('/all', [BusinessInfoController::class, 'all'])->name('all');

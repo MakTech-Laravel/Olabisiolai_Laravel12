@@ -9,9 +9,12 @@ use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
 use App\Enums\SubscriptionPlan;
 use App\Enums\SubscriptionStatus;
+use App\Enums\TrialEndedReason;
 use App\Models\BusinessInfo;
 use App\Models\BusinessSubscription;
 use App\Models\Payment;
+use App\Models\PricingPackage;
+use App\Models\SubscriptionTrial;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -59,6 +62,14 @@ class SubscriptionService
             return $business->fresh(['subscription']);
         }
 
+        if (
+            $subscription->status === SubscriptionStatus::Trialing
+            && $subscription->trial_ends_at !== null
+            && $subscription->trial_ends_at->isPast()
+        ) {
+            return $this->downgradeToFree($business, TrialEndedReason::Expired);
+        }
+
         return $business;
     }
 
@@ -74,7 +85,7 @@ class SubscriptionService
         $subscription = $this->subscriptionRecord($business);
 
         return $subscription->plan === SubscriptionPlan::Premium
-            && $subscription->status === SubscriptionStatus::Active
+            && in_array($subscription->status, [SubscriptionStatus::Active, SubscriptionStatus::Trialing], true)
             && ! $this->isSubscriptionExpired($subscription);
     }
 
@@ -201,19 +212,29 @@ class SubscriptionService
         ?int $boostDurationDays = null,
         ?PaymentGateway $gateway = null,
         ?float $boostBudgetAmount = null,
+        ?string $packageKey = null,
     ): array {
         $business = $this->preparePremiumCheckout($business);
         $checkoutGroupId = (string) Str::uuid();
+
+        $package = $packageKey !== null
+            ? $this->pricingPackageService->findActiveSubscriptionPackageModel($packageKey)
+            : $this->pricingPackageService->defaultSubscriptionPackage();
+
+        if ($package === null) {
+            throw new RuntimeException('No active subscription plan is available.');
+        }
 
         $subscriptionPayment = $this->paymentService->initPayment(
             $vendor,
             $business,
             PaymentPurpose::Subscription,
-            'premium_yearly',
+            $package->package_key,
             0,
             [
                 'checkout_group_id' => $checkoutGroupId,
                 'line_item' => 'subscription',
+                'pricing_package_id' => $package->id,
             ],
             $gateway,
         );
@@ -312,6 +333,7 @@ class SubscriptionService
         ?string $boostTierKey = null,
         ?int $boostDurationDays = null,
         ?float $boostBudgetAmount = null,
+        ?string $packageKey = null,
     ): array {
         $checkout = $this->initPremiumPayment(
             $vendor,
@@ -320,6 +342,7 @@ class SubscriptionService
             $boostDurationDays,
             null,
             $boostBudgetAmount,
+            $packageKey,
         );
 
         $total = (float) $checkout['total_amount'];
@@ -396,7 +419,7 @@ class SubscriptionService
             throw new RuntimeException('Complete payment before activating premium.');
         }
 
-        $expiresAt = now()->addDays($this->subscriptionDurationDays());
+        $expiresAt = $this->resolveExpiryForPayment($payment);
 
         return DB::transaction(function () use ($payment, $business, $expiresAt): BusinessInfo {
             $this->paymentService->consumePayment($payment);
@@ -407,20 +430,44 @@ class SubscriptionService
 
     private function repairPremiumActivationFromConsumedPayment(Payment $payment, BusinessInfo $business): BusinessInfo
     {
-        $expiresAt = now()->addDays($this->subscriptionDurationDays());
+        $expiresAt = $this->resolveExpiryForPayment($payment);
 
         return DB::transaction(function () use ($payment, $business, $expiresAt): BusinessInfo {
             return $this->applyPremiumActivation($payment, $business, $expiresAt);
         });
     }
 
-    private function applyPremiumActivation(Payment $payment, BusinessInfo $business, \DateTimeInterface $expiresAt): BusinessInfo
+    /**
+     * Resolve how long the purchased plan lasts from the package linked to the
+     * payment's metadata, falling back to the global default for older payments
+     * created before per-package billing periods existed.
+     */
+    private function resolveExpiryForPayment(Payment $payment): ?\DateTimeInterface
     {
+        $meta = is_array($payment->metadata) ? $payment->metadata : [];
+        $packageId = isset($meta['pricing_package_id']) ? (int) $meta['pricing_package_id'] : null;
+        $package = $packageId ? PricingPackage::query()->find($packageId) : null;
+        $durationDays = $package?->billing_period?->durationDays();
+
+        if ($package !== null && $package->billing_period !== null && $durationDays === null) {
+            return null;
+        }
+
+        return now()->addDays($durationDays ?? $this->subscriptionDurationDays());
+    }
+
+    private function applyPremiumActivation(Payment $payment, BusinessInfo $business, ?\DateTimeInterface $expiresAt): BusinessInfo
+    {
+        $meta = is_array($payment->metadata) ? $payment->metadata : [];
+        $packageId = isset($meta['pricing_package_id']) ? (int) $meta['pricing_package_id'] : null;
+
         $subscription = $this->subscriptionRecord($business);
         $subscription->update([
             'plan' => SubscriptionPlan::Premium,
             'status' => SubscriptionStatus::Active,
             'expires_at' => $expiresAt,
+            'pricing_package_id' => $packageId,
+            'trial_ends_at' => null,
         ]);
 
         $business->update([
@@ -502,7 +549,111 @@ class SubscriptionService
             'is_verified' => $this->isBusinessVerified($business),
             'can_boost' => $this->canUseBoost($business),
             'analytics_locked' => ! $this->hasActivePremium($business),
+            'is_trial' => $subscription->status === SubscriptionStatus::Trialing,
+            'trial_ends_at' => $subscription->trial_ends_at?->toIso8601String(),
+            'trial_days_remaining' => $subscription->trial_ends_at && $subscription->trial_ends_at->isFuture()
+                ? max(0, (int) now()->diffInDays($subscription->trial_ends_at, false))
+                : 0,
+            'trial_eligible' => $this->isTrialEligible($business),
         ];
+    }
+
+    public function isTrialEligible(BusinessInfo $business): bool
+    {
+        if ($this->hasActivePremium($business) || ! $this->isBusinessVerified($business)) {
+            return false;
+        }
+
+        return ! SubscriptionTrial::query()
+            ->where('business_info_id', $business->id)
+            ->exists();
+    }
+
+    public function startTrial(BusinessInfo $business, string $packageKey): BusinessInfo
+    {
+        if ($this->hasActivePremium($business)) {
+            throw new RuntimeException('Premium subscription is already active.');
+        }
+
+        if (! $this->isBusinessVerified($business)) {
+            throw new RuntimeException('Only verified vendors are eligible for a free trial.');
+        }
+
+        $package = $this->pricingPackageService->findActiveSubscriptionPackageModel($packageKey);
+
+        if ($package === null || ! $package->trial_eligible || $package->trial_duration_days === null) {
+            throw new RuntimeException('This plan does not offer a free trial.');
+        }
+
+        $alreadyTrialed = SubscriptionTrial::query()
+            ->where('business_info_id', $business->id)
+            ->exists();
+
+        if ($alreadyTrialed) {
+            throw new RuntimeException('This business has already used its free trial.');
+        }
+
+        $trialEndsAt = now()->addDays(max(1, (int) $package->trial_duration_days));
+
+        return DB::transaction(function () use ($business, $package, $trialEndsAt): BusinessInfo {
+            $subscription = $this->subscriptionRecord($business);
+            $subscription->update([
+                'plan' => SubscriptionPlan::Premium,
+                'status' => SubscriptionStatus::Trialing,
+                'pricing_package_id' => $package->id,
+                'expires_at' => null,
+                'trial_ends_at' => $trialEndsAt,
+            ]);
+
+            $business->update(['business_status' => BusinessStatus::Active]);
+
+            SubscriptionTrial::query()->create([
+                'business_info_id' => $business->id,
+                'pricing_package_id' => $package->id,
+                'started_at' => now(),
+                'ends_at' => $trialEndsAt,
+            ]);
+
+            return $business->fresh(['subscription']);
+        });
+    }
+
+    public function cancelSubscription(BusinessInfo $business): BusinessInfo
+    {
+        $subscription = $this->subscriptionRecord($business);
+
+        if ($subscription->plan !== SubscriptionPlan::Premium) {
+            throw new RuntimeException('This business does not have an active premium subscription.');
+        }
+
+        return $this->downgradeToFree($business, TrialEndedReason::Cancelled);
+    }
+
+    /**
+     * Revert a business to the Free plan, closing out any open trial audit
+     * row. Shared by explicit cancellation and scheduled trial expiry.
+     */
+    public function downgradeToFree(BusinessInfo $business, TrialEndedReason $reason): BusinessInfo
+    {
+        $subscription = $this->subscriptionRecord($business);
+
+        return DB::transaction(function () use ($subscription, $business, $reason): BusinessInfo {
+            $subscription->update([
+                'plan' => SubscriptionPlan::Free,
+                'status' => SubscriptionStatus::Active,
+                'expires_at' => null,
+                'trial_ends_at' => null,
+            ]);
+
+            $business->update(['business_status' => BusinessStatus::Inactive]);
+
+            SubscriptionTrial::query()
+                ->where('business_info_id', $business->id)
+                ->whereNull('ended_reason')
+                ->update(['ended_reason' => $reason]);
+
+            return $business->fresh(['subscription']);
+        });
     }
 
     /**
