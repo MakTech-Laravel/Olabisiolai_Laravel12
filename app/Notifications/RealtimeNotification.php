@@ -165,6 +165,26 @@ final class RealtimeNotification extends Notification implements ShouldBroadcast
         );
     }
 
+    public static function verificationReverificationGranted(
+        int $recipientUserId,
+        string $businessName,
+        string $reason,
+    ): self {
+        return self::forUser(
+            userId: $recipientUserId,
+            type: RealtimeNotificationType::VerificationReverificationGranted,
+            title: 'Free re-verification granted',
+            message: sprintf(
+                'You can complete verification for "%s" again at no cost. %s',
+                $businessName,
+                $reason,
+            ),
+            data: ['business_name' => $businessName, 'reason' => $reason],
+            actionUrl: '/vendor/verification',
+            tone: 'info',
+        );
+    }
+
     public static function verificationSubmitted(
         int $recipientAdminId,
         int $businessInfoId,
@@ -208,6 +228,36 @@ final class RealtimeNotification extends Notification implements ShouldBroadcast
                 'currency' => $currency,
             ],
             actionUrl: '/vendor/verification',
+            tone: 'success',
+        );
+    }
+
+    public static function referralRewardPaid(
+        int $recipientUserId,
+        string $role,
+        float $amount,
+        string $currency,
+        string $counterpartyName,
+        string $formattedAmount,
+    ): self {
+        $message = $role === 'referrer'
+            ? sprintf('You earned %s because %s completed verification.', $formattedAmount, $counterpartyName)
+            : sprintf('You received %s welcome reward for joining via referral.', $formattedAmount);
+
+        $title = $role === 'referrer' ? 'Referral reward paid' : 'Welcome reward paid';
+
+        return self::forUser(
+            userId: $recipientUserId,
+            type: RealtimeNotificationType::ReferralRewardPaid,
+            title: $title,
+            message: $message,
+            data: [
+                'role' => $role,
+                'amount' => $amount,
+                'currency' => $currency,
+                'counterparty_name' => $counterpartyName,
+            ],
+            actionUrl: '/user/wallet',
             tone: 'success',
         );
     }

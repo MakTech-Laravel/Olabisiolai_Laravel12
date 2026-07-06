@@ -131,7 +131,7 @@ class WalletService
             'package_id' => 'wallet_topup',
             'amount' => $amount,
             'currency' => config('subscription.currency', 'NGN'),
-            'tx_ref' => 'wallet_' . $user->id . '_' . now()->timestamp . '_' . random_int(1000, 9999),
+            'tx_ref' => 'wallet_'.$user->id.'_'.now()->timestamp.'_'.random_int(1000, 9999),
             'gateway' => $gateway ?? PaymentGateway::Paystack,
             'status' => PaymentStatus::Pending,
             'metadata' => [
@@ -156,22 +156,27 @@ class WalletService
             throw new RuntimeException('Invalid wallet top-up payment.');
         }
 
-        if ($payment->isCompleted()) {
-            return $this->getOrCreateWallet($payment->user);
-        }
-
-        $payment->update([
-            'status' => PaymentStatus::Completed,
-            'gateway' => $gateway,
-            'gateway_transaction_id' => $gatewayTransactionId,
-            'paid_at' => now(),
-            'is_consumed' => true,
-        ]);
-
         $user = $payment->user;
         if ($user === null) {
             throw new RuntimeException('Wallet top-up user not found.');
         }
+
+        if ($payment->isCompleted() && $payment->is_consumed) {
+            return $this->getOrCreateWallet($user);
+        }
+
+        $this->paymentService->assertGatewayTransactionAvailable($gatewayTransactionId, $payment);
+
+        if ($payment->status === PaymentStatus::Pending) {
+            $this->paymentService->confirmPayment($payment, $gatewayTransactionId, $gateway);
+            $payment = $payment->fresh();
+        }
+
+        if ($payment->is_consumed) {
+            return $this->getOrCreateWallet($user);
+        }
+
+        $payment->update(['is_consumed' => true]);
 
         return $this->credit(
             $user,
@@ -195,5 +200,28 @@ class WalletService
         $this->debit($user, $amount, $description, $reference);
 
         return true;
+    }
+
+    /**
+     * Pay a pending checkout entirely from the user's wallet and mark it completed,
+     * reusing the same completion path (status, notification) as a gateway confirm.
+     */
+    public function payForPendingPayment(User $user, Payment $payment, string $description): Payment
+    {
+        if ($payment->user_id !== $user->id) {
+            throw new RuntimeException('Payment does not belong to this user.');
+        }
+
+        if ($payment->status !== PaymentStatus::Pending) {
+            throw new RuntimeException('This payment is not awaiting payment.');
+        }
+
+        $this->debit($user, (float) $payment->amount, $description, $payment->tx_ref);
+
+        return $this->paymentService->confirmPayment(
+            $payment,
+            'wallet_'.$payment->tx_ref,
+            PaymentGateway::Wallet,
+        );
     }
 }

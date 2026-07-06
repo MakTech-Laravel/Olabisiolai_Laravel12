@@ -7,9 +7,11 @@ use App\Enums\PaymentPurpose;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V1\BusinessInfoResource;
 use App\Services\BusinessInfoService;
+use App\Services\PaymentReconciliationService;
 use App\Services\PaymentService;
 use App\Services\SubscriptionService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use OpenApi\Attributes as OA;
@@ -23,6 +25,7 @@ class VendorSubscriptionController extends Controller
         private readonly SubscriptionService $subscriptionService,
         private readonly BusinessInfoService $businessInfoService,
         private readonly PaymentService $paymentService,
+        private readonly PaymentReconciliationService $paymentReconciliation,
     ) {}
 
     #[OA\Get(
@@ -181,6 +184,7 @@ class VendorSubscriptionController extends Controller
 
                 return sendResponse(true, 'Premium subscription paid from wallet successfully.', [
                     'business' => new BusinessInfoResource($walletCheckout['business']),
+                    'subscription' => $this->subscriptionService->subscriptionPayload($walletCheckout['business']),
                     'wallet_balance' => $walletCheckout['wallet_balance'],
                     'paid_from_wallet' => true,
                 ]);
@@ -362,36 +366,63 @@ class VendorSubscriptionController extends Controller
 
             $gatewayTransactionId = trim((string) $validated['gateway_transaction_id']);
             $gateway = PaymentGateway::from((string) $validated['gateway']);
+            Log::info('Gateway', ['gateway' => $gateway]);
 
-            $business = $this->businessInfoService->findForUser($vendor);
-
-            if ($business !== null && $this->subscriptionService->hasActivePremium($business)) {
-                return sendResponse(true, 'Premium subscription is already active.', [
-                    'payment' => $this->paymentService->toArray($payment->fresh()),
-                    'subscription' => $this->subscriptionService->subscriptionPayload($business),
-                    'business' => new BusinessInfoResource($business),
-                ]);
-            }
-
-            if ($payment->status->value === 'pending') {
-                $this->paymentService->confirmBundledPayments($payment, $gatewayTransactionId, $gateway);
-                $payment = $payment->fresh();
-            } elseif ($payment->gateway_transaction_id === null && $gatewayTransactionId !== '') {
-                $payment->update([
-                    'gateway' => $gateway,
-                    'gateway_transaction_id' => $gatewayTransactionId,
-                ]);
-                $payment = $payment->fresh();
-            } elseif ($payment->gateway === null) {
-                $payment->update(['gateway' => $gateway]);
-                $payment = $payment->fresh();
-            }
-
-            $business = $this->subscriptionService->activatePremiumAfterPayment($payment, $vendor);
+            $business = $this->paymentReconciliation->completeSubscriptionCheckout(
+                $payment,
+                $vendor,
+                $gatewayTransactionId,
+                $gateway,
+                verifyWithGateway: $gateway === PaymentGateway::Paystack,
+            );
             $business->load(['category:id,name,subcategories', 'location:id,lga_name,state_name,city_name,country_name']);
 
-            return sendResponse(true, 'Premium subscription activated successfully. Apply for verification separately to earn your trust badge.', [
+            return sendResponse(true, 'Premium subscription activated successfully.', [
                 'payment' => $this->paymentService->toArray($payment->fresh()),
+                'subscription' => $this->subscriptionService->subscriptionPayload($business),
+                'business' => new BusinessInfoResource($business),
+            ]);
+        } catch (RuntimeException $exception) {
+            return sendResponse(false, $exception->getMessage(), null, Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (ValidationException $exception) {
+            return sendResponse(false, $exception->validator->errors()->first(), ['errors' => $exception->errors()], Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    public function reconcilePayment(Request $request)
+    {
+        try {
+            $vendor = $request->user('api');
+            $business = $this->businessInfoService->resolveBusinessFromRequest($request);
+
+            $validated = $request->validate([
+                'paystack_reference' => ['required', 'string', 'max:255'],
+                'business_id' => ['sometimes', 'integer', 'min:1'],
+            ]);
+
+            $result = $this->paymentReconciliation->reconcilePaystackReference(
+                (string) $validated['paystack_reference'],
+                $business,
+            );
+
+            $payment = $result['payment'];
+            if ($payment->user_id !== $vendor->id) {
+                return sendResponse(false, 'This payment does not belong to your account.', null, Response::HTTP_FORBIDDEN);
+            }
+
+            $business = $result['business'];
+            if ($business === null) {
+                return sendResponse(false, 'Premium could not be activated.', null, Response::HTTP_UNPROCESSABLE_ENTITY);
+            }
+
+            $business->load(['category:id,name,subcategories', 'location:id,lga_name,state_name,city_name,country_name']);
+
+            return sendResponse(true, 'Premium subscription activated successfully.', [
+                'payment' => $this->paymentService->toArray($payment),
                 'subscription' => $this->subscriptionService->subscriptionPayload($business),
                 'business' => new BusinessInfoResource($business),
             ]);

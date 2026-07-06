@@ -110,7 +110,8 @@ class AdminPaymentService
             'business' => $business?->business_name ?? '—',
             'payer_name' => $user?->name ?? '—',
             'payer_email' => $user?->email ?? '',
-            'reference' => strtoupper((string) $payment->tx_ref),
+            'reference' => (string) $payment->tx_ref,
+            'reference_display' => strtoupper((string) $payment->tx_ref),
             'amount' => (float) $payment->amount,
             'currency' => $payment->currency,
             'method' => $this->resolvePaymentMethod($payment),
@@ -130,6 +131,9 @@ class AdminPaymentService
     public function toAdminDetail(Payment $payment): array
     {
         return array_merge($this->toAdminListItem($payment), [
+            'tx_ref' => (string) $payment->tx_ref,
+            'business_id' => $payment->business_info_id,
+            'user_id' => $payment->user_id,
             'purpose_label' => $payment->purpose->label(),
             'gateway_transaction_id' => $payment->gateway_transaction_id,
             'package_id' => $payment->package_id,
@@ -223,6 +227,7 @@ class AdminPaymentService
             'subscription' => PaymentPurpose::Subscription,
             'boost', 'boosting' => PaymentPurpose::Boost,
             'verification' => PaymentPurpose::Verification,
+            'wallet_top_up', 'wallet_topup' => PaymentPurpose::WalletTopUp,
             default => null,
         };
     }

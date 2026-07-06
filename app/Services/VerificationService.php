@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\PaymentGateway;
 use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
 use App\Enums\VerificationDocumentStatus;
@@ -44,6 +45,114 @@ class VerificationService
         }
 
         return true;
+    }
+
+    public function canInitVerificationPayment(BusinessInfo $business): bool
+    {
+        if ($business->verification_status === VerificationStatus::Approved) {
+            return false;
+        }
+
+        if ($business->verification_status === VerificationStatus::Pending && ! $business->is_flagged) {
+            return false;
+        }
+
+        if ($this->resolveConsumableVerificationPayment($business) !== null) {
+            return false;
+        }
+
+        if ($this->hasPendingVerificationPayment($business)) {
+            return false;
+        }
+
+        if ($this->needsAdminReapproval($business)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    public function verificationPaymentBlockReason(BusinessInfo $business): ?string
+    {
+        if ($business->verification_status === VerificationStatus::Approved) {
+            return 'Your business is already verified.';
+        }
+
+        if ($business->verification_status === VerificationStatus::Pending && ! $business->is_flagged) {
+            return 'Your verification application is under admin review. You cannot start a new payment.';
+        }
+
+        $consumable = $this->resolveConsumableVerificationPayment($business);
+        if ($consumable !== null) {
+            if ($this->needsVendorDocumentAction($business)) {
+                return 'You have verification credit on file. Upload replacement documents for rejected files on your document status page — do not pay again.';
+            }
+
+            if ($this->isReverificationWaiverPayment($consumable)) {
+                return 'You already have a free re-verification credit. Upload your documents — do not pay again.';
+            }
+
+            return 'You already have a paid verification ready. Upload your documents — do not pay again.';
+        }
+
+        if ($this->hasPendingVerificationPayment($business)) {
+            return 'You already have a pending verification checkout. Complete or cancel it before starting another payment.';
+        }
+
+        if ($this->needsAdminReapproval($business)) {
+            return 'Your documents are on file after a profile update. An admin will re-approve your verification — you do not need to pay again.';
+        }
+
+        return null;
+    }
+
+    public function needsAdminReapproval(BusinessInfo $business): bool
+    {
+        if ($business->verification_status !== VerificationStatus::None || $business->is_flagged) {
+            return false;
+        }
+
+        if (! $this->hasPriorVerificationHistory($business)) {
+            return false;
+        }
+
+        if ($this->resolveConsumableVerificationPayment($business) !== null) {
+            return false;
+        }
+
+        return $business->verificationDocuments()->exists();
+    }
+
+    private function hasPendingVerificationPayment(BusinessInfo $business): bool
+    {
+        return Payment::query()
+            ->where('business_info_id', $business->id)
+            ->where('purpose', PaymentPurpose::Verification)
+            ->where('status', PaymentStatus::Pending)
+            ->exists();
+    }
+
+    private function isReverificationWaiverPayment(Payment $payment): bool
+    {
+        $metadata = is_array($payment->metadata) ? $payment->metadata : [];
+
+        return (bool) ($metadata['reverification_waiver'] ?? false);
+    }
+
+    private function hasApprovedDocumentsOnFile(BusinessInfo $business): bool
+    {
+        return VerificationDocument::query()
+            ->where('business_info_id', $business->id)
+            ->where('status', VerificationDocumentStatus::Approved)
+            ->exists();
+    }
+
+    private function hasRejectedDocuments(BusinessInfo $business): bool
+    {
+        return VerificationDocument::query()
+            ->where('business_info_id', $business->id)
+            ->where('status', VerificationDocumentStatus::Rejected)
+            ->exists();
     }
 
     /**
@@ -151,6 +260,8 @@ class VerificationService
         $purchasedPackage = $this->resolvePurchasedVerificationPackage($business);
         $consumablePayment = $this->resolveConsumableVerificationPayment($business);
         $awaitingDocumentSubmission = $this->isAwaitingDocumentSubmission($business, $consumablePayment);
+        $needsAdminReapproval = $this->needsAdminReapproval($business);
+        $canInitPayment = $this->canInitVerificationPayment($business);
 
         return [
             'verification_status' => $business->verification_status->value,
@@ -159,6 +270,13 @@ class VerificationService
             'is_approved' => $business->verification_status === VerificationStatus::Approved,
             'verified_at' => $business->verified_at ? humanDateTime($business->verified_at) : null,
             'awaiting_document_submission' => $awaitingDocumentSubmission,
+            'needs_admin_reapproval' => $needsAdminReapproval,
+            'needs_document_action' => $this->needsVendorDocumentAction($business),
+            'can_upload_documents' => $this->canVendorUploadDocuments($business),
+            'has_open_document_review' => $this->hasOpenDocumentReview($business),
+            'can_init_payment' => $canInitPayment,
+            'payment_block_reason' => $canInitPayment ? null : $this->verificationPaymentBlockReason($business),
+            'has_unused_verification_payment' => $consumablePayment !== null,
             'consumable_payment_id' => $awaitingDocumentSubmission ? $consumablePayment?->id : null,
             'purchased_package' => $purchasedPackage,
             'documents' => $business->verificationDocuments->map(fn (VerificationDocument $doc): array => [
@@ -204,7 +322,93 @@ class VerificationService
         return $business->verificationDocuments->isEmpty();
     }
 
-    private function resolveConsumableVerificationPayment(BusinessInfo $business): ?Payment
+    public function needsVendorDocumentAction(BusinessInfo $business): bool
+    {
+        return $this->countRejectedLatestDocuments($business) > 0;
+    }
+
+    public function canVendorUploadDocuments(BusinessInfo $business): bool
+    {
+        if ($business->verification_status === VerificationStatus::Approved || $business->is_flagged) {
+            return false;
+        }
+
+        if ($business->verification_status === VerificationStatus::Pending) {
+            return true;
+        }
+
+        if ($business->verification_status !== VerificationStatus::None) {
+            return false;
+        }
+
+        if ($this->resolveConsumableVerificationPayment($business) !== null) {
+            return true;
+        }
+
+        return $this->needsVendorDocumentAction($business);
+    }
+
+    public function hasOpenDocumentReview(BusinessInfo $business): bool
+    {
+        if ($business->is_flagged) {
+            return false;
+        }
+
+        if ($business->verification_status === VerificationStatus::Pending) {
+            return true;
+        }
+
+        if ($business->verification_status !== VerificationStatus::None) {
+            return false;
+        }
+
+        if (! $this->hasPriorVerificationHistory($business)) {
+            return false;
+        }
+
+        if ($this->countPendingDocuments($business) > 0) {
+            return true;
+        }
+
+        if ($this->needsVendorDocumentAction($business)) {
+            return true;
+        }
+
+        if ($this->resolveConsumableVerificationPayment($business) !== null) {
+            $latest = $this->latestDocumentsByType((int) $business->id);
+
+            return $latest->isNotEmpty() && ! $this->allLatestDocumentsApproved($business);
+        }
+
+        return $this->needsAdminReapproval($business);
+    }
+
+    public function allLatestDocumentsApproved(BusinessInfo $business): bool
+    {
+        $latest = $this->latestDocumentsByType((int) $business->id);
+        $requiredTypes = ['business_registration', 'identity_proof', 'address_proof'];
+
+        foreach ($requiredTypes as $type) {
+            if (! $latest->has($type)) {
+                return false;
+            }
+
+            if ($latest->get($type)->status !== VerificationDocumentStatus::Approved) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function resumeVerificationReview(BusinessInfo $business): void
+    {
+        if ($business->verification_status === VerificationStatus::None && ! $business->is_flagged) {
+            $business->update(['verification_status' => VerificationStatus::Pending]);
+        }
+    }
+
+    public function resolveConsumableVerificationPayment(BusinessInfo $business): ?Payment
     {
         return Payment::query()
             ->where('business_info_id', $business->id)
@@ -224,6 +428,7 @@ class VerificationService
             ->where('business_info_id', $business->id)
             ->where('purpose', PaymentPurpose::Verification)
             ->where('status', PaymentStatus::Completed)
+            ->orderByRaw('CASE WHEN is_consumed = 0 THEN 0 ELSE 1 END')
             ->latest('paid_at')
             ->first();
 
@@ -240,6 +445,16 @@ class VerificationService
         $usageMessage = match (true) {
             $business->verification_status === VerificationStatus::Approved => sprintf(
                 'You verified your business using the %s plan (₦%s). This package was used for your approved application.',
+                $title,
+                $formattedAmount,
+            ),
+            $this->needsAdminReapproval($business) => 'Your verification was reset after a profile update. Your documents are on file — an admin will re-approve your badge. You do not need to pay again.',
+            ! $payment->is_consumed && $this->isReverificationWaiverPayment($payment) => sprintf(
+                'Admin granted free re-verification (%s). Upload your documents to continue — do not pay again.',
+                $title,
+            ),
+            ! $payment->is_consumed => sprintf(
+                'You paid for the %s plan (₦%s). Upload your documents to start verification with this package.',
                 $title,
                 $formattedAmount,
             ),
@@ -290,9 +505,23 @@ class VerificationService
                 $query->whereIn('verification_status', [
                     VerificationStatus::Pending,
                     VerificationStatus::Approved,
-                ])->orWhere('is_flagged', true);
+                ])
+                    ->orWhere('is_flagged', true)
+                    ->orWhereHas('verificationDocuments')
+                    ->orWhereHas('verificationNotes')
+                    ->orWhereHas('payments', fn ($paymentQuery) => $paymentQuery
+                        ->where('purpose', PaymentPurpose::Verification));
             })
             ->when($verificationStatus === 'flagged', fn ($q) => $q->where('is_flagged', true))
+            ->when($verificationStatus === 'needs_reverification', fn ($q) => $q
+                ->where('verification_status', VerificationStatus::None)
+                ->where('is_flagged', false)
+                ->where(function ($inner): void {
+                    $inner->whereHas('verificationDocuments')
+                        ->orWhereHas('payments', fn ($paymentQuery) => $paymentQuery
+                            ->where('purpose', PaymentPurpose::Verification)
+                            ->where('status', PaymentStatus::Completed));
+                }))
             ->when($verificationStatus === 'pending', fn ($q) => $q
                 ->where('verification_status', VerificationStatus::Pending)
                 ->where('is_flagged', false))
@@ -300,11 +529,22 @@ class VerificationService
                 $inner->where(function ($pending): void {
                     $pending->where('verification_status', VerificationStatus::Pending)
                         ->where('is_flagged', false);
-                })->orWhere('verification_status', VerificationStatus::Approved);
+                })
+                    ->orWhere('verification_status', VerificationStatus::Approved)
+                    ->orWhere(function ($needsReview): void {
+                        $needsReview->where('verification_status', VerificationStatus::None)
+                            ->where('is_flagged', false)
+                            ->where(function ($history): void {
+                                $history->whereHas('verificationDocuments')
+                                    ->orWhereHas('payments', fn ($paymentQuery) => $paymentQuery
+                                        ->where('purpose', PaymentPurpose::Verification)
+                                        ->where('status', PaymentStatus::Completed));
+                            });
+                    });
             }))
             ->when(
                 $verificationStatus !== null
-                    && ! in_array($verificationStatus, ['flagged', 'pending', 'queue', 'all'], true),
+                    && ! in_array($verificationStatus, ['flagged', 'pending', 'queue', 'all', 'needs_reverification'], true),
                 fn ($q) => $q->where('verification_status', $verificationStatus),
             )
             ->when($search !== null && trim($search) !== '', function ($query) use ($search): void {
@@ -357,6 +597,11 @@ class VerificationService
             'rejection_reason' => $action === 'reject' ? trim((string) $reason) : null,
         ]);
 
+        $business = BusinessInfo::query()->find($document->business_info_id);
+        if ($business !== null) {
+            $this->resumeVerificationReview($business);
+        }
+
         return $document->fresh(['uploadedBy:id,name,email']);
     }
 
@@ -373,14 +618,14 @@ class VerificationService
             throw new RuntimeException('Your business is already verified.');
         }
 
-        if ($business->is_flagged || $business->verification_status === VerificationStatus::None) {
+        if ($business->is_flagged) {
+            throw new RuntimeException('Complete a new verification payment before uploading documents.');
+        }
+
+        if (! $this->canVendorUploadDocuments($business)) {
             throw new RuntimeException(
                 'Please complete verification payment before uploading documents.',
             );
-        }
-
-        if ($business->verification_status !== VerificationStatus::Pending) {
-            throw new RuntimeException('You cannot upload documents at this time.');
         }
 
         $parentDocument = null;
@@ -408,7 +653,7 @@ class VerificationService
         $filePath = $this->handleFileUpload($file, $folderPath, $title);
 
         try {
-            return VerificationDocument::query()->create([
+            $document = VerificationDocument::query()->create([
                 'business_info_id' => $business->id,
                 'uploaded_by' => $vendor->id,
                 'parent_document_id' => $parentDocument?->id,
@@ -421,6 +666,10 @@ class VerificationService
                 'file_size' => $file->getSize(),
                 'status' => VerificationDocumentStatus::Pending,
             ]);
+
+            $this->resumeVerificationReview($business->fresh());
+
+            return $document;
         } catch (Throwable $e) {
             $this->fileDelete($filePath);
 
@@ -436,8 +685,119 @@ class VerificationService
             ->count();
     }
 
+    public function countRejectedLatestDocuments(BusinessInfo $business): int
+    {
+        return $this->latestDocumentsByType((int) $business->id)
+            ->filter(fn (VerificationDocument $document): bool => $document->status === VerificationDocumentStatus::Rejected)
+            ->count();
+    }
+
+    /**
+     * @return array{can_approve: bool, reason: ?string}
+     */
+    public function canApproveVerification(BusinessInfo $business): array
+    {
+        try {
+            $this->assertCanApproveVerification($business);
+
+            return ['can_approve' => true, 'reason' => null];
+        } catch (RuntimeException $exception) {
+            return ['can_approve' => false, 'reason' => $exception->getMessage()];
+        }
+    }
+
+    /**
+     * @throws RuntimeException
+     */
+    public function assertCanApproveVerification(BusinessInfo $business): void
+    {
+        $requiredTypes = [
+            'business_registration',
+            'identity_proof',
+            'address_proof',
+        ];
+
+        $latestByType = $this->latestDocumentsByType((int) $business->id);
+
+        if ($latestByType->isEmpty()) {
+            throw new RuntimeException('No verification documents have been uploaded yet.');
+        }
+
+        $missingTypes = array_values(array_filter(
+            $requiredTypes,
+            fn (string $type): bool => ! $latestByType->has($type),
+        ));
+
+        if ($missingTypes !== []) {
+            throw new RuntimeException(
+                'Cannot approve verification until all required documents are uploaded: '
+                .implode(', ', array_map(fn (string $type): string => str_replace('_', ' ', $type), $missingTypes))
+                .'.',
+            );
+        }
+
+        $rejectedLatest = $latestByType->filter(
+            fn (VerificationDocument $document): bool => $document->status === VerificationDocumentStatus::Rejected,
+        );
+
+        if ($rejectedLatest->isNotEmpty()) {
+            $labels = $rejectedLatest
+                ->map(fn (VerificationDocument $document): string => str_replace('_', ' ', (string) $document->document_type))
+                ->values()
+                ->all();
+
+            throw new RuntimeException(
+                'Cannot approve verification while rejected documents remain ('.implode(', ', $labels).'). Ask the vendor to upload replacements first.',
+            );
+        }
+
+        $blockingLatest = $latestByType->filter(
+            fn (VerificationDocument $document): bool => $document->status !== VerificationDocumentStatus::Approved
+                && $document->status !== VerificationDocumentStatus::Pending,
+        );
+
+        if ($blockingLatest->isNotEmpty()) {
+            throw new RuntimeException('Cannot approve verification until every required document is approved or pending review.');
+        }
+
+        if ($business->verification_status === VerificationStatus::Approved) {
+            if ($this->countPendingDocuments($business) === 0) {
+                throw new RuntimeException('All documents are already approved.');
+            }
+
+            return;
+        }
+
+        if ($business->verification_status === VerificationStatus::None) {
+            if (! $this->hasOpenDocumentReview($business)) {
+                throw new RuntimeException('Only pending verification requests can be approved.');
+            }
+
+            return;
+        }
+
+        if ($business->verification_status !== VerificationStatus::Pending) {
+            throw new RuntimeException('Only pending verification requests can be approved.');
+        }
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<string, VerificationDocument>
+     */
+    public function latestDocumentsByType(int $businessInfoId): \Illuminate\Support\Collection
+    {
+        return VerificationDocument::query()
+            ->where('business_info_id', $businessInfoId)
+            ->orderByDesc('id')
+            ->get()
+            ->groupBy('document_type')
+            ->map(fn (\Illuminate\Support\Collection $group): VerificationDocument => $group->first());
+    }
+
     public function approveAllPendingDocuments(BusinessInfo $business, Authenticatable $admin, ?string $note): BusinessInfo
     {
+        $this->assertCanApproveVerification($business);
+
         return DB::transaction(function () use ($business, $admin, $note): BusinessInfo {
             $approvedDocCount = $this->bulkApprovePendingDocuments($business->id);
 
@@ -457,8 +817,12 @@ class VerificationService
 
     public function approveVerification(BusinessInfo $business, Authenticatable $admin, ?string $note): BusinessInfo
     {
+        $this->assertCanApproveVerification($business);
+
         return DB::transaction(function () use ($business, $admin, $note): BusinessInfo {
             $approvedDocCount = $this->bulkApprovePendingDocuments($business->id);
+
+            $this->assertAllLatestDocumentsApproved((int) $business->id);
 
             $business->update([
                 'verification_status' => VerificationStatus::Approved,
@@ -514,6 +878,26 @@ class VerificationService
                 'status' => VerificationDocumentStatus::Approved,
                 'rejection_reason' => null,
             ]);
+    }
+
+    /**
+     * @throws RuntimeException
+     */
+    private function assertAllLatestDocumentsApproved(int $businessInfoId): void
+    {
+        $notApproved = $this->latestDocumentsByType($businessInfoId)
+            ->filter(fn (VerificationDocument $document): bool => $document->status !== VerificationDocumentStatus::Approved);
+
+        if ($notApproved->isNotEmpty()) {
+            $labels = $notApproved
+                ->map(fn (VerificationDocument $document): string => str_replace('_', ' ', (string) $document->document_type))
+                ->values()
+                ->all();
+
+            throw new RuntimeException(
+                'Cannot complete verification approval until all required documents are approved ('.implode(', ', $labels).' still need action).',
+            );
+        }
     }
 
     public function flagVerification(BusinessInfo $business, Authenticatable $admin, string $reason): BusinessInfo
@@ -621,6 +1005,206 @@ class VerificationService
         });
     }
 
+  /**
+     * Admin grants free re-verification after a profile change revoked the badge.
+     * Creates a completed, unconsumed verification payment so the vendor can upload documents again.
+     *
+     * @return array{payment: Payment, business: BusinessInfo}
+     */
+    public function grantReVerificationAccess(
+        BusinessInfo $business,
+        Authenticatable $admin,
+        string $reason,
+    ): array {
+        $reason = trim($reason);
+        if ($reason === '') {
+            throw new RuntimeException('A reason is required for free re-verification.');
+        }
+
+        if (! $this->canApply($business)) {
+            throw new RuntimeException('This business is not eligible for re-verification at this time.');
+        }
+
+        if ($this->resolveConsumableVerificationPayment($business) !== null) {
+            throw new RuntimeException('This business already has an unused verification payment. Use Re-approve now if documents are on file, or wait for the vendor to upload documents.');
+        }
+
+        if ($this->hasApprovedDocumentsOnFile($business) && ! $this->hasRejectedDocuments($business)) {
+            throw new RuntimeException('Documents are already on file and approved. Use Re-approve now to restore the badge — do not grant another payment.');
+        }
+
+        if (! $this->hasPriorVerificationHistory($business)) {
+            throw new RuntimeException('This business has no prior verification history to re-open.');
+        }
+
+        $vendor = $business->user;
+        if ($vendor === null) {
+            throw new RuntimeException('Business has no owner account.');
+        }
+
+        $packageId = $this->resolveLastVerificationPackageId($business) ?? 'individual';
+        $package = $this->paymentService->findPackage(PaymentPurpose::Verification, $packageId);
+        $packageTitle = (string) ($package['title'] ?? $packageId);
+
+        return DB::transaction(function () use ($business, $admin, $reason, $vendor, $packageId, $packageTitle): array {
+            $payment = Payment::query()->create([
+                'user_id' => $vendor->id,
+                'business_info_id' => $business->id,
+                'purpose' => PaymentPurpose::Verification,
+                'package_id' => $packageId,
+                'amount' => 0,
+                'currency' => config('pricing.verification.currency', 'NGN'),
+                'tx_ref' => sprintf('admin_reverify_%s_%s', $vendor->id, strtolower(\Illuminate\Support\Str::random(10))),
+                'gateway' => PaymentGateway::Paystack,
+                'gateway_transaction_id' => 'admin_reverify_' . now()->timestamp,
+                'status' => PaymentStatus::Completed,
+                'paid_at' => now(),
+                'is_consumed' => false,
+                'metadata' => [
+                    'package_title' => $packageTitle,
+                    'line_item' => PaymentPurpose::Verification->value,
+                    'reverification_waiver' => true,
+                    'grant_reason' => $reason,
+                    'granted_by_admin_id' => $admin instanceof User ? $admin->id : null,
+                    'granted_at' => now()->toIso8601String(),
+                ],
+            ]);
+
+            VerificationWorkflow::query()->create([
+                'business_info_id' => $business->id,
+                'triggered_by' => $vendor->id,
+                'workflow_type' => VerificationWorkflowType::ReVerification,
+                'status' => VerificationWorkflowStatus::Pending,
+                'title' => 'Free Re-verification Granted',
+                'description' => $reason,
+            ]);
+
+            VerificationNote::query()->create([
+                'business_info_id' => $business->id,
+                'added_by' => $this->noteAuthorId($admin),
+                'note_type' => VerificationNoteType::AdminDecision,
+                'note' => $reason,
+                'is_visible_to_vendor' => true,
+            ]);
+
+            $freshBusiness = $business->fresh(['user:id,name,email']);
+
+            if ($freshBusiness->user !== null) {
+                $this->realtimeNotifications->verificationReverificationGranted(
+                    vendor: $freshBusiness->user,
+                    businessName: (string) $freshBusiness->business_name,
+                    reason: $reason,
+                );
+            }
+
+            return [
+                'payment' => $payment->fresh(),
+                'business' => $freshBusiness,
+            ];
+        });
+    }
+
+    /**
+     * Restore the verified badge without a new payment when existing documents are still valid.
+     */
+    public function reapproveVerification(
+        BusinessInfo $business,
+        Authenticatable $admin,
+        ?string $note = null,
+    ): BusinessInfo {
+        if ($business->verification_status === VerificationStatus::Approved) {
+            throw new RuntimeException('This business is already verified.');
+        }
+
+        if ($business->is_flagged) {
+            throw new RuntimeException('Flagged businesses must complete a new verification application.');
+        }
+
+        if ($business->verification_status !== VerificationStatus::None) {
+            throw new RuntimeException('Only businesses awaiting re-verification can be re-approved.');
+        }
+
+        if ($business->verificationDocuments()->doesntExist()) {
+            throw new RuntimeException('No verification documents on file. Grant free re-verification instead.');
+        }
+
+        return DB::transaction(function () use ($business, $admin, $note): BusinessInfo {
+            $approvedDocCount = $this->bulkApprovePendingDocuments($business->id);
+
+            $this->assertAllLatestDocumentsApproved((int) $business->id);
+
+            $this->consumeUnusedVerificationPayments($business);
+
+            $business->update([
+                'verification_status' => VerificationStatus::Approved,
+                'is_flagged' => false,
+                'verified_by' => $admin instanceof User ? $admin->id : null,
+                'verified_at' => now(),
+                'verification_note' => $note,
+            ]);
+
+            VerificationNote::query()->create([
+                'business_info_id' => $business->id,
+                'added_by' => $this->noteAuthorId($admin),
+                'note_type' => VerificationNoteType::AdminDecision,
+                'note' => $note ?? (
+                    $approvedDocCount > 0
+                    ? "Verification re-approved after profile update ({$approvedDocCount} document(s) approved)."
+                    : 'Verification re-approved after profile update.'
+                ),
+                'is_visible_to_vendor' => true,
+            ]);
+
+            VerificationWorkflow::query()->create([
+                'business_info_id' => $business->id,
+                'triggered_by' => (int) $business->user_id,
+                'workflow_type' => VerificationWorkflowType::ReVerification,
+                'status' => VerificationWorkflowStatus::Completed,
+                'title' => 'Verification Re-approved',
+                'description' => $note ?? 'Admin re-approved verification without a new payment.',
+                'completed_at' => now(),
+                'completion_notes' => 'Verification re-approved by admin.',
+            ]);
+
+            $fresh = $business->fresh(['user:id,name,email', 'verifiedBy:id,name,email']);
+
+            if ($fresh->user !== null) {
+                $this->realtimeNotifications->verificationApproved(
+                    vendor: $fresh->user,
+                    businessName: (string) $fresh->business_name,
+                    note: $note,
+                );
+            }
+
+            return $fresh;
+        });
+    }
+
+    private function hasPriorVerificationHistory(BusinessInfo $business): bool
+    {
+        if ($business->verificationDocuments()->exists()) {
+            return true;
+        }
+
+        return Payment::query()
+            ->where('business_info_id', $business->id)
+            ->where('purpose', PaymentPurpose::Verification)
+            ->where('status', PaymentStatus::Completed)
+            ->exists();
+    }
+
+    private function resolveLastVerificationPackageId(BusinessInfo $business): ?string
+    {
+        $payment = Payment::query()
+            ->where('business_info_id', $business->id)
+            ->where('purpose', PaymentPurpose::Verification)
+            ->where('status', PaymentStatus::Completed)
+            ->latest('paid_at')
+            ->first();
+
+        return $payment?->package_id;
+    }
+
     public function revokeVerificationForMajorBusinessChange(BusinessInfo $business, string $reason): BusinessInfo
     {
         if ($business->verification_status !== VerificationStatus::Approved) {
@@ -650,14 +1234,48 @@ class VerificationService
     public function displayStatusLabel(BusinessInfo $business): string
     {
         if ($business->verification_status === VerificationStatus::Approved) {
-            return VerificationStatus::Approved->label();
+            return 'Verified';
         }
 
         if ($business->is_flagged) {
             return 'Flagged';
         }
 
-        return $business->verification_status->label();
+        if ($business->verification_status === VerificationStatus::Pending) {
+            return 'Under review';
+        }
+
+        if ($this->needsVendorDocumentAction($business)) {
+            return 'Action required on documents';
+        }
+
+        if ($this->hasOpenDocumentReview($business) && $this->countPendingDocuments($business) > 0) {
+            return 'Under review';
+        }
+
+        if ($this->resolveConsumableVerificationPayment($business) !== null) {
+            return 'Ready to submit documents';
+        }
+
+        if ($this->needsAdminReapproval($business)) {
+            return 'Awaiting admin re-approval';
+        }
+
+        if ($this->hasPriorVerificationHistory($business)) {
+            return 'Re-verification required';
+        }
+
+        return 'Not started';
+    }
+
+    private function consumeUnusedVerificationPayments(BusinessInfo $business): void
+    {
+        Payment::query()
+            ->where('business_info_id', $business->id)
+            ->where('purpose', PaymentPurpose::Verification)
+            ->where('status', PaymentStatus::Completed)
+            ->where('is_consumed', false)
+            ->update(['is_consumed' => true]);
     }
 
     public function addNote(

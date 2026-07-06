@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\V1\Public\ReviewController;
 use App\Http\Controllers\Api\V1\BusinessReportController;
 use App\Http\Controllers\Api\V1\ReviewReportController;
 use App\Http\Controllers\Api\V1\RealtimeController;
+use App\Http\Controllers\Api\V1\Webhooks\PaystackWebhookController;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Session\Middleware\StartSession;
@@ -19,6 +20,10 @@ use Illuminate\Support\Facades\Route;
 | Public API Routes (no authentication required)
 |--------------------------------------------------------------------------
 */
+
+Route::post('/webhooks/paystack', [PaystackWebhookController::class, 'handle'])
+    ->middleware('throttle:120,1')
+    ->name('webhooks.paystack');
 
 Route::post('/contact-messages', [ContactMessageController::class, 'store'])
     ->middleware('throttle:10,1')

@@ -83,6 +83,15 @@ final class RealtimeNotificationService
         ));
     }
 
+    public function verificationReverificationGranted(User $vendor, string $businessName, string $reason): void
+    {
+        $this->notifyUser($vendor, RealtimeNotification::verificationReverificationGranted(
+            recipientUserId: (int) $vendor->id,
+            businessName: $businessName,
+            reason: $reason,
+        ));
+    }
+
     public function verificationSubmittedToAdmins(
         int $businessInfoId,
         string $businessName,
@@ -120,6 +129,32 @@ final class RealtimeNotificationService
             purposeLabel: $purposeLabel,
             amount: $amount,
             currency: $currency,
+        ));
+    }
+
+    public function referralRewardsPaid(User $referrer, User $invitee, float $amount, ?string $currency = null): void
+    {
+        $currency = $currency ?? (string) config('subscription.currency', 'NGN');
+        $formattedAmount = strtoupper($currency) === 'NGN'
+            ? '₦'.number_format($amount, 0)
+            : $currency.' '.number_format($amount, 2);
+
+        $this->notifyUser($referrer, RealtimeNotification::referralRewardPaid(
+            recipientUserId: (int) $referrer->id,
+            role: 'referrer',
+            amount: $amount,
+            currency: $currency,
+            counterpartyName: trim((string) $invitee->name) !== '' ? (string) $invitee->name : 'your invitee',
+            formattedAmount: $formattedAmount,
+        ));
+
+        $this->notifyUser($invitee, RealtimeNotification::referralRewardPaid(
+            recipientUserId: (int) $invitee->id,
+            role: 'invitee',
+            amount: $amount,
+            currency: $currency,
+            counterpartyName: trim((string) $referrer->name) !== '' ? (string) $referrer->name : 'your referrer',
+            formattedAmount: $formattedAmount,
         ));
     }
 

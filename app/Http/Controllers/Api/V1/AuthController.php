@@ -97,9 +97,10 @@ class AuthController extends Controller
     public function register(RegisterRequest $request)
     {
         try {
+            $referralCode = $request->input('ref');
             ['user' => $user, 'otp' => $otp, 'verification_channel' => $channel] = $this->authService->register($request->validated());
 
-            $this->referralService->attachReferralOnRegister($user, $request->input('ref'));
+            $this->referralService->attachReferralOnRegister($user, $referralCode);
 
             return sendResponse(true, 'Registration successful. Verify OTP to activate your account.', [
                 'verification_status' => 'unverified',

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\BusinessInfoController;
 use App\Http\Controllers\Api\V1\BusinessReportController;
 use App\Http\Controllers\Api\V1\ReviewReportController;
 use App\Http\Controllers\Api\V1\UserBusinessController;
@@ -12,7 +13,6 @@ use App\Http\Controllers\Api\V1\UserSettingsController;
 use App\Http\Controllers\Api\V1\UserWalletController;
 use App\Http\Controllers\Api\V1\Vendor\VendorOnboardingController;
 use App\Http\Controllers\Api\V1\Vendor\VendorSubscriptionController;
-use App\Http\Controllers\Api\V1\BusinessInfoController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -36,7 +36,7 @@ Route::prefix('user')->name('user.')->group(function () {
     });
 
     Route::middleware('verified')->group(function (): void {
-        Route::get('/dashboard', fn() => response()->json(['message' => 'User dashboard.']))->name('dashboard');
+        Route::get('/dashboard', fn () => response()->json(['message' => 'User dashboard.']))->name('dashboard');
 
         Route::get('/profile', [UserSettingsController::class, 'profileShow'])->name('profile.show');
         Route::patch('/profile', [UserSettingsController::class, 'profileUpdate'])->name('profile.update');
@@ -67,10 +67,8 @@ Route::prefix('user')->name('user.')->group(function () {
         Route::delete('/businesses/{businessInfo}', [UserBusinessController::class, 'destroy'])->name('businesses.destroy');
 
         Route::get('/wallet', [UserWalletController::class, 'show'])->name('wallet.show');
-        Route::middleware('purchase.email_verified')->group(function (): void {
-            Route::post('/wallet/top-up', [UserWalletController::class, 'initTopUp'])->name('wallet.top-up');
-            Route::post('/wallet/top-up/confirm', [UserWalletController::class, 'confirmTopUp'])->name('wallet.top-up.confirm');
-        });
+        Route::post('/wallet/top-up', [UserWalletController::class, 'initTopUp'])->name('wallet.top-up');
+        Route::post('/wallet/top-up/confirm', [UserWalletController::class, 'confirmTopUp'])->name('wallet.top-up.confirm');
 
         Route::get('/referrals', [UserReferralController::class, 'show'])->name('referrals.show');
 
@@ -104,6 +102,7 @@ Route::prefix('vendor')->name('vendor.')->group(function () {
                 Route::post('/payment/init', [VendorSubscriptionController::class, 'initPayment'])->name('payment.init');
                 Route::post('/payment/resume', [VendorSubscriptionController::class, 'resumePayment'])->name('payment.resume');
                 Route::post('/payment/confirm', [VendorSubscriptionController::class, 'confirmPayment'])->name('payment.confirm');
+                Route::post('/payment/reconcile', [VendorSubscriptionController::class, 'reconcilePayment'])->name('payment.reconcile');
             });
         });
     });
