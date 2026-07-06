@@ -1044,10 +1044,7 @@ class BusinessInfoService
         }
 
         if ($subscriptionPlan === SubscriptionPlan::Premium->value) {
-            $query->whereHas('subscription', function (Builder $inner): void {
-                $inner->where('plan', SubscriptionPlan::Premium->value)
-                    ->where('status', SubscriptionStatus::Active->value);
-            });
+            $query->whereHas('subscription', fn (Builder $inner) => $this->scopeActivePremiumSubscription($inner));
 
             return;
         }
@@ -1055,15 +1052,39 @@ class BusinessInfoService
         if ($subscriptionPlan === SubscriptionPlan::Free->value) {
             $query->where(function (Builder $outer): void {
                 $outer->whereDoesntHave('subscription')
-                    ->orWhereHas('subscription', function (Builder $inner): void {
-                        $inner->where('plan', SubscriptionPlan::Free->value)
-                            ->orWhere(function (Builder $sub): void {
-                                $sub->where('plan', SubscriptionPlan::Premium->value)
-                                    ->where('status', SubscriptionStatus::PendingPayment->value);
-                            });
-                    });
+                    ->orWhereHas('subscription', fn (Builder $inner) => $this->scopeEffectivelyFreeSubscription($inner));
             });
         }
+    }
+
+    /**
+     * A subscription is genuinely premium only while `active` and not past its `expires_at`.
+     * Rows past expiry are only flipped to `expired` lazily (see {@see syncExpiredSubscription()}),
+     * so a raw `status = active` check can report stale premium businesses as premium here.
+     */
+    private function scopeActivePremiumSubscription(Builder $query): Builder
+    {
+        return $query->where('plan', SubscriptionPlan::Premium->value)
+            ->where('status', SubscriptionStatus::Active->value)
+            ->where(function (Builder $notExpired): void {
+                $notExpired->whereNull('expires_at')
+                    ->orWhere('expires_at', '>', now());
+            });
+    }
+
+    private function scopeEffectivelyFreeSubscription(Builder $query): Builder
+    {
+        return $query->where('plan', SubscriptionPlan::Free->value)
+            ->orWhere(function (Builder $pendingPremium): void {
+                $pendingPremium->where('plan', SubscriptionPlan::Premium->value)
+                    ->where('status', SubscriptionStatus::PendingPayment->value);
+            })
+            ->orWhere(function (Builder $expiredPremium): void {
+                $expiredPremium->where('plan', SubscriptionPlan::Premium->value)
+                    ->where('status', SubscriptionStatus::Active->value)
+                    ->whereNotNull('expires_at')
+                    ->where('expires_at', '<=', now());
+            });
     }
 
     /**
@@ -1142,18 +1163,12 @@ class BusinessInfoService
             'total' => (clone $base)->count(),
             'pending_verification' => (clone $base)->where('verification_status', VerificationStatus::Pending)->count(),
             'approved_verification' => (clone $base)->where('verification_status', VerificationStatus::Approved)->count(),
-            'free_plan' => (clone $base)->whereHas('subscription', function (Builder $query): void {
-                $query->where('plan', SubscriptionPlan::Free->value)
-                    ->orWhere(function (Builder $inner): void {
-                        $inner->where('plan', SubscriptionPlan::Premium->value)
-                            ->where('status', SubscriptionStatus::PendingPayment->value);
-                    });
+            'free_plan' => (clone $base)->where(function (Builder $outer): void {
+                $outer->whereDoesntHave('subscription')
+                    ->orWhereHas('subscription', fn (Builder $inner) => $this->scopeEffectivelyFreeSubscription($inner));
             })->count(),
             'premium_plan' => (clone $base)
-                ->whereHas('subscription', function (Builder $query): void {
-                    $query->where('plan', SubscriptionPlan::Premium->value)
-                        ->where('status', SubscriptionStatus::Active->value);
-                })
+                ->whereHas('subscription', fn (Builder $inner) => $this->scopeActivePremiumSubscription($inner))
                 ->count(),
         ];
     }

@@ -9,6 +9,7 @@ use App\Services\ReviewService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use OpenApi\Attributes as OA;
 
 class ReviewController extends Controller
 {
@@ -16,9 +17,40 @@ class ReviewController extends Controller
         private ReviewService $reviewService
     ) {}
 
-    /**
-     * Display approved reviews, optionally scoped to a business.
-     */
+    #[OA\Post(
+        path: '/v1/reviews',
+        summary: 'List approved reviews, optionally scoped to a business',
+        description: 'Public, unauthenticated. Uses POST (not GET) so filters can be sent as a JSON body.',
+        tags: ['Public'],
+        requestBody: new OA\RequestBody(
+            content: new OA\JsonContent(properties: [
+                new OA\Property(property: 'id', type: 'integer', nullable: true, description: 'Alias for business_id.'),
+                new OA\Property(property: 'business_id', type: 'integer', nullable: true),
+                new OA\Property(property: 'page', type: 'integer', minimum: 1, nullable: true),
+                new OA\Property(property: 'per_page', type: 'integer', minimum: 1, maximum: 100, nullable: true),
+                new OA\Property(property: 'rating', type: 'integer', minimum: 1, maximum: 5, nullable: true),
+                new OA\Property(property: 'sort', type: 'string', enum: ['recent', 'top'], nullable: true),
+            ]),
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Reviews retrieved successfully',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'data', type: 'array', items: new OA\Items(type: 'object')),
+                    new OA\Property(property: 'pagination', properties: [
+                        new OA\Property(property: 'current_page', type: 'integer'),
+                        new OA\Property(property: 'last_page', type: 'integer'),
+                        new OA\Property(property: 'per_page', type: 'integer'),
+                        new OA\Property(property: 'total', type: 'integer'),
+                    ], type: 'object'),
+                    new OA\Property(property: 'summary', type: 'object', nullable: true, description: 'Present only when business_id/id is provided.'),
+                ]),
+            ),
+            new OA\Response(response: 422, description: 'Validation error', content: new OA\JsonContent(ref: '#/components/schemas/ValidationError')),
+        ],
+    )]
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -58,9 +90,48 @@ class ReviewController extends Controller
         return response()->json($payload);
     }
 
-    /**
-     * Submit a new review for a business.
-     */
+    #[OA\Post(
+        path: '/v1/reviews/store',
+        summary: 'Submit a new review for a business',
+        tags: ['Public'],
+        security: [['passport' => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\MediaType(
+                mediaType: 'multipart/form-data',
+                schema: new OA\Schema(
+                    required: ['business_id', 'rating', 'review_text'],
+                    properties: [
+                        new OA\Property(property: 'business_id', type: 'integer'),
+                        new OA\Property(property: 'full_name', type: 'string', maxLength: 255, nullable: true),
+                        new OA\Property(property: 'rating', type: 'integer', minimum: 1, maximum: 5),
+                        new OA\Property(property: 'review_text', type: 'string', minLength: 10, maxLength: 2000),
+                        new OA\Property(
+                            property: 'images',
+                            type: 'array',
+                            nullable: true,
+                            maxItems: 10,
+                            items: new OA\Items(type: 'string', format: 'binary'),
+                            description: 'Up to 10 images (jpeg/jpg/png/webp, max 5MB each).',
+                        ),
+                    ],
+                ),
+            ),
+        ),
+        responses: [
+            new OA\Response(
+                response: 201,
+                description: 'Review submitted successfully',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'data', type: 'object'),
+                    new OA\Property(property: 'message', type: 'string'),
+                ]),
+            ),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 422, description: 'Validation error', content: new OA\JsonContent(ref: '#/components/schemas/ValidationError')),
+        ],
+    )]
     public function store(StoreReviewRequest $request): JsonResponse
     {
         $validated = $request->validated();

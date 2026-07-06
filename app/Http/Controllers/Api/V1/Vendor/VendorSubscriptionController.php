@@ -14,6 +14,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use OpenApi\Attributes as OA;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
@@ -27,6 +28,27 @@ class VendorSubscriptionController extends Controller
         private readonly PaymentReconciliationService $paymentReconciliation,
     ) {}
 
+    #[OA\Get(
+        path: '/v1/vendor/subscription/packages',
+        summary: 'List premium subscription packages',
+        tags: ['Billing'],
+        security: [['passport' => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Packages retrieved successfully',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'currency', type: 'string', example: 'NGN'),
+                        new OA\Property(property: 'packages', type: 'array', items: new OA\Items(type: 'object')),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function packages()
     {
         return sendResponse(true, 'Subscription packages retrieved successfully.', [
@@ -35,6 +57,29 @@ class VendorSubscriptionController extends Controller
         ]);
     }
 
+    #[OA\Get(
+        path: '/v1/vendor/subscription/status',
+        summary: 'Get the vendor\'s business subscription status',
+        tags: ['Billing'],
+        security: [['passport' => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Subscription status retrieved successfully',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'subscription', ref: '#/components/schemas/Subscription'),
+                        new OA\Property(property: 'business', type: 'object'),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 422, description: 'Validation error (e.g. no business selected)', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function status(Request $request)
     {
         try {
@@ -58,6 +103,49 @@ class VendorSubscriptionController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: '/v1/vendor/subscription/payment/init',
+        summary: 'Initialize a premium subscription payment (optionally bundled with a boost)',
+        description: 'Starts a gateway checkout for the premium plan, or pays instantly from the vendor\'s wallet '
+            .'when use_wallet is true. The client confirms the gateway transaction via POST /v1/vendor/subscription/payment/confirm.',
+        tags: ['Billing'],
+        security: [['passport' => []]],
+        requestBody: new OA\RequestBody(
+            content: new OA\JsonContent(properties: [
+                new OA\Property(property: 'gateway', type: 'string', enum: ['flutterwave', 'paystack'], nullable: true),
+                new OA\Property(property: 'business_id', type: 'integer', nullable: true),
+                new OA\Property(property: 'boost_tier_key', type: 'string', maxLength: 30, nullable: true, description: 'Provide together with boost_duration_days, or omit both.'),
+                new OA\Property(property: 'boost_duration_days', type: 'integer', minimum: 1, maximum: 30, nullable: true),
+                new OA\Property(property: 'boost_budget_amount', type: 'number', format: 'float', minimum: 500, maximum: 5000, nullable: true),
+                new OA\Property(property: 'use_wallet', type: 'boolean', nullable: true, description: 'Pay from wallet balance instead of a gateway.'),
+            ]),
+        ),
+        responses: [
+            new OA\Response(
+                response: 201,
+                description: 'Payment initialized (or paid instantly from wallet)',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'payment', ref: '#/components/schemas/Payment', nullable: true),
+                        new OA\Property(property: 'payments', properties: [
+                            new OA\Property(property: 'subscription', ref: '#/components/schemas/Payment'),
+                            new OA\Property(property: 'boost', ref: '#/components/schemas/Payment', nullable: true),
+                        ], type: 'object', nullable: true),
+                        new OA\Property(property: 'total_amount', type: 'number', format: 'float', nullable: true),
+                        new OA\Property(property: 'currency', type: 'string', nullable: true),
+                        new OA\Property(property: 'business', type: 'object', nullable: true),
+                        new OA\Property(property: 'wallet_balance', type: 'number', format: 'float', nullable: true),
+                        new OA\Property(property: 'paid_from_wallet', type: 'boolean', nullable: true),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 422, description: 'Invalid boost combination, business error, or validation error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function initPayment(Request $request)
     {
         try {
@@ -141,6 +229,35 @@ class VendorSubscriptionController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: '/v1/vendor/subscription/payment/resume',
+        summary: 'Resume a pending premium subscription payment',
+        tags: ['Billing'],
+        security: [['passport' => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Pending payment resumed successfully',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'payment', ref: '#/components/schemas/Payment'),
+                        new OA\Property(property: 'payments', properties: [
+                            new OA\Property(property: 'subscription', ref: '#/components/schemas/Payment'),
+                            new OA\Property(property: 'boost', ref: '#/components/schemas/Payment', nullable: true),
+                        ], type: 'object'),
+                        new OA\Property(property: 'total_amount', type: 'number', format: 'float'),
+                        new OA\Property(property: 'currency', type: 'string'),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 404, description: 'No pending premium payment found', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 422, description: 'Business/validation error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function resumePayment(Request $request)
     {
         try {
@@ -184,6 +301,43 @@ class VendorSubscriptionController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: '/v1/vendor/subscription/payment/confirm',
+        summary: 'Confirm a premium subscription payment and activate the plan',
+        description: 'Confirms the gateway transaction for a payment created via payment/init (or resumed via '
+            .'payment/resume) and activates the premium subscription on success.',
+        tags: ['Billing'],
+        security: [['passport' => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['payment_id', 'gateway_transaction_id', 'gateway'],
+                properties: [
+                    new OA\Property(property: 'payment_id', type: 'integer', description: 'Must be an unconsumed subscription payment owned by the vendor.'),
+                    new OA\Property(property: 'gateway_transaction_id', type: 'string', maxLength: 255),
+                    new OA\Property(property: 'gateway', type: 'string', enum: ['flutterwave', 'paystack']),
+                ],
+            ),
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Premium subscription activated successfully (or was already active)',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'payment', ref: '#/components/schemas/Payment'),
+                        new OA\Property(property: 'subscription', ref: '#/components/schemas/Subscription'),
+                        new OA\Property(property: 'business', type: 'object'),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 422, description: 'Payment not found/owned, or business/validation error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function confirmPayment(Request $request)
     {
         try {

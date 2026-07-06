@@ -26,9 +26,8 @@ use App\Services\ReferralService;
 use App\Services\TwoFactorAuthenticationService;
 use App\Support\LoginRoleCompatibility;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
+use OpenApi\Attributes as OA;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
@@ -39,7 +38,62 @@ class AuthController extends Controller
         private readonly TwoFactorAuthenticationService $twoFactor,
         private readonly ReferralService $referralService,
     ) {}
-    
+
+    #[OA\Post(
+        path: '/v1/auth/register',
+        summary: 'Register a new user or vendor account',
+        description: 'Creates an unverified account and sends an OTP to the chosen verification channel (email or phone). '
+            .'The account must be verified via POST /v1/auth/otp/verify before it can log in.',
+        tags: ['Auth'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['first_name', 'last_name', 'verification_channel', 'role', 'password', 'password_confirmation'],
+                properties: [
+                    new OA\Property(property: 'first_name', type: 'string', maxLength: 120, example: 'Ada'),
+                    new OA\Property(property: 'last_name', type: 'string', maxLength: 120, example: 'Obi'),
+                    new OA\Property(property: 'verification_channel', type: 'string', enum: ['email', 'phone']),
+                    new OA\Property(property: 'email', type: 'string', format: 'email', nullable: true, description: 'Required if verification_channel is email; must be omitted/null if verification_channel is phone.'),
+                    new OA\Property(property: 'phone', type: 'string', nullable: true, description: 'Nigerian phone number; required if verification_channel is phone; must be omitted/null if verification_channel is email.'),
+                    new OA\Property(property: 'role', type: 'string', enum: ['user', 'vendor']),
+                    new OA\Property(property: 'password', type: 'string', format: 'password', minLength: 8),
+                    new OA\Property(property: 'password_confirmation', type: 'string', format: 'password'),
+                    new OA\Property(property: 'wants_marketing_emails', type: 'boolean', nullable: true),
+                    new OA\Property(property: 'ref', type: 'string', maxLength: 32, nullable: true, description: 'Referral code.'),
+                ],
+                example: [
+                    'first_name' => 'Ada',
+                    'last_name' => 'Obi',
+                    'verification_channel' => 'email',
+                    'email' => 'ada@example.com',
+                    'phone' => null,
+                    'role' => 'user',
+                    'password' => 'Passw0rd123',
+                    'password_confirmation' => 'Passw0rd123',
+                    'wants_marketing_emails' => true,
+                    'ref' => null,
+                ],
+            ),
+        ),
+        responses: [
+            new OA\Response(
+                response: 201,
+                description: 'Registration successful, OTP sent',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'verification_status', type: 'string', example: 'unverified'),
+                        new OA\Property(property: 'verification_channel', type: 'string', enum: ['email', 'phone']),
+                        new OA\Property(property: 'otp', type: 'string', description: 'Present in non-production environments only.'),
+                        new OA\Property(property: 'user', ref: '#/components/schemas/User'),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 422, description: 'Validation error', content: new OA\JsonContent(ref: '#/components/schemas/ValidationError')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function register(RegisterRequest $request)
     {
         try {
@@ -61,6 +115,30 @@ class AuthController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: '/v1/auth/forgot-password/verify-token',
+        summary: 'Check whether a password reset token is still valid',
+        description: 'Optional pre-check before showing the OTP + new-password form.',
+        tags: ['Auth'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['token'],
+                properties: [
+                    new OA\Property(property: 'email', type: 'string', format: 'email', nullable: true),
+                    new OA\Property(property: 'phone', type: 'string', nullable: true),
+                    new OA\Property(property: 'code', type: 'string', nullable: true),
+                    new OA\Property(property: 'token', type: 'string', minLength: 64, maxLength: 64),
+                    new OA\Property(property: 'role', type: 'string', enum: ['user', 'vendor', 'admin'], nullable: true),
+                ],
+            ),
+        ),
+        responses: [
+            new OA\Response(response: 200, description: 'Token is valid', content: new OA\JsonContent(ref: '#/components/schemas/ApiResponse')),
+            new OA\Response(response: 422, description: 'Invalid or expired token', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function verifyForgotPasswordToken(VerifyForgotPasswordTokenRequest $request)
     {
         try {
@@ -84,6 +162,43 @@ class AuthController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: '/v1/auth/otp/verify',
+        summary: 'Verify a registration OTP and log in',
+        description: 'Confirms the OTP sent during registration, activates the account, and (for a fresh '
+            .'registration) returns an access token so the client is logged in immediately.',
+        tags: ['Auth'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['code'],
+                properties: [
+                    new OA\Property(property: 'code', type: 'string', pattern: '^[0-9]{6}$', example: '482913'),
+                    new OA\Property(property: 'email', type: 'string', format: 'email', nullable: true),
+                    new OA\Property(property: 'phone', type: 'string', nullable: true),
+                    new OA\Property(property: 'device_id', type: 'string', format: 'uuid', nullable: true),
+                    new OA\Property(property: 'device_name', type: 'string', nullable: true),
+                ],
+            ),
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'OTP verified, account activated',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'verification_status', type: 'string', example: 'verified'),
+                        new OA\Property(property: 'token', ref: '#/components/schemas/AccessToken', nullable: true),
+                        new OA\Property(property: 'user', ref: '#/components/schemas/User'),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 422, description: 'Invalid or expired OTP / validation error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function verifyOtp(VerifyOtpRequest $request)
     {
         try {
@@ -124,6 +239,38 @@ class AuthController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: '/v1/auth/phone/request-otp',
+        summary: 'Request an OTP to log in by phone number',
+        tags: ['Auth'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['phone'],
+                properties: [
+                    new OA\Property(property: 'phone', type: 'string', minLength: 10, maxLength: 20, example: '08012345678'),
+                    new OA\Property(property: 'role', type: 'string', enum: ['user', 'vendor'], nullable: true),
+                ],
+            ),
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'OTP sent (or generated even if SMS delivery failed)',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'masked_phone', type: 'string', example: '080****5678'),
+                        new OA\Property(property: 'sms_delivered', type: 'boolean'),
+                        new OA\Property(property: 'otp', type: 'string', description: 'Present in non-production environments only.'),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 422, description: 'Validation error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function requestPhoneLoginOtp(PhoneLoginRequestOtpRequest $request)
     {
         try {
@@ -157,6 +304,42 @@ class AuthController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: '/v1/auth/phone/verify-otp',
+        summary: 'Verify a phone login OTP and log in',
+        description: 'Returns an access token directly, or a two-factor challenge if 2FA is enabled on the account.',
+        tags: ['Auth'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['phone', 'code'],
+                properties: [
+                    new OA\Property(property: 'phone', type: 'string', minLength: 10, maxLength: 20),
+                    new OA\Property(property: 'code', type: 'string', pattern: '^[0-9]{6}$'),
+                    new OA\Property(property: 'role', type: 'string', enum: ['user', 'vendor'], nullable: true),
+                ],
+            ),
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Login successful, or two-factor challenge issued',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'token', ref: '#/components/schemas/AccessToken', nullable: true),
+                        new OA\Property(property: 'verification_status', type: 'string', example: 'verified'),
+                        new OA\Property(property: 'user', ref: '#/components/schemas/User', nullable: true),
+                        new OA\Property(property: 'two_factor_required', type: 'boolean', nullable: true),
+                        new OA\Property(property: 'two_factor_token', type: 'string', nullable: true),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 422, description: 'Invalid OTP / validation error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function verifyPhoneLoginOtp(PhoneVerifyOtpRequest $request)
     {
         try {
@@ -197,6 +380,26 @@ class AuthController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: '/v1/auth/phone/resend-otp',
+        summary: 'Resend the phone login OTP',
+        tags: ['Auth'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['phone'],
+                properties: [
+                    new OA\Property(property: 'phone', type: 'string', minLength: 10, maxLength: 20),
+                    new OA\Property(property: 'role', type: 'string', enum: ['user', 'vendor'], nullable: true),
+                ],
+            ),
+        ),
+        responses: [
+            new OA\Response(response: 200, description: 'OTP resent', content: new OA\JsonContent(ref: '#/components/schemas/ApiResponse')),
+            new OA\Response(response: 422, description: 'Validation error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function resendPhoneLoginOtp(PhoneLoginRequestOtpRequest $request)
     {
         try {
@@ -223,6 +426,60 @@ class AuthController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: '/v1/auth/login',
+        summary: 'Log in with email/phone and password',
+        description: 'Issues a Passport personal access token on success. Depending on account state, the '
+            .'response may instead ask for account verification, new-device verification, or two-factor '
+            .'authentication before a token is issued.',
+        tags: ['Auth'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['password'],
+                properties: [
+                    new OA\Property(property: 'email', type: 'string', format: 'email', nullable: true, description: 'Required if phone is omitted.'),
+                    new OA\Property(property: 'phone', type: 'string', nullable: true, description: 'Nigerian phone number; required if email is omitted.', example: '08012345678'),
+                    new OA\Property(property: 'password', type: 'string', format: 'password', minLength: 8),
+                    new OA\Property(property: 'role', type: 'string', enum: ['user', 'vendor'], nullable: true),
+                    new OA\Property(property: 'device_id', type: 'string', format: 'uuid', nullable: true, description: 'Identifies this device for the trusted-device / new-device-verification flow.'),
+                    new OA\Property(property: 'device_name', type: 'string', nullable: true, example: 'iPhone 15 Pro'),
+                ],
+            ),
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Login successful, or a verification/2FA/device challenge was issued instead of a token',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string', example: 'Login successful.'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'token', ref: '#/components/schemas/AccessToken', nullable: true, description: 'Present only when no further verification is required.'),
+                        new OA\Property(property: 'verification_status', type: 'string', enum: ['verified', 'unverified', 'device_verification_required', 'two_factor_required']),
+                        new OA\Property(property: 'user', ref: '#/components/schemas/User', nullable: true),
+                        new OA\Property(property: 'device_verification_required', type: 'boolean', nullable: true),
+                        new OA\Property(property: 'device_verification_token', type: 'string', nullable: true),
+                        new OA\Property(property: 'two_factor_required', type: 'boolean', nullable: true),
+                        new OA\Property(property: 'two_factor_token', type: 'string', nullable: true),
+                        new OA\Property(property: 'verification_channel', type: 'string', enum: ['email', 'phone'], nullable: true),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(
+                response: 401,
+                description: 'Invalid credentials',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse'),
+            ),
+            new OA\Response(
+                response: 403,
+                description: 'Account unverified, role mismatch, or admin attempting user login',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse'),
+            ),
+            new OA\Response(response: 422, description: 'Validation error', content: new OA\JsonContent(ref: '#/components/schemas/ValidationError')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function login(LoginRequest $request)
     {
         try {
@@ -313,6 +570,43 @@ class AuthController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: '/v1/auth/two-factor/verify',
+        summary: 'Complete a two-factor login challenge',
+        description: 'Consumes the two_factor_token issued by /v1/auth/login (or the phone/device login flows) and returns an access token.',
+        tags: ['Auth'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['two_factor_token', 'code'],
+                properties: [
+                    new OA\Property(property: 'two_factor_token', type: 'string', minLength: 32, maxLength: 128),
+                    new OA\Property(property: 'code', type: 'string', maxLength: 32),
+                    new OA\Property(property: 'role', type: 'string', enum: ['user', 'vendor'], nullable: true),
+                    new OA\Property(property: 'device_id', type: 'string', format: 'uuid', nullable: true),
+                    new OA\Property(property: 'device_name', type: 'string', nullable: true),
+                ],
+            ),
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Login successful',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'token', ref: '#/components/schemas/AccessToken'),
+                        new OA\Property(property: 'verification_status', type: 'string', example: 'verified'),
+                        new OA\Property(property: 'user', ref: '#/components/schemas/User'),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 403, description: 'Role mismatch or admin using the wrong endpoint', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 422, description: 'Invalid/expired code or validation error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function verifyTwoFactorLogin(VerifyTwoFactorLoginRequest $request)
     {
         try {
@@ -362,6 +656,42 @@ class AuthController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: '/v1/auth/device/verify-otp',
+        summary: 'Verify a new-device login challenge',
+        description: 'Consumes the device_verification_token issued by /v1/auth/login when logging in from an untrusted device.',
+        tags: ['Auth'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['device_verification_token', 'code'],
+                properties: [
+                    new OA\Property(property: 'device_verification_token', type: 'string', minLength: 32, maxLength: 128),
+                    new OA\Property(property: 'code', type: 'string', pattern: '^[0-9]{6}$'),
+                    new OA\Property(property: 'role', type: 'string', enum: ['user', 'vendor'], nullable: true),
+                ],
+            ),
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Login successful, or a two-factor challenge was issued',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'token', ref: '#/components/schemas/AccessToken', nullable: true),
+                        new OA\Property(property: 'verification_status', type: 'string'),
+                        new OA\Property(property: 'two_factor_required', type: 'boolean', nullable: true),
+                        new OA\Property(property: 'two_factor_token', type: 'string', nullable: true),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 403, description: 'Role mismatch or admin using the wrong endpoint', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 422, description: 'Invalid/expired code or validation error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function verifyNewDeviceLogin(VerifyNewDeviceOtpRequest $request)
     {
         try {
@@ -411,6 +741,38 @@ class AuthController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: '/v1/auth/two-factor/resend-otp',
+        summary: 'Resend a two-factor login OTP',
+        tags: ['Auth'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['two_factor_token'],
+                properties: [
+                    new OA\Property(property: 'two_factor_token', type: 'string', minLength: 32, maxLength: 128),
+                ],
+            ),
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'A new verification code was sent',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'verification_channel', type: 'string', enum: ['email', 'phone']),
+                        new OA\Property(property: 'masked_email', type: 'string', nullable: true),
+                        new OA\Property(property: 'masked_phone', type: 'string', nullable: true),
+                        new OA\Property(property: 'otp', type: 'string', nullable: true, description: 'Present in non-production environments only.'),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 422, description: 'Invalid/expired token or validation error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function resendTwoFactorLoginOtp(Request $request)
     {
         try {
@@ -440,6 +802,35 @@ class AuthController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: '/v1/auth/device/resend-otp',
+        summary: 'Resend a new-device login OTP',
+        tags: ['Auth'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['device_verification_token'],
+                properties: [
+                    new OA\Property(property: 'device_verification_token', type: 'string', minLength: 32, maxLength: 128),
+                ],
+            ),
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'A new verification code was sent',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'otp', type: 'string', description: 'Present in non-production environments only.'),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 422, description: 'Invalid/expired token or validation error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function resendNewDeviceLoginOtp(ResendNewDeviceOtpRequest $request)
     {
         try {
@@ -463,6 +854,38 @@ class AuthController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: '/v1/auth/admin/two-factor/verify',
+        summary: 'Complete an admin two-factor login challenge',
+        tags: ['Auth'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['two_factor_token', 'code'],
+                properties: [
+                    new OA\Property(property: 'two_factor_token', type: 'string', minLength: 32, maxLength: 128),
+                    new OA\Property(property: 'code', type: 'string', maxLength: 32),
+                ],
+            ),
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Admin login successful',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'token', ref: '#/components/schemas/AccessToken'),
+                        new OA\Property(property: 'verification_status', type: 'string', example: 'verified'),
+                        new OA\Property(property: 'admin', ref: '#/components/schemas/Admin'),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 422, description: 'Invalid/expired code or validation error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function verifyAdminTwoFactorLogin(VerifyTwoFactorLoginRequest $request)
     {
         try {
@@ -494,6 +917,43 @@ class AuthController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: '/v1/auth/admin/login',
+        summary: 'Log in as an admin',
+        description: 'Alternate admin login path within the Auth controller. See also POST /v1/admin/login on the Admin controller.',
+        tags: ['Auth'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['email', 'password'],
+                properties: [
+                    new OA\Property(property: 'email', type: 'string', format: 'email'),
+                    new OA\Property(property: 'password', type: 'string', format: 'password', minLength: 8),
+                ],
+            ),
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Admin login successful, or a two-factor challenge was issued',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'token', ref: '#/components/schemas/AccessToken', nullable: true),
+                        new OA\Property(property: 'verification_status', type: 'string'),
+                        new OA\Property(property: 'admin', ref: '#/components/schemas/Admin', nullable: true),
+                        new OA\Property(property: 'two_factor_required', type: 'boolean', nullable: true),
+                        new OA\Property(property: 'two_factor_token', type: 'string', nullable: true),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 401, description: 'Invalid credentials', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 403, description: 'Admin account not yet email-verified', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 422, description: 'Validation error', content: new OA\JsonContent(ref: '#/components/schemas/ValidationError')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function adminLogin(LoginRequest $request)
     {
         try {
@@ -529,6 +989,40 @@ class AuthController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: '/v1/auth/forgot-password',
+        summary: 'Start a password reset',
+        description: 'Sends an OTP and a reset token to the given email or phone number.',
+        tags: ['Auth'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: 'email', type: 'string', format: 'email', nullable: true, description: 'Required if phone is omitted.'),
+                    new OA\Property(property: 'phone', type: 'string', nullable: true, description: 'Nigerian phone number; required if email is omitted.'),
+                    new OA\Property(property: 'role', type: 'string', enum: ['user', 'vendor', 'admin'], nullable: true),
+                ],
+            ),
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Reset OTP sent',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'Otp', type: 'string', description: 'Present in non-production environments only.'),
+                        new OA\Property(property: 'Token', type: 'string', description: 'Opaque reset token, required by the verify/reset-password steps.'),
+                        new OA\Property(property: 'verification_channel', type: 'string', enum: ['email', 'phone']),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 404, description: 'No account found for the given contact', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 422, description: 'Validation error', content: new OA\JsonContent(ref: '#/components/schemas/ValidationError')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function forgotPassword(ForgotPasswordRequest $request)
     {
         try {
@@ -563,6 +1057,38 @@ class AuthController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: '/v1/auth/forgot-password/resend-otp',
+        summary: 'Resend a password reset OTP',
+        tags: ['Auth'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['token'],
+                properties: [
+                    new OA\Property(property: 'email', type: 'string', format: 'email', nullable: true),
+                    new OA\Property(property: 'phone', type: 'string', nullable: true),
+                    new OA\Property(property: 'token', type: 'string', minLength: 64, maxLength: 64),
+                    new OA\Property(property: 'role', type: 'string', enum: ['user', 'vendor', 'admin'], nullable: true),
+                ],
+            ),
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'A new OTP was sent',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'Otp', type: 'string', description: 'Present in non-production environments only.'),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 422, description: 'Invalid/expired reset token or validation error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function resendForgotPasswordOtp(ResendForgotPasswordOtpRequest $request)
     {
         try {
@@ -592,6 +1118,30 @@ class AuthController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: '/v1/auth/forgot-password/verify-otp',
+        summary: 'Verify a password reset OTP',
+        description: 'Confirms the OTP + token pair before allowing POST /v1/auth/reset-password.',
+        tags: ['Auth'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['token'],
+                properties: [
+                    new OA\Property(property: 'email', type: 'string', format: 'email', nullable: true),
+                    new OA\Property(property: 'phone', type: 'string', nullable: true),
+                    new OA\Property(property: 'code', type: 'string', pattern: '^[0-9]{6}$', nullable: true),
+                    new OA\Property(property: 'token', type: 'string', minLength: 64, maxLength: 64),
+                    new OA\Property(property: 'role', type: 'string', enum: ['user', 'vendor', 'admin'], nullable: true),
+                ],
+            ),
+        ),
+        responses: [
+            new OA\Response(response: 200, description: 'OTP verified', content: new OA\JsonContent(ref: '#/components/schemas/ApiResponse')),
+            new OA\Response(response: 422, description: 'Invalid/expired OTP or token, or validation error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function verifyForgotPasswordOtp(VerifyForgotPasswordTokenRequest $request)
     {
         try {
@@ -616,6 +1166,39 @@ class AuthController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: '/v1/auth/reset-password',
+        summary: 'Reset the account password',
+        description: 'Final step of the forgot-password flow; consumes the reset token.',
+        tags: ['Auth'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['token', 'password', 'password_confirmation'],
+                properties: [
+                    new OA\Property(property: 'email', type: 'string', format: 'email', nullable: true),
+                    new OA\Property(property: 'phone', type: 'string', nullable: true),
+                    new OA\Property(property: 'token', type: 'string', minLength: 64, maxLength: 64),
+                    new OA\Property(property: 'role', type: 'string', enum: ['user', 'vendor', 'admin'], nullable: true),
+                    new OA\Property(property: 'password', type: 'string', format: 'password', minLength: 8, description: 'Must contain an uppercase letter, a lowercase letter, a digit, and a symbol.'),
+                    new OA\Property(property: 'password_confirmation', type: 'string', format: 'password'),
+                ],
+                example: [
+                    'email' => 'ada@example.com',
+                    'phone' => null,
+                    'token' => 'a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4',
+                    'role' => 'user',
+                    'password' => 'Passw0rd!23',
+                    'password_confirmation' => 'Passw0rd!23',
+                ],
+            ),
+        ),
+        responses: [
+            new OA\Response(response: 200, description: 'Password reset successful', content: new OA\JsonContent(ref: '#/components/schemas/ApiResponse')),
+            new OA\Response(response: 422, description: 'Invalid/expired reset token or validation error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function resetPassword(ResetPasswordRequest $request)
     {
         try {
@@ -638,6 +1221,36 @@ class AuthController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: '/v1/auth/register/resend-otp',
+        summary: 'Resend the registration OTP',
+        tags: ['Auth'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: 'email', type: 'string', format: 'email', nullable: true, description: 'Required if phone is omitted.'),
+                    new OA\Property(property: 'phone', type: 'string', nullable: true, description: 'Required if email is omitted.'),
+                ],
+            ),
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'OTP resent',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'verification_status', type: 'string', example: 'unverified'),
+                        new OA\Property(property: 'otp', type: 'string', description: 'Present in non-production environments only.'),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 422, description: 'Could not resend / validation error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function resendRegistrationOtp(ResendRegistrationOtpRequest $request)
     {
         try {
@@ -667,6 +1280,28 @@ class AuthController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: '/v1/auth/otp/resend',
+        summary: 'Resend the current (authenticated) account\'s verification OTP',
+        tags: ['Auth'],
+        security: [['passport' => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'OTP resent, or account already verified',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'verification_status', type: 'string', enum: ['unverified', 'verified']),
+                        new OA\Property(property: 'Otp', type: 'string', nullable: true, description: 'Present in non-production environments only.'),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function resendOtp(Request $request)
     {
         try {
@@ -695,6 +1330,28 @@ class AuthController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: '/v1/auth/logout',
+        summary: 'Log out and revoke all access tokens for the current account',
+        description: 'Revokes every Passport token belonging to the authenticated user or admin (not just the current one).',
+        tags: ['Auth'],
+        security: [['passport' => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Logged out successfully',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string', example: 'User logged out successfully.'),
+                    new OA\Property(property: 'data', properties: [
+                        new OA\Property(property: 'role', type: 'string', enum: ['admin', 'vendor', 'user', 'guest']),
+                    ], type: 'object'),
+                ]),
+            ),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function logout(Request $request)
     {
         try {
@@ -723,6 +1380,31 @@ class AuthController extends Controller
         }
     }
 
+    #[OA\Get(
+        path: '/v1/auth/profile',
+        summary: 'Get the authenticated user\'s or admin\'s profile',
+        tags: ['Auth'],
+        security: [['passport' => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Profile retrieved successfully',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(
+                        property: 'data',
+                        oneOf: [
+                            new OA\Schema(ref: '#/components/schemas/User'),
+                            new OA\Schema(ref: '#/components/schemas/Admin'),
+                        ],
+                    ),
+                ]),
+            ),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
     public function profile(Request $request)
     {
         try {
