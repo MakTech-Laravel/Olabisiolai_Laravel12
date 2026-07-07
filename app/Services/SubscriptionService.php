@@ -511,11 +511,106 @@ class SubscriptionService
         $totalAmount = (float) $subscriptionPayment->amount
             + (float) ($boostPayment?->amount ?? 0);
 
+        $walletApplication = $this->walletService->readApplicationFromPayment($subscriptionPayment, $totalAmount);
+
         return [
             'subscription_payment' => $subscriptionPayment,
             'boost_payment' => $boostPayment,
             'total_amount' => $totalAmount,
             'currency' => $subscriptionPayment->currency,
+            'wallet_applied' => $walletApplication['wallet_applied'],
+            'gateway_amount' => $walletApplication['gateway_amount'],
+        ];
+    }
+
+    /**
+     * Apply available wallet balance to a pending premium checkout (coupon-style reduction).
+     *
+     * @param  array{
+     *     subscription_payment: Payment,
+     *     boost_payment: Payment|null,
+     *     total_amount: float,
+     *     currency: string,
+     * }  $checkout
+     * @return array{
+     *     subscription_payment: Payment,
+     *     boost_payment: Payment|null,
+     *     total_amount: float,
+     *     currency: string,
+     *     wallet_applied: float,
+     *     gateway_amount: float,
+     *     wallet_balance: float,
+     * }
+     */
+    public function applyWalletToCheckout(array $checkout, User $vendor): array
+    {
+        $subscriptionPayment = $checkout['subscription_payment'];
+        $application = $this->walletService->attachApplicationToPayment(
+            $subscriptionPayment,
+            $vendor,
+            (float) $checkout['total_amount'],
+        );
+
+        return array_merge($checkout, [
+            'subscription_payment' => $subscriptionPayment->fresh(),
+            'wallet_applied' => $application['wallet_applied'],
+            'gateway_amount' => $application['gateway_amount'],
+            'wallet_balance' => $application['wallet_balance'],
+        ]);
+    }
+
+    /**
+     * Complete a premium checkout that is fully covered by wallet credit.
+     *
+     * @param  array{
+     *     subscription_payment: Payment,
+     *     boost_payment: Payment|null,
+     *     total_amount: float,
+     *     wallet_applied?: float,
+     * }  $checkout
+     * @return array{business: BusinessInfo, wallet_balance: float}
+     */
+    public function completePremiumFromWalletApplication(array $checkout, User $vendor): array
+    {
+        /** @var Payment $subscriptionPayment */
+        $subscriptionPayment = $checkout['subscription_payment'];
+
+        if ($subscriptionPayment->status !== PaymentStatus::Pending) {
+            throw new RuntimeException('This payment is not awaiting payment.');
+        }
+
+        $walletApplied = $this->walletService->settleApplication($vendor, $subscriptionPayment, 'Premium checkout');
+        $expectedWallet = (float) ($checkout['wallet_applied'] ?? $checkout['total_amount']);
+
+        if ($walletApplied < $expectedWallet) {
+            throw new RuntimeException('Insufficient wallet balance to complete this checkout.');
+        }
+
+        $subscriptionPayment->update([
+            'status' => PaymentStatus::Completed,
+            'paid_at' => now(),
+            'gateway_transaction_id' => 'wallet_'.$subscriptionPayment->tx_ref,
+            'gateway' => PaymentGateway::Wallet,
+        ]);
+
+        $activatedBusiness = $this->activatePremiumAfterPayment($subscriptionPayment, $vendor);
+
+        $boostPayment = $checkout['boost_payment'];
+        if ($boostPayment instanceof Payment) {
+            $boostPayment->update([
+                'status' => PaymentStatus::Completed,
+                'paid_at' => now(),
+                'gateway_transaction_id' => 'wallet_'.$boostPayment->tx_ref,
+                'gateway' => PaymentGateway::Wallet,
+            ]);
+            $this->paymentService->consumePayment($boostPayment);
+        }
+
+        $wallet = $this->walletService->getOrCreateWallet($vendor);
+
+        return [
+            'business' => $activatedBusiness,
+            'wallet_balance' => (float) $wallet->balance,
         ];
     }
 

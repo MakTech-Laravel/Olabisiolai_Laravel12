@@ -206,16 +206,45 @@ class VendorBoostController extends Controller
                 (float) $validated['budget_amount'],
             );
 
+            $payment = $result['payment'];
+            $walletApplication = null;
+
+            if ($request->boolean('apply_wallet')) {
+                $walletApplication = $this->boostPurchaseService->applyWalletToPayment($payment, $vendor);
+                $payment = $payment->fresh();
+
+                if ((float) ($walletApplication['gateway_amount'] ?? $payment->amount) <= 0) {
+                    $boostRequest = $this->boostPurchaseService->completeBoostFromWalletApplication($payment, $vendor);
+
+                    Log::info('vendor.boost.payment.init.paid_from_wallet', array_merge($logContext, [
+                        'business_id' => $business->id,
+                        'payment_id' => $payment->id,
+                        'request_id' => $boostRequest->id,
+                        'amount' => $payment->amount,
+                    ]));
+
+                    return sendResponse(true, 'Payment received. An admin will assign your boost shortly.', [
+                        'payment' => $this->paymentService->toArray($payment->fresh()),
+                        'request' => new BoostPurchaseRequestResource($boostRequest),
+                        'paid_from_wallet' => true,
+                    ]);
+                }
+            }
+
             Log::info('vendor.boost.payment.init.success', array_merge($logContext, [
                 'business_id' => $business->id,
-                'payment_id' => $result['payment']->id,
+                'payment_id' => $payment->id,
                 'request_id' => $result['request']->id,
-                'amount' => $result['payment']->amount,
+                'amount' => $payment->amount,
             ]));
 
             return sendResponse(true, 'Boost payment initialized successfully.', [
-                'payment' => $this->paymentService->toArray($result['payment']),
+                'payment' => $this->paymentService->toArray($payment),
                 'request' => new BoostPurchaseRequestResource($result['request']->load(['location', 'businessInfo'])),
+                'total_amount' => (float) $payment->amount,
+                'gateway_amount' => $walletApplication['gateway_amount'] ?? (float) $payment->amount,
+                'wallet_applied' => $walletApplication['wallet_applied'] ?? 0,
+                'wallet_balance' => $walletApplication['wallet_balance'] ?? null,
             ], Response::HTTP_CREATED);
         } catch (ValidationException $exception) {
             Log::warning('vendor.boost.payment.init.validation_failed', array_merge($logContext, [
@@ -324,6 +353,7 @@ class VendorBoostController extends Controller
             'source_campaign_id' => ['nullable', 'integer', 'exists:boost_purchase_requests,id'],
             'gateway' => ['nullable', 'string', Rule::in(PaymentGateway::values())],
             'use_wallet' => ['sometimes', 'boolean'],
+            'apply_wallet' => ['sometimes', 'boolean'],
         ]);
     }
 

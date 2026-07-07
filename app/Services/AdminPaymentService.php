@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\PaymentGateway;
 use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
 use App\Models\Payment;
@@ -10,6 +11,10 @@ use Illuminate\Database\Eloquent\Builder;
 
 class AdminPaymentService
 {
+    public function __construct(
+        private readonly PaymentService $paymentService,
+    ) {}
+
     /**
      * @param  array{
      *     page?: int,
@@ -32,7 +37,7 @@ class AdminPaymentService
 
         return [
             'items' => $paginator->getCollection()
-                ->map(fn(Payment $payment) => $this->toAdminListItem($payment))
+                ->flatMap(fn (Payment $payment) => $this->expandAdminListItems($payment))
                 ->values()
                 ->all(),
             'pagination' => [
@@ -91,6 +96,39 @@ class AdminPaymentService
             ],
             'trend' => $this->trendSeries($trendRange),
             'breakdown' => $breakdown,
+        ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function expandAdminListItems(Payment $payment): array
+    {
+        if (! $this->paymentService->hasWalletGatewaySplit($payment)) {
+            $item = $this->toAdminListItem($payment);
+            $item['list_key'] = (string) $payment->id;
+
+            return [$item];
+        }
+
+        $split = $this->paymentService->walletSplitFromPayment($payment);
+        $base = $this->toAdminListItem($payment);
+
+        return [
+            array_merge($base, [
+                'amount' => $split['wallet_applied'],
+                'method' => 'wallet',
+                'reference' => $payment->tx_ref.'-wallet',
+                'reference_display' => strtoupper((string) $payment->tx_ref).'-WALLET',
+                'list_key' => $payment->id.'-wallet',
+                'split_part' => 'wallet',
+            ]),
+            array_merge($base, [
+                'amount' => $split['gateway_amount'],
+                'method' => $this->resolveGatewayCardMethod($payment),
+                'list_key' => $payment->id.'-gateway',
+                'split_part' => 'gateway',
+            ]),
         ];
     }
 
@@ -165,19 +203,20 @@ class AdminPaymentService
      */
     public function toAdminCsvRow(Payment $payment): array
     {
-        $item = $this->toAdminListItem($payment);
-
-        return [
-            $item['business'],
-            $item['payer_name'],
-            $item['payer_email'],
-            $item['reference'],
-            (string) $item['amount'],
-            $item['transaction_type'],
-            $item['method'],
-            $item['status'],
-            $item['date_short'],
-        ];
+        return array_map(
+            fn (array $item): array => [
+                $item['business'],
+                $item['payer_name'],
+                $item['payer_email'],
+                $item['reference'],
+                (string) $item['amount'],
+                $item['transaction_type'],
+                $item['method'],
+                $item['status'],
+                $item['date_short'],
+            ],
+            $this->expandAdminListItems($payment),
+        );
     }
 
     private function baseQuery(): Builder
@@ -244,6 +283,17 @@ class AdminPaymentService
 
     private function resolvePaymentMethod(Payment $payment): string
     {
+        if ($payment->gateway === PaymentGateway::Wallet) {
+            return 'wallet';
+        }
+
+        if (
+            $payment->gateway === PaymentGateway::Paystack
+            || $payment->gateway === PaymentGateway::Flutterwave
+        ) {
+            return 'card';
+        }
+
         $meta = is_array($payment->metadata) ? $payment->metadata : [];
         $raw = strtolower((string) ($meta['payment_method'] ?? $meta['payment_type'] ?? $meta['payment_option'] ?? ''));
 
@@ -256,6 +306,11 @@ class AdminPaymentService
         }
 
         return 'card';
+    }
+
+    private function resolveGatewayCardMethod(Payment $payment): string
+    {
+        return $this->resolvePaymentMethod($payment) === 'wallet' ? 'card' : $this->resolvePaymentMethod($payment);
     }
 
     private function sumCompletedByPurpose(PaymentPurpose $purpose): float

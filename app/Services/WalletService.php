@@ -188,6 +188,91 @@ class WalletService
     }
 
     /**
+     * @return array{wallet_applied: float, gateway_amount: float, wallet_balance: float, original_total: float}
+     */
+    public function computeApplication(User $user, float $total): array
+    {
+        $total = max(0, round($total, 2));
+        $wallet = $this->getOrCreateWallet($user);
+        $balance = round((float) $wallet->balance, 2);
+        $walletApplied = round(min($balance, $total), 2);
+        $gatewayAmount = round(max(0, $total - $walletApplied), 2);
+
+        return [
+            'wallet_applied' => $walletApplied,
+            'gateway_amount' => $gatewayAmount,
+            'wallet_balance' => $balance,
+            'original_total' => $total,
+        ];
+    }
+
+    /**
+     * @return array{wallet_applied: float, gateway_amount: float, wallet_balance: float, original_total: float}
+     */
+    public function attachApplicationToPayment(Payment $payment, User $user, float $total): array
+    {
+        $application = $this->computeApplication($user, $total);
+
+        if ($application['wallet_applied'] <= 0) {
+            return $application;
+        }
+
+        $meta = is_array($payment->metadata) ? $payment->metadata : [];
+        $payment->update([
+            'metadata' => array_merge($meta, [
+                'wallet_applied' => $application['wallet_applied'],
+                'gateway_amount' => $application['gateway_amount'],
+                'original_total' => $application['original_total'],
+                'wallet_debited' => false,
+            ]),
+        ]);
+
+        return $application;
+    }
+
+    /**
+     * @return array{wallet_applied: float, gateway_amount: float, original_total: float}
+     */
+    public function readApplicationFromPayment(Payment $payment, ?float $fallbackTotal = null): array
+    {
+        $meta = is_array($payment->metadata) ? $payment->metadata : [];
+        $originalTotal = isset($meta['original_total'])
+            ? (float) $meta['original_total']
+            : ($fallbackTotal ?? (float) $payment->amount);
+
+        return [
+            'wallet_applied' => (float) ($meta['wallet_applied'] ?? 0),
+            'gateway_amount' => isset($meta['gateway_amount'])
+                ? (float) $meta['gateway_amount']
+                : $originalTotal,
+            'original_total' => $originalTotal,
+        ];
+    }
+
+    public function gatewayAmountFor(Payment $payment, ?float $fallbackTotal = null): float
+    {
+        return $this->readApplicationFromPayment($payment, $fallbackTotal)['gateway_amount'];
+    }
+
+    public function settleApplication(User $user, Payment $payment, string $description): float
+    {
+        $meta = is_array($payment->metadata) ? $payment->metadata : [];
+        $walletApplied = (float) ($meta['wallet_applied'] ?? 0);
+
+        if ($walletApplied <= 0 || ($meta['wallet_debited'] ?? false)) {
+            return $walletApplied;
+        }
+
+        $this->debit($user, $walletApplied, $description, $payment->tx_ref);
+
+        $payment->update([
+            'metadata' => array_merge($meta, ['wallet_debited' => true]),
+        ]);
+
+        return $walletApplied;
+    }
+
+    /**
      * Debit wallet for a purchase when balance covers the full amount.
      */
     public function tryPayInFull(User $user, float $amount, string $description, ?string $reference = null): bool

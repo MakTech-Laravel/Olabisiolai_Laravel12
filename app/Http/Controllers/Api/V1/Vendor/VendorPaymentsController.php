@@ -87,7 +87,9 @@ class VendorPaymentsController extends Controller
 
             $paginator = $query->paginate($perPage);
 
-            $items = $paginator->getCollection()->map(fn (Payment $payment) => $this->paymentService->toVendorListItem($payment));
+            $items = $paginator->getCollection()
+                ->flatMap(fn (Payment $payment) => $this->paymentService->expandVendorListItems($payment))
+                ->values();
 
             return sendResponse(true, 'Payments retrieved successfully.', [
                 'items' => $items,
@@ -168,7 +170,9 @@ class VendorPaymentsController extends Controller
                 fprintf($handle, chr(0xEF).chr(0xBB).chr(0xBF));
                 fputcsv($handle, $this->paymentService->vendorPaymentExportHeaders());
                 foreach ($payments as $payment) {
-                    fputcsv($handle, $this->paymentService->toVendorCsvRow($payment));
+                    foreach ($this->paymentService->expandVendorCsvRows($payment) as $row) {
+                        fputcsv($handle, $row);
+                    }
                 }
                 fclose($handle);
             }, $filename, [

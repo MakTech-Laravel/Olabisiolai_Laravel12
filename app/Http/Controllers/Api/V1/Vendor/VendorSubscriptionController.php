@@ -118,6 +118,7 @@ class VendorSubscriptionController extends Controller
                 new OA\Property(property: 'boost_duration_days', type: 'integer', minimum: 1, maximum: 30, nullable: true),
                 new OA\Property(property: 'boost_budget_amount', type: 'number', format: 'float', minimum: 500, maximum: 5000, nullable: true),
                 new OA\Property(property: 'use_wallet', type: 'boolean', nullable: true, description: 'Pay from wallet balance instead of a gateway.'),
+                new OA\Property(property: 'apply_wallet', type: 'boolean', nullable: true, description: 'Apply available wallet balance to reduce the gateway charge (coupon-style).'),
             ]),
         ),
         responses: [
@@ -160,6 +161,7 @@ class VendorSubscriptionController extends Controller
                 'boost_duration_days' => ['nullable', 'integer', 'min:1', 'max:30'],
                 'boost_budget_amount' => ['nullable', 'numeric', 'min:500', 'max:5000'],
                 'use_wallet' => ['sometimes', 'boolean'],
+                'apply_wallet' => ['sometimes', 'boolean'],
             ]);
 
             $packageKey = isset($validated['package_key']) ? (string) $validated['package_key'] : null;
@@ -204,6 +206,21 @@ class VendorSubscriptionController extends Controller
                 $packageKey,
             );
 
+            if ($request->boolean('apply_wallet')) {
+                $checkout = $this->subscriptionService->applyWalletToCheckout($checkout, $vendor);
+
+                if ((float) ($checkout['gateway_amount'] ?? $checkout['total_amount']) <= 0) {
+                    $walletCheckout = $this->subscriptionService->completePremiumFromWalletApplication($checkout, $vendor);
+
+                    return sendResponse(true, 'Premium subscription paid from wallet successfully.', [
+                        'business' => new BusinessInfoResource($walletCheckout['business']),
+                        'subscription' => $this->subscriptionService->subscriptionPayload($walletCheckout['business']),
+                        'wallet_balance' => $walletCheckout['wallet_balance'],
+                        'paid_from_wallet' => true,
+                    ]);
+                }
+            }
+
             $subscriptionPayment = $checkout['subscription_payment'];
             $boostPayment = $checkout['boost_payment'];
 
@@ -216,6 +233,9 @@ class VendorSubscriptionController extends Controller
                         : null,
                 ],
                 'total_amount' => $checkout['total_amount'],
+                'gateway_amount' => $checkout['gateway_amount'] ?? $checkout['total_amount'],
+                'wallet_applied' => $checkout['wallet_applied'] ?? 0,
+                'wallet_balance' => $checkout['wallet_balance'] ?? null,
                 'currency' => $checkout['currency'],
             ], Response::HTTP_CREATED);
         } catch (ValidationException $exception) {
@@ -288,6 +308,8 @@ class VendorSubscriptionController extends Controller
                         : null,
                 ],
                 'total_amount' => $checkout['total_amount'],
+                'gateway_amount' => $checkout['gateway_amount'] ?? $checkout['total_amount'],
+                'wallet_applied' => $checkout['wallet_applied'] ?? 0,
                 'currency' => $checkout['currency'],
             ]);
         } catch (ValidationException $exception) {

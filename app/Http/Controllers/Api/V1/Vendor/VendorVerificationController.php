@@ -58,6 +58,7 @@ class VendorVerificationController extends Controller
                 'package_id' => ['required', 'string', Rule::in($this->pricingPackageService->verificationPackageKeys())],
                 'gateway' => ['nullable', 'string', Rule::in(PaymentGateway::values())],
                 'use_wallet' => ['sometimes', 'boolean'],
+                'apply_wallet' => ['sometimes', 'boolean'],
             ]);
 
             $payment = $this->paymentService->initPayment(
@@ -83,8 +84,40 @@ class VendorVerificationController extends Controller
                 ], Response::HTTP_CREATED);
             }
 
+            $walletApplication = null;
+            if ($request->boolean('apply_wallet')) {
+                $walletApplication = $this->walletService->attachApplicationToPayment(
+                    $payment,
+                    $vendor,
+                    (float) $payment->amount,
+                );
+                $payment = $payment->fresh();
+
+                if ((float) ($walletApplication['gateway_amount'] ?? $payment->amount) <= 0) {
+                    $this->walletService->settleApplication($vendor, $payment, 'Verification checkout');
+                    $payment->update([
+                        'status' => PaymentStatus::Completed,
+                        'paid_at' => now(),
+                        'gateway_transaction_id' => 'wallet_'.$payment->tx_ref,
+                        'gateway' => PaymentGateway::Wallet,
+                    ]);
+                    $statusData = $this->verificationService->getVendorVerificationStatus($business);
+
+                    return sendResponse(true, 'Payment confirmed successfully.', [
+                        'payment' => $this->paymentService->toArray($payment->fresh()),
+                        'awaiting_document_submission' => (bool) ($statusData['awaiting_document_submission'] ?? false),
+                        'consumable_payment_id' => $statusData['consumable_payment_id'] ?? null,
+                        'paid_from_wallet' => true,
+                    ], Response::HTTP_CREATED);
+                }
+            }
+
             return sendResponse(true, 'Payment initialized successfully.', [
                 'payment' => $this->paymentService->toArray($payment),
+                'total_amount' => (float) $payment->amount,
+                'gateway_amount' => $walletApplication['gateway_amount'] ?? (float) $payment->amount,
+                'wallet_applied' => $walletApplication['wallet_applied'] ?? 0,
+                'wallet_balance' => $walletApplication['wallet_balance'] ?? null,
             ], Response::HTTP_CREATED);
         } catch (RuntimeException $exception) {
             return sendResponse(false, $exception->getMessage(), null, Response::HTTP_UNPROCESSABLE_ENTITY);
@@ -116,6 +149,7 @@ class VendorVerificationController extends Controller
 
             $gateway = PaymentGateway::from((string) $validated['gateway']);
             if ($payment->status === PaymentStatus::Pending) {
+                $this->walletService->settleApplication($vendor, $payment, 'Verification checkout');
                 $payment = $this->paymentService->confirmPayment(
                     $payment,
                     trim((string) $validated['gateway_transaction_id']),

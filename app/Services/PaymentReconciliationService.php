@@ -20,6 +20,7 @@ class PaymentReconciliationService
         private readonly SubscriptionService $subscriptionService,
         private readonly BoostPurchaseService $boostPurchaseService,
         private readonly VerificationService $verificationService,
+        private readonly WalletService $walletService,
     ) {}
 
     public function findPaymentByGatewayReference(string $reference): ?Payment
@@ -73,6 +74,7 @@ class PaymentReconciliationService
         }
 
         if ($payment->status === PaymentStatus::Pending) {
+            $this->walletService->settleApplication($vendor, $payment, 'Premium checkout');
             $this->paymentService->assertGatewayTransactionAvailable($gatewayTransactionId, $payment);
             $this->paymentService->confirmBundledPayments($payment, $gatewayTransactionId, $gateway);
             $payment = $payment->fresh();
@@ -883,7 +885,8 @@ class PaymentReconciliationService
     private function assertPaystackAmountMatchesSubscriptionCheckout(Payment $payment, array $paystackData): void
     {
         $checkout = $this->subscriptionService->checkoutFromSubscriptionPayment($payment);
-        $expectedKobo = (int) round(((float) $checkout['total_amount']) * 100);
+        $expectedAmount = (float) ($checkout['gateway_amount'] ?? $checkout['total_amount']);
+        $expectedKobo = (int) round($expectedAmount * 100);
         $paidKobo = (int) ($paystackData['amount'] ?? 0);
 
         if ($expectedKobo > 0 && $paidKobo !== $expectedKobo) {

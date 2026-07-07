@@ -276,12 +276,54 @@ class BoostPurchaseService
             throw new RuntimeException('Invalid payment for boost checkout.');
         }
 
+        $user = $payment->user;
+        if ($user !== null) {
+            $this->walletService->settleApplication($user, $payment, 'Boost checkout');
+        }
+
         if ($payment->status === PaymentStatus::Pending) {
             $payment = $this->paymentService->confirmPayment($payment, $gatewayTransactionId, $gateway);
         } elseif ($payment->gateway === null) {
             $payment->update(['gateway' => $gateway]);
             $payment = $payment->fresh();
         }
+
+        $request = $this->markPaidAndQueueForAdmin($payment);
+
+        if ($request === null) {
+            throw new RuntimeException('Boost request was not found for this payment.');
+        }
+
+        return $request->fresh(['location', 'businessInfo']);
+    }
+
+    /**
+     * @return array{
+     *     wallet_applied: float,
+     *     gateway_amount: float,
+     *     wallet_balance: float,
+     *     original_total: float,
+     * }
+     */
+    public function applyWalletToPayment(Payment $payment, User $user): array
+    {
+        return $this->walletService->attachApplicationToPayment($user, $payment, (float) $payment->amount);
+    }
+
+    public function completeBoostFromWalletApplication(Payment $payment, User $user): BoostPurchaseRequest
+    {
+        if ($payment->status !== PaymentStatus::Pending) {
+            throw new RuntimeException('This payment is not awaiting payment.');
+        }
+
+        $this->walletService->settleApplication($user, $payment, 'Boost checkout');
+
+        $payment->update([
+            'status' => PaymentStatus::Completed,
+            'paid_at' => now(),
+            'gateway_transaction_id' => 'wallet_'.$payment->tx_ref,
+            'gateway' => PaymentGateway::Wallet,
+        ]);
 
         $request = $this->markPaidAndQueueForAdmin($payment);
 

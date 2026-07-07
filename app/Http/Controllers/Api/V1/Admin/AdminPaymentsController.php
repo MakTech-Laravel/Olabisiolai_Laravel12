@@ -195,7 +195,9 @@ class AdminPaymentsController extends Controller
                 fprintf($handle, chr(0xEF).chr(0xBB).chr(0xBF));
                 fputcsv($handle, $this->adminPaymentService->adminExportHeaders());
                 foreach ($rows as $payment) {
-                    fputcsv($handle, $this->adminPaymentService->toAdminCsvRow($payment));
+                    foreach ($this->adminPaymentService->toAdminCsvRow($payment) as $csvRow) {
+                        fputcsv($handle, $csvRow);
+                    }
                 }
                 fclose($handle);
             }, $filename, [

@@ -337,6 +337,118 @@ class PaymentService
     }
 
     /**
+     * @return array{wallet_applied: float, gateway_amount: float, original_total: float}
+     */
+    public function walletSplitFromPayment(Payment $payment): array
+    {
+        $meta = is_array($payment->metadata) ? $payment->metadata : [];
+        $originalTotal = (float) ($meta['original_total'] ?? $payment->amount);
+        $walletApplied = (float) ($meta['wallet_applied'] ?? 0);
+        $gatewayAmount = isset($meta['gateway_amount'])
+            ? (float) $meta['gateway_amount']
+            : max(0, $originalTotal - $walletApplied);
+
+        return [
+            'wallet_applied' => $walletApplied,
+            'gateway_amount' => $gatewayAmount,
+            'original_total' => $originalTotal,
+        ];
+    }
+
+    public function hasWalletGatewaySplit(Payment $payment): bool
+    {
+        if ($payment->status !== PaymentStatus::Completed) {
+            return false;
+        }
+
+        $split = $this->walletSplitFromPayment($payment);
+        if ($split['wallet_applied'] <= 0 || $split['gateway_amount'] <= 0) {
+            return false;
+        }
+
+        $gateway = $this->gatewayResolver->resolveForDisplay($payment);
+
+        return $gateway !== null && $gateway !== PaymentGateway::Wallet;
+    }
+
+    /**
+     * Expand a completed split checkout into separate wallet + gateway list rows.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function expandVendorListItems(Payment $payment): array
+    {
+        if (! $this->hasWalletGatewaySplit($payment)) {
+            $item = $this->toVendorListItem($payment);
+            $item['list_key'] = (string) $payment->id;
+
+            return [$item];
+        }
+
+        $split = $this->walletSplitFromPayment($payment);
+        $base = $this->toVendorListItem($payment);
+        $gateway = $this->gatewayResolver->resolveForDisplay($payment);
+        $description = (string) ($base['description'] ?? $payment->purpose->label());
+
+        return [
+            array_merge($base, [
+                'amount' => $split['wallet_applied'],
+                'gateway' => PaymentGateway::Wallet->value,
+                'description' => $description.' · Wallet credit',
+                'list_key' => $payment->id.'-wallet',
+                'split_part' => 'wallet',
+            ]),
+            array_merge($base, [
+                'amount' => $split['gateway_amount'],
+                'gateway' => $gateway?->value,
+                'description' => $description.' · Card payment',
+                'list_key' => $payment->id.'-gateway',
+                'split_part' => 'gateway',
+            ]),
+        ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function expandVendorCsvRows(Payment $payment): array
+    {
+        return array_map(
+            fn (array $item): array => $this->vendorCsvRowFromListItem($payment, $item),
+            $this->expandVendorListItems($payment),
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @return list<string>
+     */
+    public function vendorCsvRowFromListItem(Payment $payment, array $item): array
+    {
+        $metadataJson = is_array($payment->metadata)
+            ? (string) json_encode($payment->metadata, JSON_UNESCAPED_UNICODE)
+            : '';
+
+        return [
+            (string) $payment->id,
+            $payment->purpose->value,
+            $payment->purpose->label(),
+            (string) ($item['description'] ?? ''),
+            (string) ($item['amount'] ?? $payment->amount),
+            $payment->currency,
+            $payment->status->value,
+            (string) ($item['tx_ref'] ?? $payment->tx_ref),
+            (string) ($item['gateway'] ?? ''),
+            $payment->paid_at ? humanDateTime($payment->paid_at) : '',
+            $payment->created_at?->toIso8601String() ?? '',
+            (string) ($payment->gateway_transaction_id ?? ''),
+            (string) ($payment->package_id ?? ''),
+            $payment->is_consumed ? 'yes' : 'no',
+            $metadataJson,
+        ];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function toVendorListItem(Payment $payment): array
