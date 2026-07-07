@@ -9,6 +9,7 @@ use App\Http\Resources\Api\V1\BusinessInfoResource;
 use App\Services\BusinessInfoService;
 use App\Services\PaymentReconciliationService;
 use App\Services\PaymentService;
+use App\Services\PaystackCheckoutService;
 use App\Services\SubscriptionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -26,6 +27,7 @@ class VendorSubscriptionController extends Controller
         private readonly BusinessInfoService $businessInfoService,
         private readonly PaymentService $paymentService,
         private readonly PaymentReconciliationService $paymentReconciliation,
+        private readonly PaystackCheckoutService $paystackCheckoutService,
     ) {}
 
     #[OA\Get(
@@ -230,8 +232,9 @@ class VendorSubscriptionController extends Controller
 
             $subscriptionPayment = $checkout['subscription_payment'];
             $boostPayment = $checkout['boost_payment'];
+            $gatewayAmount = (float) ($checkout['gateway_amount'] ?? $checkout['total_amount']);
 
-            return sendResponse(true, 'Premium subscription payment initialized successfully.', [
+            return sendResponse(true, 'Premium subscription payment initialized successfully.', $this->paystackCheckoutService->appendAccessCodeIfNeeded([
                 'payment' => $this->paymentService->toArray($subscriptionPayment),
                 'payments' => [
                     'subscription' => $this->paymentService->toArray($subscriptionPayment),
@@ -244,7 +247,7 @@ class VendorSubscriptionController extends Controller
                 'wallet_applied' => $checkout['wallet_applied'] ?? 0,
                 'wallet_balance' => $checkout['wallet_balance'] ?? null,
                 'currency' => $checkout['currency'],
-            ], Response::HTTP_CREATED);
+            ], $vendor, $subscriptionPayment, $gateway, $gatewayAmount), Response::HTTP_CREATED);
         } catch (ValidationException $exception) {
             return sendResponse(
                 false,
@@ -321,8 +324,10 @@ class VendorSubscriptionController extends Controller
 
             $subscriptionPayment = $checkout['subscription_payment'];
             $boostPayment = $checkout['boost_payment'];
+            $gatewayAmount = (float) ($checkout['gateway_amount'] ?? $checkout['total_amount']);
+            $gateway = $subscriptionPayment->gateway;
 
-            return sendResponse(true, 'Pending premium payment resumed successfully.', [
+            return sendResponse(true, 'Pending premium payment resumed successfully.', $this->paystackCheckoutService->appendAccessCodeIfNeeded([
                 'payment' => $this->paymentService->toArray($subscriptionPayment),
                 'payments' => [
                     'subscription' => $this->paymentService->toArray($subscriptionPayment),
@@ -334,7 +339,7 @@ class VendorSubscriptionController extends Controller
                 'gateway_amount' => $checkout['gateway_amount'] ?? $checkout['total_amount'],
                 'wallet_applied' => $checkout['wallet_applied'] ?? 0,
                 'currency' => $checkout['currency'],
-            ]);
+            ], $vendor, $subscriptionPayment, $gateway, $gatewayAmount));
         } catch (ValidationException $exception) {
             return sendResponse(
                 false,

@@ -36,9 +36,14 @@ return [
     ],
 
     'paystack' => [
-        // Server-side only. Never put this in any VITE_* var.
+        // Server-side only. Never put the secret in any VITE_* var.
         'secret' => env('PAYSTACK_SECRET_KEY'),
+        'public' => env('PAYSTACK_PUBLIC_KEY', ''),
         'base_url' => env('PAYSTACK_BASE_URL', 'https://api.paystack.co'),
+    ],
+
+    'flutterwave' => [
+        'public' => env('FLW_PUBLIC_KEY', ''),
     ],
 
     'google' => [

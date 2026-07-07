@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\BusinessReportController;
 use App\Http\Controllers\Api\V1\Public\BusinessInfoController;
 use App\Http\Controllers\Api\V1\Public\ContactMessageController;
+use App\Http\Controllers\Api\V1\Public\PaymentConfigController;
 use App\Http\Controllers\Api\V1\Public\PublicCategoryCatalogController;
 use App\Http\Controllers\Api\V1\Public\PublicCmsPageController;
 use App\Http\Controllers\Api\V1\Public\PublicLocationCatalogController;
@@ -33,6 +34,7 @@ Route::get('/categories', [PublicCategoryCatalogController::class, 'index'])->na
 Route::get('/categories/{category}', [PublicCategoryCatalogController::class, 'show'])->name('public.categories.show');
 Route::get('/locations', [PublicLocationCatalogController::class, 'index'])->name('public.locations');
 Route::get('/subscription-packages', [PublicSubscriptionPlanController::class, 'index'])->name('public.subscription-packages');
+Route::get('/payments/config', [PaymentConfigController::class, 'show'])->name('public.payments.config');
 
 Route::prefix('businesses')->name('businesses.')->group(function () {
     Route::get('/all', [BusinessInfoController::class, 'all'])->name('all');

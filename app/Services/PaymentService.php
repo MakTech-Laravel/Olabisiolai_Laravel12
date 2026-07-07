@@ -278,6 +278,15 @@ class PaymentService
         return sprintf('%s_%s_%s', $purpose->value, $userId, Str::lower(Str::random(12)));
     }
 
+    public function refreshTransactionReference(Payment $payment): Payment
+    {
+        $payment->update([
+            'tx_ref' => $this->generateTxRef($payment->purpose, (int) $payment->user_id),
+        ]);
+
+        return $payment->fresh();
+    }
+
     /**
      * @return array<string, mixed>
      */

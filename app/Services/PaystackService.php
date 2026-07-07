@@ -58,6 +58,52 @@ class PaystackService
         return $data;
     }
 
+    /**
+     * Initialize a Paystack transaction (server-side) for Inline resumeTransaction.
+     *
+     * @return array<string, mixed>
+     */
+    public function initializeTransaction(
+        string $email,
+        int $amountKobo,
+        string $reference,
+        string $currency = 'NGN',
+    ): array {
+        $email = trim($email);
+        $reference = strtolower(trim($reference));
+
+        if ($email === '') {
+            throw new RuntimeException('Customer email is required for Paystack checkout.');
+        }
+
+        if ($amountKobo <= 0) {
+            throw new RuntimeException('Paystack amount must be greater than zero.');
+        }
+
+        if ($reference === '') {
+            throw new RuntimeException('Paystack reference is required.');
+        }
+
+        $res = $this->client()->post('/transaction/initialize', [
+            'email' => $email,
+            'amount' => $amountKobo,
+            'reference' => $reference,
+            'currency' => strtoupper($currency),
+        ]);
+
+        $json = $res->json();
+
+        if (! $res->ok() || ! is_array($json) || ($json['status'] ?? false) !== true) {
+            $message = is_array($json) ? (string) ($json['message'] ?? 'Paystack could not initialize checkout.') : 'Paystack could not initialize checkout.';
+            throw new RuntimeException($message);
+        }
+
+        /** @var array<string, mixed> $data */
+        $data = is_array($json['data'] ?? null) ? $json['data'] : [];
+
+        return $data;
+    }
+
     public function isValidWebhookSignature(string $payload, ?string $signature): bool
     {
         $signature = trim((string) $signature);

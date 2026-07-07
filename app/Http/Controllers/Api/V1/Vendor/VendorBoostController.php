@@ -13,6 +13,7 @@ use App\Models\Location;
 use App\Services\BoostPurchaseService;
 use App\Services\BusinessInfoService;
 use App\Services\PaymentService;
+use App\Services\PaystackCheckoutService;
 use App\Services\SubscriptionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -29,6 +30,7 @@ class VendorBoostController extends Controller
         private readonly BoostPurchaseService $boostPurchaseService,
         private readonly SubscriptionService $subscriptionService,
         private readonly PaymentService $paymentService,
+        private readonly PaystackCheckoutService $paystackCheckoutService,
     ) {}
 
     public function catalog(Request $request)
@@ -238,14 +240,17 @@ class VendorBoostController extends Controller
                 'amount' => $payment->amount,
             ]));
 
-            return sendResponse(true, 'Boost payment initialized successfully.', [
+            $gateway = isset($validated['gateway']) ? PaymentGateway::from((string) $validated['gateway']) : $payment->gateway;
+            $gatewayAmount = (float) ($walletApplication['gateway_amount'] ?? $payment->amount);
+
+            return sendResponse(true, 'Boost payment initialized successfully.', $this->paystackCheckoutService->appendAccessCodeIfNeeded([
                 'payment' => $this->paymentService->toArray($payment),
                 'request' => new BoostPurchaseRequestResource($result['request']->load(['location', 'businessInfo'])),
                 'total_amount' => (float) $payment->amount,
-                'gateway_amount' => $walletApplication['gateway_amount'] ?? (float) $payment->amount,
+                'gateway_amount' => $gatewayAmount,
                 'wallet_applied' => $walletApplication['wallet_applied'] ?? 0,
                 'wallet_balance' => $walletApplication['wallet_balance'] ?? null,
-            ], Response::HTTP_CREATED);
+            ], $vendor, $payment, $gateway, $gatewayAmount), Response::HTTP_CREATED);
         } catch (ValidationException $exception) {
             Log::warning('vendor.boost.payment.init.validation_failed', array_merge($logContext, [
                 'errors' => $exception->errors(),

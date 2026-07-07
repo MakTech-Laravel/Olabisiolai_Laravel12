@@ -11,6 +11,7 @@ use App\Models\Payment;
 use App\Models\User;
 use App\Services\BusinessInfoService;
 use App\Services\PaymentService;
+use App\Services\PaystackCheckoutService;
 use App\Services\PricingPackageService;
 use App\Services\VerificationService;
 use App\Services\WalletService;
@@ -29,6 +30,7 @@ class VendorVerificationController extends Controller
         private readonly PaymentService $paymentService,
         private readonly PricingPackageService $pricingPackageService,
         private readonly WalletService $walletService,
+        private readonly PaystackCheckoutService $paystackCheckoutService,
     ) {}
 
     public function packages()
@@ -169,13 +171,15 @@ class VendorVerificationController extends Controller
             ], Response::HTTP_CREATED);
         }
 
-        return sendResponse(true, 'Payment initialized successfully.', [
+        $gatewayAmount = (float) ($walletApplication['gateway_amount'] ?? $payment->amount);
+
+        return sendResponse(true, 'Payment initialized successfully.', $this->paystackCheckoutService->appendAccessCodeIfNeeded([
             'payment' => $this->paymentService->toArray($payment),
             'total_amount' => (float) $payment->amount,
-            'gateway_amount' => $walletApplication['gateway_amount'] ?? (float) $payment->amount,
+            'gateway_amount' => $gatewayAmount,
             'wallet_applied' => $walletApplication['wallet_applied'] ?? 0,
             'wallet_balance' => $walletApplication['wallet_balance'] ?? null,
-        ], Response::HTTP_CREATED);
+        ], $vendor, $payment, $gateway ?? $payment->gateway, $gatewayAmount), Response::HTTP_CREATED);
     }
 
     public function confirmPayment(Request $request)

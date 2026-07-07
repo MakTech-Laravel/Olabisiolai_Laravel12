@@ -218,6 +218,20 @@ class WalletService
         }
 
         $meta = is_array($payment->metadata) ? $payment->metadata : [];
+        $previousGatewayAmount = isset($meta['gateway_amount']) ? (float) $meta['gateway_amount'] : null;
+        $previousWalletApplied = (float) ($meta['wallet_applied'] ?? 0);
+        $gatewayAmountChanged = $previousGatewayAmount === null
+            || abs($previousGatewayAmount - $application['gateway_amount']) > 0.009;
+        $walletAmountChanged = abs($previousWalletApplied - $application['wallet_applied']) > 0.009;
+
+        if (
+            $application['gateway_amount'] > 0
+            && ($gatewayAmountChanged || $walletAmountChanged || $previousGatewayAmount === null)
+        ) {
+            $payment = app(PaymentService::class)->refreshTransactionReference($payment);
+            $meta = is_array($payment->metadata) ? $payment->metadata : [];
+        }
+
         $payment->update([
             'metadata' => array_merge($meta, [
                 'wallet_applied' => $application['wallet_applied'],
