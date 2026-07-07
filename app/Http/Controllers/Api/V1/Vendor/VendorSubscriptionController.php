@@ -196,15 +196,22 @@ class VendorSubscriptionController extends Controller
                 ]);
             }
 
-            $checkout = $this->subscriptionService->initPremiumPayment(
-                $vendor,
-                $business,
-                $boostTierKey,
-                $boostDurationDays,
-                isset($validated['gateway']) ? PaymentGateway::from((string) $validated['gateway']) : null,
-                $boostBudgetAmount,
-                $packageKey,
-            );
+            $gateway = isset($validated['gateway']) ? PaymentGateway::from((string) $validated['gateway']) : null;
+            $pendingPayment = $this->subscriptionService->findResumableSubscriptionPayment($vendor, $business);
+
+            if ($pendingPayment !== null) {
+                $checkout = $this->subscriptionService->checkoutFromSubscriptionPayment($pendingPayment);
+            } else {
+                $checkout = $this->subscriptionService->initPremiumPayment(
+                    $vendor,
+                    $business,
+                    $boostTierKey,
+                    $boostDurationDays,
+                    $gateway,
+                    $boostBudgetAmount,
+                    $packageKey,
+                );
+            }
 
             if ($request->boolean('apply_wallet')) {
                 $checkout = $this->subscriptionService->applyWalletToCheckout($checkout, $vendor);
@@ -296,6 +303,22 @@ class VendorSubscriptionController extends Controller
             }
 
             $checkout = $this->subscriptionService->checkoutFromSubscriptionPayment($payment);
+
+            if ($request->boolean('apply_wallet')) {
+                $checkout = $this->subscriptionService->applyWalletToCheckout($checkout, $vendor);
+
+                if ((float) ($checkout['gateway_amount'] ?? $checkout['total_amount']) <= 0) {
+                    $walletCheckout = $this->subscriptionService->completePremiumFromWalletApplication($checkout, $vendor);
+
+                    return sendResponse(true, 'Premium subscription paid from wallet successfully.', [
+                        'business' => new BusinessInfoResource($walletCheckout['business']),
+                        'subscription' => $this->subscriptionService->subscriptionPayload($walletCheckout['business']),
+                        'wallet_balance' => $walletCheckout['wallet_balance'],
+                        'paid_from_wallet' => true,
+                    ]);
+                }
+            }
+
             $subscriptionPayment = $checkout['subscription_payment'];
             $boostPayment = $checkout['boost_payment'];
 

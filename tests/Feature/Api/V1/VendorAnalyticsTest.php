@@ -148,6 +148,25 @@ class VendorAnalyticsTest extends TestCase
         $response->assertJsonPath('data.stats.followers_delta_percent', null);
     }
 
+    public function test_analytics_with_scoped_business_without_location_returns_ok(): void
+    {
+        $vendor = User::factory()->create([
+            'role' => 'vendor',
+            'email_verified_at' => now(),
+        ]);
+        $business = BusinessInfo::factory()->for($vendor)->create([
+            'location_id' => null,
+        ]);
+
+        $token = $vendor->createToken('test')->accessToken;
+
+        $this->withToken($token)
+            ->getJson('/api/v1/vendor/analytics?range=30d&business_id='.$business->id)
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.reach_areas', []);
+    }
+
     public function test_followers_delta_shows_loss_when_all_unfollows_within_period(): void
     {
         $vendor = User::factory()->create([

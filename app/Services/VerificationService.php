@@ -61,10 +61,6 @@ class VerificationService
             return false;
         }
 
-        if ($this->hasPendingVerificationPayment($business)) {
-            return false;
-        }
-
         if ($this->needsAdminReapproval($business)) {
             return false;
         }
@@ -95,10 +91,6 @@ class VerificationService
             return 'You already have a paid verification ready. Upload your documents — do not pay again.';
         }
 
-        if ($this->hasPendingVerificationPayment($business)) {
-            return 'You already have a pending verification checkout. Complete or cancel it before starting another payment.';
-        }
-
         if ($this->needsAdminReapproval($business)) {
             return 'Your documents are on file after a profile update. An admin will re-approve your verification — you do not need to pay again.';
         }
@@ -125,11 +117,17 @@ class VerificationService
 
     private function hasPendingVerificationPayment(BusinessInfo $business): bool
     {
+        return $this->findResumableVerificationPayment($business) !== null;
+    }
+
+    public function findResumableVerificationPayment(BusinessInfo $business): ?Payment
+    {
         return Payment::query()
             ->where('business_info_id', $business->id)
             ->where('purpose', PaymentPurpose::Verification)
             ->where('status', PaymentStatus::Pending)
-            ->exists();
+            ->latest('id')
+            ->first();
     }
 
     private function isReverificationWaiverPayment(Payment $payment): bool
@@ -262,6 +260,7 @@ class VerificationService
         $awaitingDocumentSubmission = $this->isAwaitingDocumentSubmission($business, $consumablePayment);
         $needsAdminReapproval = $this->needsAdminReapproval($business);
         $canInitPayment = $this->canInitVerificationPayment($business);
+        $pendingPayment = $this->findResumableVerificationPayment($business);
 
         return [
             'verification_status' => $business->verification_status->value,
@@ -274,10 +273,15 @@ class VerificationService
             'needs_document_action' => $this->needsVendorDocumentAction($business),
             'can_upload_documents' => $this->canVendorUploadDocuments($business),
             'has_open_document_review' => $this->hasOpenDocumentReview($business),
-            'can_init_payment' => $canInitPayment,
-            'payment_block_reason' => $canInitPayment ? null : $this->verificationPaymentBlockReason($business),
+            'can_init_payment' => $canInitPayment || $pendingPayment !== null,
+            'payment_block_reason' => $pendingPayment !== null
+                ? null
+                : ($canInitPayment ? null : $this->verificationPaymentBlockReason($business)),
             'has_unused_verification_payment' => $consumablePayment !== null,
             'consumable_payment_id' => $awaitingDocumentSubmission ? $consumablePayment?->id : null,
+            'pending_payment' => $pendingPayment !== null
+                ? $this->paymentService->toArray($pendingPayment)
+                : null,
             'purchased_package' => $purchasedPackage,
             'documents' => $business->verificationDocuments->map(fn (VerificationDocument $doc): array => [
                 'id' => $doc->id,

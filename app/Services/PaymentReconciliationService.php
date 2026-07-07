@@ -69,6 +69,10 @@ class PaymentReconciliationService
             return $business->fresh(['subscription']);
         }
 
+        if ($payment->status === PaymentStatus::Completed) {
+            return $this->subscriptionService->activatePremiumAfterPayment($payment, $vendor);
+        }
+
         if ($verifyWithGateway && $gateway === PaymentGateway::Paystack) {
             $this->verifyPaystackForSubscriptionPayment($payment, $gatewayTransactionId);
         }

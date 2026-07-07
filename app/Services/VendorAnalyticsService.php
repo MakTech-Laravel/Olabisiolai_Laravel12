@@ -560,9 +560,13 @@ class VendorAnalyticsService
             $counts[$business->location->lga_name] = 1;
         }
 
+        if ($counts === []) {
+            return [];
+        }
+
         arsort($counts);
         $top = array_slice($counts, 0, 5, true);
-        $max = max(1, ...array_values($top));
+        $max = max(array_merge([1], array_values($top)));
 
         return collect($top)
             ->map(fn(int $count, string $area): array => [
