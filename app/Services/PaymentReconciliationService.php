@@ -65,7 +65,7 @@ class PaymentReconciliationService
             throw new RuntimeException('Payment is not linked to a business profile.');
         }
 
-        if ($this->subscriptionService->hasActivePremium($business)) {
+        if ($this->subscriptionService->hasActivePaidPremium($business)) {
             return $business->fresh(['subscription']);
         }
 

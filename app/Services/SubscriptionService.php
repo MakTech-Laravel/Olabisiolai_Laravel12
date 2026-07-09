@@ -89,6 +89,37 @@ class SubscriptionService
             && ! $this->isSubscriptionExpired($subscription);
     }
 
+    public function hasActivePaidPremium(BusinessInfo $business): bool
+    {
+        $business = $this->syncExpiredSubscription($business);
+        $subscription = $this->subscriptionRecord($business);
+
+        return $subscription->plan === SubscriptionPlan::Premium
+            && $subscription->status === SubscriptionStatus::Active
+            && ! $this->isSubscriptionExpired($subscription);
+    }
+
+    public function isTrialing(BusinessInfo $business): bool
+    {
+        $business = $this->syncExpiredSubscription($business);
+        $subscription = $this->subscriptionRecord($business);
+
+        return $subscription->status === SubscriptionStatus::Trialing
+            && $subscription->trial_ends_at !== null
+            && $subscription->trial_ends_at->isFuture();
+    }
+
+    public function remainingTrialDays(BusinessInfo $business): int
+    {
+        if (! $this->isTrialing($business)) {
+            return 0;
+        }
+
+        $subscription = $this->subscriptionRecord($business);
+
+        return max(0, (int) now()->diffInDays($subscription->trial_ends_at, false));
+    }
+
     public function freePhotoLimit(): int
     {
         return max(1, (int) config('subscription.photo_limits.free', 5));
@@ -140,7 +171,11 @@ class SubscriptionService
 
     public function canPayForPremium(BusinessInfo $business): bool
     {
-        if ($this->hasActivePremium($business)) {
+        if ($this->isTrialing($business)) {
+            return true;
+        }
+
+        if ($this->hasActivePaidPremium($business)) {
             return false;
         }
 
@@ -171,7 +206,11 @@ class SubscriptionService
 
     public function preparePremiumCheckout(BusinessInfo $business): BusinessInfo
     {
-        if ($this->hasActivePremium($business)) {
+        if ($this->isTrialing($business)) {
+            return $business;
+        }
+
+        if ($this->hasActivePaidPremium($business)) {
             throw new RuntimeException('Premium subscription is already active.');
         }
 
@@ -407,7 +446,7 @@ class SubscriptionService
 
         $business = $this->syncExpiredSubscription($business);
 
-        if ($this->hasActivePremium($business)) {
+        if ($this->hasActivePaidPremium($business)) {
             return $business->fresh(['subscription']);
         }
 
@@ -419,7 +458,7 @@ class SubscriptionService
             throw new RuntimeException('Complete payment before activating premium.');
         }
 
-        $expiresAt = $this->resolveExpiryForPayment($payment);
+        $expiresAt = $this->resolveExpiryForPayment($payment, $business);
 
         return DB::transaction(function () use ($payment, $business, $expiresAt): BusinessInfo {
             $this->paymentService->consumePayment($payment);
@@ -430,7 +469,7 @@ class SubscriptionService
 
     private function repairPremiumActivationFromConsumedPayment(Payment $payment, BusinessInfo $business): BusinessInfo
     {
-        $expiresAt = $this->resolveExpiryForPayment($payment);
+        $expiresAt = $this->resolveExpiryForPayment($payment, $business);
 
         return DB::transaction(function () use ($payment, $business, $expiresAt): BusinessInfo {
             return $this->applyPremiumActivation($payment, $business, $expiresAt);
@@ -442,7 +481,7 @@ class SubscriptionService
      * payment's metadata, falling back to the global default for older payments
      * created before per-package billing periods existed.
      */
-    private function resolveExpiryForPayment(Payment $payment): ?\DateTimeInterface
+    private function resolveExpiryForPayment(Payment $payment, BusinessInfo $business): ?\DateTimeInterface
     {
         $meta = is_array($payment->metadata) ? $payment->metadata : [];
         $packageId = isset($meta['pricing_package_id']) ? (int) $meta['pricing_package_id'] : null;
@@ -453,7 +492,9 @@ class SubscriptionService
             return null;
         }
 
-        return now()->addDays($durationDays ?? $this->subscriptionDurationDays());
+        $trialCreditDays = $this->remainingTrialDays($business);
+
+        return now()->addDays(($durationDays ?? $this->subscriptionDurationDays()) + $trialCreditDays);
     }
 
     private function applyPremiumActivation(Payment $payment, BusinessInfo $business, ?\DateTimeInterface $expiresAt): BusinessInfo
@@ -462,6 +503,9 @@ class SubscriptionService
         $packageId = isset($meta['pricing_package_id']) ? (int) $meta['pricing_package_id'] : null;
 
         $subscription = $this->subscriptionRecord($business);
+        $wasTrialing = $subscription->status === SubscriptionStatus::Trialing;
+        $trialCreditDays = $wasTrialing ? $this->remainingTrialDays($business) : 0;
+
         $subscription->update([
             'plan' => SubscriptionPlan::Premium,
             'status' => SubscriptionStatus::Active,
@@ -469,6 +513,22 @@ class SubscriptionService
             'pricing_package_id' => $packageId,
             'trial_ends_at' => null,
         ]);
+
+        if ($wasTrialing) {
+            SubscriptionTrial::query()
+                ->where('business_info_id', $business->id)
+                ->whereNull('ended_reason')
+                ->update(['ended_reason' => TrialEndedReason::UpgradedToPaid]);
+        }
+
+        if ($trialCreditDays > 0) {
+            $payment->update([
+                'metadata' => array_merge(
+                    is_array($payment->metadata) ? $payment->metadata : [],
+                    ['trial_credit_days' => $trialCreditDays],
+                ),
+            ]);
+        }
 
         $business->update([
             'business_status' => BusinessStatus::Active,
@@ -650,6 +710,8 @@ class SubscriptionService
                 ? max(0, (int) now()->diffInDays($subscription->trial_ends_at, false))
                 : 0,
             'trial_eligible' => $this->isTrialEligible($business),
+            'can_upgrade_from_trial' => $this->isTrialing($business),
+            'trial_credit_on_upgrade' => $this->remainingTrialDays($business),
         ];
     }
 

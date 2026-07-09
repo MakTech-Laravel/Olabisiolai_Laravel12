@@ -86,4 +86,20 @@ class BusinessInfoFactory extends Factory
             ]);
         });
     }
+
+    public function premiumTrialing(int $trialDaysRemaining = 4): static
+    {
+        return $this->afterCreating(function (BusinessInfo $business) use ($trialDaysRemaining): void {
+            $trialEndsAt = now()->addDays(max(1, $trialDaysRemaining));
+
+            $business->subscription()->update([
+                'plan' => SubscriptionPlan::Premium,
+                'status' => SubscriptionStatus::Trialing,
+                'expires_at' => null,
+                'trial_ends_at' => $trialEndsAt,
+            ]);
+
+            $business->update(['business_status' => BusinessStatus::Active]);
+        });
+    }
 }
