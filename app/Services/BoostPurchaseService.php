@@ -307,7 +307,7 @@ class BoostPurchaseService
      */
     public function applyWalletToPayment(Payment $payment, User $user): array
     {
-        return $this->walletService->attachApplicationToPayment($user, $payment, (float) $payment->amount);
+        return $this->walletService->attachApplicationToPayment($payment, $user, (float) $payment->amount);
     }
 
     public function completeBoostFromWalletApplication(Payment $payment, User $user): BoostPurchaseRequest
