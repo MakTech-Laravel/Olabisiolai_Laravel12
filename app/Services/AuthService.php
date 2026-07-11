@@ -10,6 +10,8 @@ use App\Mail\OtpVerificationMail;
 use App\Models\Admin;
 use App\Models\AuthOtp;
 use App\Models\User;
+use App\Support\LoginRoleCompatibility;
+use App\Support\PhoneNormalizer;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -20,8 +22,6 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use App\Support\LoginRoleCompatibility;
-use App\Support\PhoneNormalizer;
 
 class AuthService
 {
@@ -47,7 +47,7 @@ class AuthService
         $user = User::create([
             'first_name' => $validated['first_name'],
             'last_name' => $validated['last_name'],
-            'name' => trim($validated['first_name'] . ' ' . $validated['last_name']),
+            'name' => trim($validated['first_name'].' '.$validated['last_name']),
             'email' => $email,
             'phone' => $phone,
             'role' => $validated['role'],
@@ -876,6 +876,18 @@ class AuthService
         return $otp;
     }
 
+    public function setUserEmailForPurchase(User $user, string $email): User
+    {
+        $normalizedEmail = Str::lower(trim($email));
+
+        $user->forceFill([
+            'email' => $normalizedEmail,
+            'email_verified_at' => now(),
+        ])->save();
+
+        return $user->refresh();
+    }
+
     public function verifyUserEmailOtp(User $user, string $code): User
     {
         if (! filled($user->email)) {
@@ -1010,7 +1022,7 @@ class AuthService
 
     private function twoFactorLoginCacheKey(string $token): string
     {
-        return 'two_factor_login:' . hash('sha256', $token);
+        return 'two_factor_login:'.hash('sha256', $token);
     }
 
     /**
@@ -1081,7 +1093,7 @@ class AuthService
 
     private function newDeviceLoginCacheKey(string $token): string
     {
-        return 'new_device_login:' . hash('sha256', $token);
+        return 'new_device_login:'.hash('sha256', $token);
     }
 
     private function maskEmail(string $email): string
@@ -1094,10 +1106,10 @@ class AuthService
 
         [$local, $domain] = $parts;
         if (strlen($local) <= 2) {
-            return '***@' . $domain;
+            return '***@'.$domain;
         }
 
-        return substr($local, 0, 1) . '***' . substr($local, -1) . '@' . $domain;
+        return substr($local, 0, 1).'***'.substr($local, -1).'@'.$domain;
     }
 
     public function issueAdminAccessToken(Admin $admin): string

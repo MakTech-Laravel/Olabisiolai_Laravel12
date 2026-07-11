@@ -33,6 +33,7 @@ Route::prefix('user')->name('user.')->group(function () {
         Route::post('/', [UserSettingsController::class, 'updateEmail'])->middleware('throttle:6,1')->name('update');
         Route::post('/verify-otp', [UserSettingsController::class, 'verifyEmailOtp'])->middleware('throttle:10,1')->name('verify-otp');
         Route::post('/resend-otp', [UserSettingsController::class, 'resendEmailOtp'])->middleware('throttle:6,1')->name('resend-otp');
+        Route::post('/for-purchase', [UserSettingsController::class, 'setEmailForPurchase'])->middleware('throttle:6,1')->name('for-purchase');
     });
 
     Route::middleware('verified')->group(function (): void {

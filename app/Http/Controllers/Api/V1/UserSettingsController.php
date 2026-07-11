@@ -445,6 +445,34 @@ class UserSettingsController extends Controller
         }
     }
 
+    public function setEmailForPurchase(UpdateUserEmailRequest $request): Response
+    {
+        /** @var User $user */
+        $user = $request->user('api');
+
+        if (! $this->canAccessAccountSettings($user)) {
+            return sendResponse(false, 'Access denied.', null, Response::HTTP_FORBIDDEN);
+        }
+
+        try {
+            $this->authService->setUserEmailForPurchase($user, $request->validated('email'));
+            $user->refresh();
+
+            return sendResponse(true, 'Email saved.', $this->payload($user));
+        } catch (ValidationException $exception) {
+            return sendResponse(
+                false,
+                $exception->validator->errors()->first(),
+                ['errors' => $exception->validator->errors()->toArray()],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
     public function verifyEmailOtp(VerifyUserEmailOtpRequest $request): Response
     {
         /** @var User $user */
