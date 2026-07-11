@@ -119,6 +119,11 @@ class VendorBoostPaths
                     type: 'boolean',
                     example: true,
                 ),
+                new OA\Property(
+                    property: 'apply_wallet',
+                    type: 'boolean',
+                    example: true,
+                ),
             ],
         ),
     ),
@@ -227,6 +232,11 @@ class VendorBoostPaths
                 ),
                 new OA\Property(
                     property: 'use_wallet',
+                    type: 'boolean',
+                    example: true,
+                ),
+                new OA\Property(
+                    property: 'apply_wallet',
                     type: 'boolean',
                     example: true,
                 ),

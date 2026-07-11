@@ -89,6 +89,11 @@ class VendorVerificationPaths
                     type: 'boolean',
                     example: true,
                 ),
+                new OA\Property(
+                    property: 'apply_wallet',
+                    type: 'boolean',
+                    example: true,
+                ),
             ],
         ),
     ),
