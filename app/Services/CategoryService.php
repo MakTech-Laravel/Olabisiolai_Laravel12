@@ -15,6 +15,8 @@ class CategoryService
     public function paginateCategories(?string $search, int $perPage = 10): LengthAwarePaginator
     {
         return Category::query()
+            ->orderByHigherBusinessCount()
+            ->withCount('businessInfos')
             ->when($search !== null && trim($search) !== '', function ($query) use ($search) {
                 $keyword = trim($search);
 
@@ -35,16 +37,18 @@ class CategoryService
             $iconPath = $this->handleFileUpload($icon, 'categories/icons', 'category-icon');
         }
 
-        return Category::query()->create([
+        $category = Category::query()->create([
             'name' => trim((string) $validated['name']),
             'subcategories' => $this->normalizeSubcategories($validated['subcategories'] ?? null),
             'icon' => $iconPath,
         ]);
+
+        return $category->loadCount('businessInfos');
     }
 
     public function getCategoryById(int $categoryId): Category
     {
-        return Category::query()->findOrFail($categoryId);
+        return Category::query()->withCount('businessInfos')->findOrFail($categoryId);
     }
 
     public function updateCategory(Category $category, array $validated, ?UploadedFile $icon = null): Category
@@ -62,7 +66,7 @@ class CategoryService
             'icon' => $iconPath,
         ]);
 
-        return $category->fresh();
+        return $category->fresh()->loadCount('businessInfos');
     }
 
     public function deleteCategory(Category $category): void

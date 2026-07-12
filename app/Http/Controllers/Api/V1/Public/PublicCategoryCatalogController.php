@@ -38,7 +38,8 @@ class PublicCategoryCatalogController extends Controller
     {
         try {
             $categories = Category::query()
-                ->orderBy('name')
+                ->whereHas('businessInfos')
+                ->orderByHigherBusinessCount()
                 ->get(['id', 'name', 'subcategories', 'icon', 'created_at', 'updated_at']);
 
             return sendResponse(true, 'Categories retrieved successfully.', [

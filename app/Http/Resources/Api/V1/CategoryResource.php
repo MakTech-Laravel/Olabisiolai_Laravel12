@@ -21,6 +21,7 @@ class CategoryResource extends JsonResource
             'name' => $this->name,
             'subcategories' => $subcategories,
             'subcategories_count' => count($subcategories),
+            'business_count' => (int) ($this->business_infos_count ?? 0),
             'icon' => $this->icon,
             'icon_url' => public_media_url($this->icon, null),
             'created_at' => humanDateTime($this->created_at),
