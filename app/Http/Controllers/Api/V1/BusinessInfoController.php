@@ -36,7 +36,7 @@ class BusinessInfoController extends Controller
     {
         $categories = Category::query()
             ->orderBy('name')
-            ->get(['id', 'name', 'subcategories', 'created_at', 'updated_at']);
+            ->get(['id', 'name', 'subcategories', 'icon', 'created_at', 'updated_at']);
 
         $locations = Location::query()
             ->with('lgaBoost')
@@ -101,7 +101,7 @@ class BusinessInfoController extends Controller
                 $validated['business_hours'] ?? null,
             );
 
-            $business->load(['category:id,name,subcategories,created_at,updated_at', 'businessHours']);
+            $business->load(['category:id,name,subcategories,icon,created_at,updated_at', 'businessHours']);
 
             $requiresPayment = $this->subscriptionService->requiresPayment($business);
 
@@ -199,7 +199,7 @@ class BusinessInfoController extends Controller
                 $coordinatesProvided,
             );
 
-            $business->load(['category:id,name,subcategories,created_at,updated_at', 'businessHours']);
+            $business->load(['category:id,name,subcategories,icon,created_at,updated_at', 'businessHours']);
 
             return sendResponse(true, 'Business profile updated successfully.', [
                 'business' => new BusinessInfoResource($business),

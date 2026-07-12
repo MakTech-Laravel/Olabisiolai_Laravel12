@@ -20,7 +20,9 @@ use App\Models\VerificationWorkflow;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
 
@@ -500,7 +502,7 @@ class VerificationService
         return BusinessInfo::query()
             ->with([
                 'user:id,first_name,last_name,name,email,phone,role',
-                'category:id,name,subcategories',
+                'category:id,name,subcategories,icon',
                 'verificationDocuments' => fn ($q) => $q->latest()->limit(1),
             ])
             ->withMax('verificationWorkflows', 'created_at')
@@ -567,7 +569,7 @@ class VerificationService
         return BusinessInfo::query()
             ->with([
                 'user:id,first_name,last_name,name,email,phone,role',
-                'category:id,name,subcategories',
+                'category:id,name,subcategories,icon',
                 'verifiedBy:id,name,email',
                 'verificationDocuments' => fn ($q) => $q->latest()->with('uploadedBy:id,name,email'),
                 'verificationNotes' => fn ($q) => $q->latest()->with('addedBy:id,name,email'),
@@ -786,16 +788,16 @@ class VerificationService
     }
 
     /**
-     * @return \Illuminate\Support\Collection<string, VerificationDocument>
+     * @return Collection<string, VerificationDocument>
      */
-    public function latestDocumentsByType(int $businessInfoId): \Illuminate\Support\Collection
+    public function latestDocumentsByType(int $businessInfoId): Collection
     {
         return VerificationDocument::query()
             ->where('business_info_id', $businessInfoId)
             ->orderByDesc('id')
             ->get()
             ->groupBy('document_type')
-            ->map(fn (\Illuminate\Support\Collection $group): VerificationDocument => $group->first());
+            ->map(fn (Collection $group): VerificationDocument => $group->first());
     }
 
     public function approveAllPendingDocuments(BusinessInfo $business, Authenticatable $admin, ?string $note): BusinessInfo
@@ -1009,7 +1011,7 @@ class VerificationService
         });
     }
 
-  /**
+    /**
      * Admin grants free re-verification after a profile change revoked the badge.
      * Creates a completed, unconsumed verification payment so the vendor can upload documents again.
      *
@@ -1058,9 +1060,9 @@ class VerificationService
                 'package_id' => $packageId,
                 'amount' => 0,
                 'currency' => config('pricing.verification.currency', 'NGN'),
-                'tx_ref' => sprintf('admin_reverify_%s_%s', $vendor->id, strtolower(\Illuminate\Support\Str::random(10))),
+                'tx_ref' => sprintf('admin_reverify_%s_%s', $vendor->id, strtolower(Str::random(10))),
                 'gateway' => PaymentGateway::Paystack,
-                'gateway_transaction_id' => 'admin_reverify_' . now()->timestamp,
+                'gateway_transaction_id' => 'admin_reverify_'.now()->timestamp,
                 'status' => PaymentStatus::Completed,
                 'paid_at' => now(),
                 'is_consumed' => false,

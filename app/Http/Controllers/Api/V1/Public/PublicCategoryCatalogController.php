@@ -39,7 +39,7 @@ class PublicCategoryCatalogController extends Controller
         try {
             $categories = Category::query()
                 ->orderBy('name')
-                ->get(['id', 'name', 'subcategories', 'created_at', 'updated_at']);
+                ->get(['id', 'name', 'subcategories', 'icon', 'created_at', 'updated_at']);
 
             return sendResponse(true, 'Categories retrieved successfully.', [
                 'categories' => CategoryResource::collection($categories)->resolve(),

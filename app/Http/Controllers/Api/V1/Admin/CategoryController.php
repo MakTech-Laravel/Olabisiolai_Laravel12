@@ -88,9 +88,10 @@ class CategoryController extends Controller
             $validated = $request->validate([
                 'name' => ['required', 'string', 'max:255', 'unique:categories,name'],
                 'subcategories' => ['nullable'],
+                'icon' => ['required', 'file', 'mimes:png,svg', 'max:2048'],
             ]);
 
-            $category = $this->categoryService->createCategory($validated);
+            $category = $this->categoryService->createCategory($validated, $request->file('icon'));
 
             return sendResponse(true, 'Category created successfully.', [
                 'category' => new CategoryResource($category),
@@ -154,12 +155,13 @@ class CategoryController extends Controller
             $validated = $request->validate([
                 'id' => ['required', 'integer', 'exists:categories,id'],
                 'name' => ['required', 'string', 'max:255', Rule::unique('categories', 'name')->ignore($request->input('id'))],
+                'icon' => ['nullable', 'file', 'mimes:png,svg', 'max:2048'],
                 'subcategories' => ['nullable'],
             ]);
 
             $categoryId = $this->resolveCategoryId($validated);
             $category = $this->categoryService->getCategoryById($categoryId);
-            $category = $this->categoryService->updateCategory($category, $validated);
+            $category = $this->categoryService->updateCategory($category, $validated, $request->file('icon'));
 
             return sendResponse(true, 'Category updated successfully.', [
                 'category' => new CategoryResource($category),

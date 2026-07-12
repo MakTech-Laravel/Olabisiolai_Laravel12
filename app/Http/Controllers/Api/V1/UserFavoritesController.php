@@ -48,7 +48,7 @@ class UserFavoritesController extends Controller
                 ->with([
                     'business' => function ($query) {
                         $query->with([
-                            'category:id,name,subcategories',
+                            'category:id,name,subcategories,icon',
                             'location:id,lga_name,state_name,city_name,country_name',
                             'user:id,uuid',
                         ]);
@@ -67,12 +67,12 @@ class UserFavoritesController extends Controller
 
             $statsByBusinessId = $businessIds !== []
                 ? Review::query()
-                ->approved()
-                ->whereIn('business_id', $businessIds, 'and', false)
-                ->selectRaw('business_id, AVG(rating) as avg_rating, COUNT(*) as reviews_count')
-                ->groupBy('business_id')
-                ->get()
-                ->keyBy('business_id')
+                    ->approved()
+                    ->whereIn('business_id', $businessIds, 'and', false)
+                    ->selectRaw('business_id, AVG(rating) as avg_rating, COUNT(*) as reviews_count')
+                    ->groupBy('business_id')
+                    ->get()
+                    ->keyBy('business_id')
                 : collect();
 
             foreach ($favorites->getCollection() as $favorite) {
@@ -131,7 +131,7 @@ class UserFavoritesController extends Controller
 
             $business = BusinessInfo::query()
                 ->whereKey($businessInfoId)
-                ->tap(fn($query) => $this->scopeFavoritableBusiness($query))
+                ->tap(fn ($query) => $this->scopeFavoritableBusiness($query))
                 ->first();
 
             if ($business === null) {

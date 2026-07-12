@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
-use App\Http\Controllers\Controller;
-use App\Http\Resources\Api\V1\BusinessInfoResource;
 use App\Enums\PaymentGateway;
 use App\Enums\PaymentPurpose;
+use App\Http\Controllers\Controller;
+use App\Http\Resources\Api\V1\BusinessInfoResource;
 use App\Models\BusinessInfo;
 use App\Models\Payment;
 use App\Services\AdminPaymentService;
@@ -51,7 +51,7 @@ class AdminSubscriptionController extends Controller
             );
 
             $activatedBusiness = $result['business'];
-            $activatedBusiness->load(['category:id,name,subcategories', 'location:id,lga_name,state_name,city_name,country_name']);
+            $activatedBusiness->load(['category:id,name,subcategories,icon', 'location:id,lga_name,state_name,city_name,country_name']);
 
             return sendResponse(true, 'Premium subscription activated successfully.', [
                 'payment' => $this->paymentService->toArray($result['payment']),
@@ -92,7 +92,7 @@ class AdminSubscriptionController extends Controller
 
             $business = $result['business'];
             if ($business !== null) {
-                $business->load(['category:id,name,subcategories', 'location:id,lga_name,state_name,city_name,country_name']);
+                $business->load(['category:id,name,subcategories,icon', 'location:id,lga_name,state_name,city_name,country_name']);
             }
 
             return sendResponse(true, 'Payment reconciled and premium activated.', [
@@ -155,7 +155,7 @@ class AdminSubscriptionController extends Controller
 
             $business = $result['business'] ?? null;
             if ($business instanceof BusinessInfo) {
-                $business->load(['category:id,name,subcategories', 'location:id,lga_name,state_name,city_name,country_name']);
+                $business->load(['category:id,name,subcategories,icon', 'location:id,lga_name,state_name,city_name,country_name']);
             }
 
             $message = match ($model->purpose) {
@@ -245,7 +245,7 @@ class AdminSubscriptionController extends Controller
 
             $business = $result['business'] ?? $business;
             if ($business instanceof BusinessInfo) {
-                $business->load(['category:id,name,subcategories', 'location:id,lga_name,state_name,city_name,country_name']);
+                $business->load(['category:id,name,subcategories,icon', 'location:id,lga_name,state_name,city_name,country_name']);
             }
 
             $message = match ($model->purpose) {

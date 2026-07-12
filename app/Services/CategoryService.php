@@ -2,12 +2,16 @@
 
 namespace App\Services;
 
+use App\Http\Traits\FileManagementTrait;
 use App\Models\Category;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Validation\ValidationException;
 
 class CategoryService
 {
+    use FileManagementTrait;
+
     public function paginateCategories(?string $search, int $perPage = 10): LengthAwarePaginator
     {
         return Category::query()
@@ -24,11 +28,17 @@ class CategoryService
             ->withQueryString();
     }
 
-    public function createCategory(array $validated): Category
+    public function createCategory(array $validated, ?UploadedFile $icon = null): Category
     {
+        $iconPath = null;
+        if ($icon !== null) {
+            $iconPath = $this->handleFileUpload($icon, 'categories/icons', 'category-icon');
+        }
+
         return Category::query()->create([
             'name' => trim((string) $validated['name']),
             'subcategories' => $this->normalizeSubcategories($validated['subcategories'] ?? null),
+            'icon' => $iconPath,
         ]);
     }
 
@@ -37,11 +47,19 @@ class CategoryService
         return Category::query()->findOrFail($categoryId);
     }
 
-    public function updateCategory(Category $category, array $validated): Category
+    public function updateCategory(Category $category, array $validated, ?UploadedFile $icon = null): Category
     {
+        $iconPath = $category->icon;
+
+        if ($icon !== null) {
+            $this->fileDelete($category->icon);
+            $iconPath = $this->handleFileUpload($icon, 'categories/icons', 'category-icon');
+        }
+
         $category->update([
             'name' => trim((string) $validated['name']),
             'subcategories' => $this->normalizeSubcategories($validated['subcategories'] ?? null),
+            'icon' => $iconPath,
         ]);
 
         return $category->fresh();
@@ -49,6 +67,7 @@ class CategoryService
 
     public function deleteCategory(Category $category): void
     {
+        $this->fileDelete($category->icon);
         $category->delete();
     }
 

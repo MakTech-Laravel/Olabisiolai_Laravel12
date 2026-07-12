@@ -176,7 +176,7 @@ class BusinessInfoService
         $searchQuery = trim((string) $validated['query']);
         $listingContext = $this->buildPublicBoostListingContext($validated);
 
-        $query = BusinessInfo::with(['category:id,name,subcategories', 'location:id,lga_name,state_name,city_name,latitude,longitude,formatted_address', 'businessHours', self::PUBLIC_VENDOR_USER_COLUMNS]);
+        $query = BusinessInfo::with(['category:id,name,subcategories,icon', 'location:id,lga_name,state_name,city_name,latitude,longitude,formatted_address', 'businessHours', self::PUBLIC_VENDOR_USER_COLUMNS]);
 
         $this->applyPublicMarketplaceVisibility($query);
         $this->applyPublicSearchFilter($query, $searchQuery);
@@ -204,7 +204,7 @@ class BusinessInfoService
     public function getPublicPublishedBusinessDetail(int $businessId, ?User $user): ?array
     {
         $businessQuery = BusinessInfo::with([
-            'category:id,name,subcategories',
+            'category:id,name,subcategories,icon',
             'location:id,lga_name,state_name,city_name,country_name,latitude,longitude,formatted_address',
             'businessHours',
             'catalogItems',
@@ -235,7 +235,7 @@ class BusinessInfoService
 
     private function publicBaseHomeQuery(?User $user): Builder
     {
-        $query = BusinessInfo::with(['category:id,name,subcategories', 'location:id,lga_name,state_name,city_name,country_name,latitude,longitude,formatted_address', 'businessHours', self::PUBLIC_VENDOR_USER_COLUMNS]);
+        $query = BusinessInfo::with(['category:id,name,subcategories,icon', 'location:id,lga_name,state_name,city_name,country_name,latitude,longitude,formatted_address', 'businessHours', self::PUBLIC_VENDOR_USER_COLUMNS]);
 
         $this->applyPublicMarketplaceVisibility($query);
         $this->applyPublicListAggregates($query, $user);
@@ -245,7 +245,7 @@ class BusinessInfoService
 
     private function publicBaseFeaturedQuery(?User $user): Builder
     {
-        $query = BusinessInfo::with(['category:id,name,subcategories', 'location:id,lga_name,state_name,city_name,latitude,longitude,formatted_address', 'businessHours', self::PUBLIC_VENDOR_USER_COLUMNS]);
+        $query = BusinessInfo::with(['category:id,name,subcategories,icon', 'location:id,lga_name,state_name,city_name,latitude,longitude,formatted_address', 'businessHours', self::PUBLIC_VENDOR_USER_COLUMNS]);
 
         $this->applyPublicMarketplaceVisibility($query);
         $query->orderBy('created_at', 'desc');
@@ -257,7 +257,7 @@ class BusinessInfoService
 
     private function publicBaseAllQuery(?User $user): Builder
     {
-        $query = BusinessInfo::with(['category:id,name,subcategories', 'location:id,lga_name,state_name,city_name,country_name,latitude,longitude,formatted_address', 'businessHours', self::PUBLIC_VENDOR_USER_COLUMNS]);
+        $query = BusinessInfo::with(['category:id,name,subcategories,icon', 'location:id,lga_name,state_name,city_name,country_name,latitude,longitude,formatted_address', 'businessHours', self::PUBLIC_VENDOR_USER_COLUMNS]);
 
         $this->applyPublicMarketplaceVisibility($query);
         $this->applyPublicListAggregates($query, $user);
@@ -517,7 +517,7 @@ class BusinessInfoService
         return BusinessInfo::query()
             ->where('user_id', $user->id)
             ->with([
-                'category:id,name,subcategories',
+                'category:id,name,subcategories,icon',
                 'location:id,lga_name,state_name,city_name,country_name,latitude,longitude,formatted_address',
                 'boost:id,business_info_id,is_active,activated_at,deactivated_at',
                 'subscription',
@@ -1194,7 +1194,7 @@ class BusinessInfoService
             $subscriptionPlan,
         )
             ->with([
-                'category:id,name,subcategories',
+                'category:id,name,subcategories,icon',
                 'location:id,lga_name,state_name,city_name,country_name,latitude,longitude,formatted_address',
                 'user:id,first_name,last_name,name,email,phone,role',
                 'subscription',
@@ -1207,7 +1207,7 @@ class BusinessInfoService
     {
         return BusinessInfo::query()
             ->with([
-                'category:id,name,subcategories',
+                'category:id,name,subcategories,icon',
                 'location:id,lga_name,state_name,city_name,country_name,latitude,longitude,formatted_address',
                 'user:id,first_name,last_name,name,email,phone,role',
                 'verifiedBy:id,name,email,phone,role',
@@ -1247,7 +1247,7 @@ class BusinessInfoService
         ]);
 
         return $businessInfo->fresh([
-            'category:id,name,subcategories',
+            'category:id,name,subcategories,icon',
             'location:id,lga_name,state_name,city_name,country_name,latitude,longitude,formatted_address',
             'user:id,first_name,last_name,name,email,phone,role',
         ]);

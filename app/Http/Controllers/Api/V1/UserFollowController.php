@@ -151,7 +151,7 @@ class UserFollowController extends Controller
                     'following',
                     'businessInfo' => function ($query): void {
                         $query->with([
-                            'category:id,name,subcategories',
+                            'category:id,name,subcategories,icon',
                             'location:id,lga_name,state_name,city_name,country_name',
                         ]);
                     },

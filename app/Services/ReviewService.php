@@ -58,7 +58,7 @@ class ReviewService
                 'images:id,review_id,image_path,original_filename,mime_type,file_size,created_at,updated_at',
                 'user:id,first_name,last_name,name,email,phone',
                 'business.user:id,first_name,last_name,name,email,phone',
-                'business.category:id,name,subcategories',
+                'business.category:id,name,subcategories,icon',
             ]);
         });
     }
@@ -78,7 +78,7 @@ class ReviewService
                 'business:id,business_name,category_id,location_id',
                 'business.category:id,name',
                 'business.location:id,lga_name,state_name,city_name',
-                'replies' => fn($replyQuery) => $replyQuery->latest(),
+                'replies' => fn ($replyQuery) => $replyQuery->latest(),
             ])
             ->latest('created_at');
 
@@ -329,7 +329,7 @@ class ReviewService
         if ($user !== null) {
             $fromUser = trim((string) ($user->name ?? ''));
             if ($fromUser === '') {
-                $fromUser = trim(trim((string) ($user->first_name ?? '')) . ' ' . trim((string) ($user->last_name ?? '')));
+                $fromUser = trim(trim((string) ($user->first_name ?? '')).' '.trim((string) ($user->last_name ?? '')));
             }
             if ($fromUser === '' && ! empty($user->email)) {
                 $fromUser = (string) strstr((string) $user->email, '@', true);

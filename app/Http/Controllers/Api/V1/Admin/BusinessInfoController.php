@@ -8,9 +8,9 @@ use App\Enums\VerificationStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\AdminVendorMessageResource;
 use App\Http\Resources\Api\V1\BusinessInfoResource;
+use App\Http\Resources\MessageResource;
 use App\Models\BusinessInfo;
 use App\Models\User;
-use App\Http\Resources\MessageResource;
 use App\Services\AdminMessagingService;
 use App\Services\BusinessInfoService;
 use App\Services\VerificationService;
@@ -286,7 +286,7 @@ class BusinessInfoController extends Controller
                 'verified_at' => ($validated['verification_status'] ?? 'none') === 'verified' ? now() : null,
             ]);
 
-            $business->load(['category:id,name,subcategories', 'location:id,lga_name,state_name,city_name,country_name', 'user:id,name,email,phone']);
+            $business->load(['category:id,name,subcategories,icon', 'location:id,lga_name,state_name,city_name,country_name', 'user:id,name,email,phone']);
 
             return sendResponse(true, 'Business profile created successfully.', [
                 'business' => new BusinessInfoResource($business),
@@ -379,7 +379,7 @@ class BusinessInfoController extends Controller
                 );
             }
 
-            $business->refresh()->load(['category:id,name,subcategories', 'location:id,lga_name,state_name,city_name,country_name', 'user:id,name,email,phone', 'verifiedBy:id,name,email']);
+            $business->refresh()->load(['category:id,name,subcategories,icon', 'location:id,lga_name,state_name,city_name,country_name', 'user:id,name,email,phone', 'verifiedBy:id,name,email']);
 
             return sendResponse(true, 'Business profile updated successfully.', [
                 'business' => new BusinessInfoResource($business),

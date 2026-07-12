@@ -430,7 +430,7 @@ class VendorSubscriptionController extends Controller
                 $gateway,
                 verifyWithGateway: $gateway === PaymentGateway::Paystack,
             );
-            $business->load(['category:id,name,subcategories', 'location:id,lga_name,state_name,city_name,country_name']);
+            $business->load(['category:id,name,subcategories,icon', 'location:id,lga_name,state_name,city_name,country_name']);
 
             return sendResponse(true, 'Premium subscription activated successfully.', [
                 'payment' => $this->paymentService->toArray($payment->fresh()),
@@ -594,7 +594,7 @@ class VendorSubscriptionController extends Controller
                 return sendResponse(false, 'Premium could not be activated.', null, Response::HTTP_UNPROCESSABLE_ENTITY);
             }
 
-            $business->load(['category:id,name,subcategories', 'location:id,lga_name,state_name,city_name,country_name']);
+            $business->load(['category:id,name,subcategories,icon', 'location:id,lga_name,state_name,city_name,country_name']);
 
             return sendResponse(true, 'Premium subscription activated successfully.', [
                 'payment' => $this->paymentService->toArray($payment),
