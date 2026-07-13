@@ -2,12 +2,18 @@
 
 namespace App\Services;
 
+use App\Enums\BusinessStatus;
+use App\Enums\SubscriptionPlan;
+use App\Enums\SubscriptionStatus;
 use App\Models\BusinessCatalogItem;
 use App\Models\BusinessInfo;
 use App\Models\User;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class BusinessCatalogService
@@ -27,6 +33,98 @@ class BusinessCatalogService
             ->get();
     }
 
+    /**
+     * Small curated homepage strip: premium-vendor catalog items only.
+     *
+     * @return Collection<int, BusinessCatalogItem>
+     */
+    public function curatedPremiumHomeItems(int $limit = 6): Collection
+    {
+        return $this->discoveryBaseQuery()
+            ->limit(max(1, min($limit, 12)))
+            ->get();
+    }
+
+    /**
+     * Full Catalog-tab discovery feed (premium vendors, with optional filters).
+     *
+     * @param  array{category_id?: int|null, city?: string|null, type?: string|null, search?: string|null}  $filters
+     */
+    public function paginateDiscoveryFeed(array $filters, int $perPage = 24): LengthAwarePaginator
+    {
+        $query = $this->discoveryBaseQuery();
+
+        if (! empty($filters['category_id'])) {
+            $query->whereHas('businessInfo', function (Builder $business) use ($filters): void {
+                $business->where('category_id', (int) $filters['category_id']);
+            });
+        }
+
+        if (! empty($filters['city'])) {
+            $city = trim((string) $filters['city']);
+            $query->whereHas('businessInfo.location', function (Builder $location) use ($city): void {
+                $location->where('city_name', 'like', "%{$city}%")
+                    ->orWhere('lga_name', 'like', "%{$city}%")
+                    ->orWhere('state_name', 'like', "%{$city}%");
+            });
+        }
+
+        if (! empty($filters['type'])) {
+            $type = $this->normalizeType($filters['type']);
+            $query->where('type', $type);
+        }
+
+        if (! empty($filters['search'])) {
+            $keyword = trim((string) $filters['search']);
+            $query->where(function (Builder $inner) use ($keyword): void {
+                $inner->where('name', 'like', "%{$keyword}%")
+                    ->orWhere('description', 'like', "%{$keyword}%")
+                    ->orWhereHas('businessInfo', function (Builder $business) use ($keyword): void {
+                        $business->where('business_name', 'like', "%{$keyword}%");
+                    });
+            });
+        }
+
+        return $query->paginate(max(1, min($perPage, 50)));
+    }
+
+    /**
+     * Premium + active businesses, ranked for discovery.
+     *
+     * @return Builder<BusinessCatalogItem>
+     */
+    private function discoveryBaseQuery(): Builder
+    {
+        return BusinessCatalogItem::query()
+            ->whereHas('businessInfo', function (Builder $business): void {
+                $business->where('business_status', BusinessStatus::Active->value)
+                    ->whereHas('subscription', function (Builder $subscription): void {
+                        $subscription->where('plan', SubscriptionPlan::Premium->value)
+                            ->where('status', SubscriptionStatus::Active->value)
+                            ->where(function (Builder $notExpired): void {
+                                $notExpired->whereNull('expires_at')
+                                    ->orWhere('expires_at', '>', now());
+                            });
+                    });
+            })
+            ->with([
+                'businessInfo:id,business_name,category_id,location_id,user_id,business_status',
+                'businessInfo.category:id,name',
+                'businessInfo.location:id,city_name,state_name,lga_name',
+                'businessInfo.user:id,uuid',
+                'businessInfo.boost:id,business_info_id,is_active',
+            ])
+            ->orderByRaw('CASE WHEN image_paths IS NULL OR JSON_LENGTH(COALESCE(image_paths, JSON_ARRAY())) = 0 THEN 1 ELSE 0 END')
+            ->orderByRaw('(SELECT CASE WHEN EXISTS (
+                SELECT 1 FROM boosts
+                WHERE boosts.business_info_id = business_catalog_items.business_info_id
+                  AND boosts.is_active = 1
+            ) THEN 0 ELSE 1 END)')
+            ->latest('updated_at')
+            ->orderBy('sort_order')
+            ->orderBy('id');
+    }
+
     public function assertCanManageCatalog(BusinessInfo $business): void
     {
         if (! $this->subscriptionService->hasActivePremium($business)) {
@@ -38,47 +136,50 @@ class BusinessCatalogService
 
     /**
      * @param  array<string, mixed>  $data
+     * @param  list<UploadedFile>  $images
      */
-    public function createItem(BusinessInfo $business, array $data, ?UploadedFile $image = null): BusinessCatalogItem
+    public function createItem(BusinessInfo $business, array $data, array $images = []): BusinessCatalogItem
     {
         $this->assertCanManageCatalog($business);
 
-        return DB::transaction(function () use ($business, $data, $image): BusinessCatalogItem {
+        return DB::transaction(function () use ($business, $data, $images): BusinessCatalogItem {
             $sortOrder = (int) ($data['sort_order'] ?? ($business->catalogItems()->max('sort_order') + 1));
 
-            $item = $business->catalogItems()->create([
+            $paths = [];
+            foreach ($images as $image) {
+                $paths[] = $this->storeImage($business, $image);
+            }
+
+            return $business->catalogItems()->create([
                 'type' => $this->normalizeType($data['type'] ?? 'service'),
                 'name' => trim((string) $data['name']),
                 'description' => isset($data['description']) ? trim((string) $data['description']) : null,
                 'price_kobo' => isset($data['price_kobo']) ? (int) $data['price_kobo'] : null,
                 'price_label' => isset($data['price_label']) ? trim((string) $data['price_label']) : null,
                 'price_from' => (bool) ($data['price_from'] ?? false),
+                'image_paths' => $paths === [] ? null : $paths,
                 'sort_order' => $sortOrder,
-            ]);
-
-            if ($image !== null) {
-                $item->image_path = $this->storeImage($business, $image);
-                $item->save();
-            }
-
-            return $item->fresh();
+            ])->fresh();
         });
     }
 
     /**
      * @param  array<string, mixed>  $data
+     * @param  list<UploadedFile>  $images
+     * @param  list<string>|null  $keepImagePaths
      */
     public function updateItem(
         BusinessInfo $business,
         BusinessCatalogItem $item,
         array $data,
-        ?UploadedFile $image = null,
-        bool $removeImage = false,
+        array $images = [],
+        bool $removeImages = false,
+        ?array $keepImagePaths = null,
     ): BusinessCatalogItem {
         $this->assertCanManageCatalog($business);
         $this->assertItemBelongsToBusiness($business, $item);
 
-        return DB::transaction(function () use ($business, $item, $data, $image, $removeImage): BusinessCatalogItem {
+        return DB::transaction(function () use ($business, $item, $data, $images, $removeImages, $keepImagePaths): BusinessCatalogItem {
             if (array_key_exists('type', $data)) {
                 $item->type = $this->normalizeType($data['type']);
             }
@@ -101,10 +202,40 @@ class BusinessCatalogService
                 $item->sort_order = (int) $data['sort_order'];
             }
 
-            if ($removeImage) {
-                $item->image_path = null;
-            } elseif ($image !== null) {
-                $item->image_path = $this->storeImage($business, $image);
+            $oldPaths = $item->normalizedImagePaths();
+            $galleryTouched = $removeImages || $keepImagePaths !== null || $images !== [];
+
+            if ($galleryTouched) {
+                if ($removeImages) {
+                    $keptPaths = [];
+                } elseif ($keepImagePaths !== null) {
+                    $keptPaths = [];
+                    foreach ($keepImagePaths as $path) {
+                        if (! is_string($path) || trim($path) === '') {
+                            continue;
+                        }
+                        $normalized = trim($path);
+                        if (in_array($normalized, $oldPaths, true)) {
+                            $keptPaths[] = $normalized;
+                        }
+                    }
+                } else {
+                    $keptPaths = $oldPaths;
+                }
+
+                $newPaths = [];
+                foreach ($images as $image) {
+                    $newPaths[] = $this->storeImage($business, $image);
+                }
+
+                $finalPaths = array_values(array_merge($keptPaths, $newPaths));
+
+                $removed = array_diff($oldPaths, $finalPaths);
+                foreach ($removed as $path) {
+                    Storage::disk('public')->delete($path);
+                }
+
+                $item->image_paths = $finalPaths === [] ? null : $finalPaths;
             }
 
             $item->save();
@@ -117,6 +248,11 @@ class BusinessCatalogService
     {
         $this->assertCanManageCatalog($business);
         $this->assertItemBelongsToBusiness($business, $item);
+
+        foreach ($item->normalizedImagePaths() as $path) {
+            Storage::disk('public')->delete($path);
+        }
+
         $item->delete();
     }
 

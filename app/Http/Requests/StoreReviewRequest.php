@@ -37,7 +37,7 @@ class StoreReviewRequest extends FormRequest
                 'file',
                 'image',
                 'mimes:jpeg,jpg,png,webp',
-                'max:5120',
+                'max:10240',
             ],
         ];
     }

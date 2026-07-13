@@ -18,7 +18,7 @@ class BusinessCatalogItem extends Model
         'price_kobo',
         'price_label',
         'price_from',
-        'image_path',
+        'image_paths',
         'sort_order',
     ];
 
@@ -31,6 +31,7 @@ class BusinessCatalogItem extends Model
             'price_kobo' => 'integer',
             'price_from' => 'boolean',
             'sort_order' => 'integer',
+            'image_paths' => 'array',
         ];
     }
 
@@ -40,5 +41,18 @@ class BusinessCatalogItem extends Model
     public function businessInfo(): BelongsTo
     {
         return $this->belongsTo(BusinessInfo::class);
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function normalizedImagePaths(): array
+    {
+        $paths = is_array($this->image_paths) ? $this->image_paths : [];
+
+        return array_values(array_filter(
+            array_map(static fn ($path) => is_string($path) ? trim($path) : '', $paths),
+            static fn (string $path) => $path !== '',
+        ));
     }
 }

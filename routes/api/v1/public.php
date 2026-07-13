@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\BusinessReportController;
 use App\Http\Controllers\Api\V1\Public\BusinessInfoController;
 use App\Http\Controllers\Api\V1\Public\ContactMessageController;
 use App\Http\Controllers\Api\V1\Public\PaymentConfigController;
+use App\Http\Controllers\Api\V1\Public\PublicCatalogDiscoveryController;
 use App\Http\Controllers\Api\V1\Public\PublicCategoryCatalogController;
 use App\Http\Controllers\Api\V1\Public\PublicCmsPageController;
 use App\Http\Controllers\Api\V1\Public\PublicLocationCatalogController;
@@ -32,6 +33,8 @@ Route::post('/contact-messages', [ContactMessageController::class, 'store'])
 
 Route::get('/categories', [PublicCategoryCatalogController::class, 'index'])->name('public.categories');
 Route::get('/categories/{category}', [PublicCategoryCatalogController::class, 'show'])->name('public.categories.show');
+Route::get('/catalog/home', [PublicCatalogDiscoveryController::class, 'home'])->name('public.catalog.home');
+Route::get('/catalog', [PublicCatalogDiscoveryController::class, 'index'])->name('public.catalog');
 Route::get('/locations', [PublicLocationCatalogController::class, 'index'])->name('public.locations');
 Route::get('/subscription-packages', [PublicSubscriptionPlanController::class, 'index'])->name('public.subscription-packages');
 Route::get('/payments/config', [PaymentConfigController::class, 'show'])->name('public.payments.config');

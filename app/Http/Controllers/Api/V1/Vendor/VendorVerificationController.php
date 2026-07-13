@@ -248,7 +248,7 @@ class VendorVerificationController extends Controller
                 'documents.*.document_type' => ['required', 'string', 'in:payment_receipt,bank_transfer,business_registration,cac_document,identity_proof,address_proof,other'],
                 'documents.*.title' => ['required', 'string', 'max:255'],
                 'documents.*.description' => ['nullable', 'string', 'max:1000'],
-                'documents.*.document' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:5120'],
+                'documents.*.document' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
             ]);
 
             $payment = $this->paymentService->findConsumablePayment(
@@ -324,7 +324,7 @@ class VendorVerificationController extends Controller
                 'title' => ['required', 'string', 'max:255'],
                 'description' => ['nullable', 'string', 'max:1000'],
                 'parent_document_id' => ['nullable', 'integer', 'exists:verification_documents,id'],
-                'document' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:5120'],
+                'document' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
             ]);
 
             $document = $this->verificationService->uploadDocument(
