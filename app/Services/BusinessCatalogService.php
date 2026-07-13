@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class BusinessCatalogService
@@ -113,7 +114,7 @@ class BusinessCatalogService
                 'businessInfo.user:id,uuid',
                 'businessInfo.boost:id,business_info_id,is_active',
             ])
-            ->orderByRaw('CASE WHEN image_path IS NULL OR image_path = \'\' THEN 1 ELSE 0 END')
+            ->orderByRaw('CASE WHEN image_paths IS NULL OR JSON_LENGTH(COALESCE(image_paths, JSON_ARRAY())) = 0 THEN 1 ELSE 0 END')
             ->orderByRaw('(SELECT CASE WHEN EXISTS (
                 SELECT 1 FROM boosts
                 WHERE boosts.business_info_id = business_catalog_items.business_info_id
@@ -135,47 +136,50 @@ class BusinessCatalogService
 
     /**
      * @param  array<string, mixed>  $data
+     * @param  list<UploadedFile>  $images
      */
-    public function createItem(BusinessInfo $business, array $data, ?UploadedFile $image = null): BusinessCatalogItem
+    public function createItem(BusinessInfo $business, array $data, array $images = []): BusinessCatalogItem
     {
         $this->assertCanManageCatalog($business);
 
-        return DB::transaction(function () use ($business, $data, $image): BusinessCatalogItem {
+        return DB::transaction(function () use ($business, $data, $images): BusinessCatalogItem {
             $sortOrder = (int) ($data['sort_order'] ?? ($business->catalogItems()->max('sort_order') + 1));
 
-            $item = $business->catalogItems()->create([
+            $paths = [];
+            foreach ($images as $image) {
+                $paths[] = $this->storeImage($business, $image);
+            }
+
+            return $business->catalogItems()->create([
                 'type' => $this->normalizeType($data['type'] ?? 'service'),
                 'name' => trim((string) $data['name']),
                 'description' => isset($data['description']) ? trim((string) $data['description']) : null,
                 'price_kobo' => isset($data['price_kobo']) ? (int) $data['price_kobo'] : null,
                 'price_label' => isset($data['price_label']) ? trim((string) $data['price_label']) : null,
                 'price_from' => (bool) ($data['price_from'] ?? false),
+                'image_paths' => $paths === [] ? null : $paths,
                 'sort_order' => $sortOrder,
-            ]);
-
-            if ($image !== null) {
-                $item->image_path = $this->storeImage($business, $image);
-                $item->save();
-            }
-
-            return $item->fresh();
+            ])->fresh();
         });
     }
 
     /**
      * @param  array<string, mixed>  $data
+     * @param  list<UploadedFile>  $images
+     * @param  list<string>|null  $keepImagePaths
      */
     public function updateItem(
         BusinessInfo $business,
         BusinessCatalogItem $item,
         array $data,
-        ?UploadedFile $image = null,
-        bool $removeImage = false,
+        array $images = [],
+        bool $removeImages = false,
+        ?array $keepImagePaths = null,
     ): BusinessCatalogItem {
         $this->assertCanManageCatalog($business);
         $this->assertItemBelongsToBusiness($business, $item);
 
-        return DB::transaction(function () use ($business, $item, $data, $image, $removeImage): BusinessCatalogItem {
+        return DB::transaction(function () use ($business, $item, $data, $images, $removeImages, $keepImagePaths): BusinessCatalogItem {
             if (array_key_exists('type', $data)) {
                 $item->type = $this->normalizeType($data['type']);
             }
@@ -198,10 +202,40 @@ class BusinessCatalogService
                 $item->sort_order = (int) $data['sort_order'];
             }
 
-            if ($removeImage) {
-                $item->image_path = null;
-            } elseif ($image !== null) {
-                $item->image_path = $this->storeImage($business, $image);
+            $oldPaths = $item->normalizedImagePaths();
+            $galleryTouched = $removeImages || $keepImagePaths !== null || $images !== [];
+
+            if ($galleryTouched) {
+                if ($removeImages) {
+                    $keptPaths = [];
+                } elseif ($keepImagePaths !== null) {
+                    $keptPaths = [];
+                    foreach ($keepImagePaths as $path) {
+                        if (! is_string($path) || trim($path) === '') {
+                            continue;
+                        }
+                        $normalized = trim($path);
+                        if (in_array($normalized, $oldPaths, true)) {
+                            $keptPaths[] = $normalized;
+                        }
+                    }
+                } else {
+                    $keptPaths = $oldPaths;
+                }
+
+                $newPaths = [];
+                foreach ($images as $image) {
+                    $newPaths[] = $this->storeImage($business, $image);
+                }
+
+                $finalPaths = array_values(array_merge($keptPaths, $newPaths));
+
+                $removed = array_diff($oldPaths, $finalPaths);
+                foreach ($removed as $path) {
+                    Storage::disk('public')->delete($path);
+                }
+
+                $item->image_paths = $finalPaths === [] ? null : $finalPaths;
             }
 
             $item->save();
@@ -214,6 +248,11 @@ class BusinessCatalogService
     {
         $this->assertCanManageCatalog($business);
         $this->assertItemBelongsToBusiness($business, $item);
+
+        foreach ($item->normalizedImagePaths() as $path) {
+            Storage::disk('public')->delete($path);
+        }
+
         $item->delete();
     }
 

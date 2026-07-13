@@ -12,6 +12,11 @@ class BusinessCatalogItemResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $paths = $this->resource->normalizedImagePaths();
+        $urls = array_values(array_filter(
+            array_map(static fn (string $path) => public_media_url($path, null), $paths),
+        ));
+
         return [
             'id' => $this->id,
             'type' => $this->type,
@@ -20,7 +25,9 @@ class BusinessCatalogItemResource extends JsonResource
             'price_kobo' => $this->price_kobo,
             'price_label' => $this->price_label,
             'price_from' => (bool) $this->price_from,
-            'image_url' => public_media_url($this->image_path),
+            'image_url' => $urls[0] ?? null,
+            'image_urls' => $urls,
+            'image_paths' => $paths,
             'sort_order' => (int) $this->sort_order,
         ];
     }

@@ -66,6 +66,7 @@ class ReferralService
             'code' => $code->code,
             'referral_link' => $link,
             'total_earned' => $totalEarned,
+            'total_invites' => $invites->count(),
             'invites' => $invites->map(function (ReferralInvite $invite): array {
                 return [
                     'id' => $invite->id,
