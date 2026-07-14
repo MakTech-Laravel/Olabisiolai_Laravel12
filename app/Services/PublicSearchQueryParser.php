@@ -14,6 +14,11 @@ class PublicSearchQueryParser
     /** @var list<array{id: int, name: string, subcategories: list<string>}>|null */
     private ?array $categoryCandidates = null;
 
+    /** @var array<string, list<string>>|null */
+    private ?array $synonymMap = null;
+
+    public function __construct(private readonly SearchSynonymService $searchSynonymService) {}
+
     /**
      * @var list<string>
      */
@@ -180,12 +185,22 @@ class PublicSearchQueryParser
 
         $terms = [$token];
 
-        /** @var list<string> $synonyms */
-        $synonyms = config('search_synonyms.'.$token, []);
-        foreach ($synonyms as $synonym) {
-            $synonym = mb_strtolower(trim((string) $synonym));
-            if ($synonym !== '') {
-                $terms[] = $synonym;
+        $singular = $this->singularize($token);
+        if ($singular !== $token) {
+            $terms[] = $singular;
+        }
+
+        if (! str_ends_with($token, 's')) {
+            $terms[] = $token.'s';
+        }
+
+        foreach (array_unique([$token, $singular]) as $lookupToken) {
+            $synonyms = $this->synonymMap()[$lookupToken] ?? [];
+            foreach ($synonyms as $synonym) {
+                $synonym = mb_strtolower(trim((string) $synonym));
+                if ($synonym !== '') {
+                    $terms[] = $synonym;
+                }
             }
         }
 
@@ -211,7 +226,68 @@ class PublicSearchQueryParser
             return false;
         }
 
-        return str_contains($candidate, $token) || str_contains($token, $candidate);
+        if (str_contains($candidate, $token) || str_contains($token, $candidate)) {
+            return true;
+        }
+
+        foreach (preg_split('/\s+/u', $candidate, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $candidateWord) {
+            if ($this->fuzzyWordsMatch($token, $candidateWord)) {
+                return true;
+            }
+        }
+
+        return $this->fuzzyWordsMatch($token, $candidate);
+    }
+
+    /**
+     * Typo-tolerant word comparison: normalizes plurals, then allows a small
+     * edit-distance gap that scales with word length (catches near-miss typos
+     * without matching unrelated short words).
+     */
+    private function fuzzyWordsMatch(string $a, string $b): bool
+    {
+        $a = $this->singularize($a);
+        $b = $this->singularize($b);
+
+        if ($a === $b) {
+            return true;
+        }
+
+        if (str_contains($a, $b) || str_contains($b, $a)) {
+            return true;
+        }
+
+        $maxLength = max(mb_strlen($a), mb_strlen($b));
+        if ($maxLength < 4) {
+            return false;
+        }
+
+        $threshold = match (true) {
+            $maxLength <= 5 => 1,
+            $maxLength <= 8 => 2,
+            default => 3,
+        };
+
+        return levenshtein($a, $b) <= $threshold;
+    }
+
+    private function singularize(string $word): string
+    {
+        $length = mb_strlen($word);
+
+        if ($length > 4 && str_ends_with($word, 'ies')) {
+            return mb_substr($word, 0, -3).'y';
+        }
+
+        if ($length > 4 && (str_ends_with($word, 'ses') || str_ends_with($word, 'xes') || str_ends_with($word, 'ches') || str_ends_with($word, 'shes'))) {
+            return mb_substr($word, 0, -2);
+        }
+
+        if ($length > 3 && str_ends_with($word, 's') && ! str_ends_with($word, 'ss')) {
+            return mb_substr($word, 0, -1);
+        }
+
+        return $word;
     }
 
     private function containsWholePhrase(string $haystack, string $phrase): bool
@@ -279,6 +355,18 @@ class PublicSearchQueryParser
             ->all();
 
         return $this->locationCandidates;
+    }
+
+    /**
+     * @return array<string, list<string>>
+     */
+    private function synonymMap(): array
+    {
+        if ($this->synonymMap !== null) {
+            return $this->synonymMap;
+        }
+
+        return $this->synonymMap = $this->searchSynonymService->getSynonymMap();
     }
 
     /**

@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\V1\Admin\PermissionController;
 use App\Http\Controllers\Api\V1\Admin\ReviewController;
 use App\Http\Controllers\Api\V1\Admin\ReviewReportController;
 use App\Http\Controllers\Api\V1\Admin\RoleController;
+use App\Http\Controllers\Api\V1\Admin\SearchSynonymController;
 use App\Http\Controllers\Api\V1\Admin\VerificationController;
 use App\Http\Controllers\Api\V1\UserController;
 use Illuminate\Support\Facades\Route;
@@ -66,6 +67,14 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('/view', [CategoryController::class, 'viewCategory'])->name('view');
         Route::post('/update', [CategoryController::class, 'updateCategory'])->name('update');
         Route::post('/delete', [CategoryController::class, 'deleteCategory'])->name('delete');
+    });
+
+    Route::prefix('search-synonyms')->name('search-synonyms.')->group(function () {
+        Route::post('/', [SearchSynonymController::class, 'allSynonyms'])->name('index');
+        Route::post('/create', [SearchSynonymController::class, 'createSynonym'])->name('create');
+        Route::post('/view', [SearchSynonymController::class, 'viewSynonym'])->name('view');
+        Route::post('/update', [SearchSynonymController::class, 'updateSynonym'])->name('update');
+        Route::post('/delete', [SearchSynonymController::class, 'deleteSynonym'])->name('delete');
     });
 
     Route::prefix('business-info')->name('business-info.')->group(function () {
