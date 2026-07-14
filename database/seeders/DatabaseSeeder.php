@@ -24,6 +24,7 @@ class DatabaseSeeder extends Seeder
             PricingPackageSeeder::class,
             CategorySeeder::class,
             CmsPageSeeder::class,
+            SearchSynonymSeeder::class,
         ]);
 
         // --- Local demo data (disabled for production onboarding) ---
