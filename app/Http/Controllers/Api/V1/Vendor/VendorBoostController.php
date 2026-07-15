@@ -279,17 +279,50 @@ class VendorBoostController extends Controller
         try {
             $validated = $request->validate([
                 'request_id' => ['required', 'integer', 'exists:boost_purchase_requests,id'],
+                'gateway' => ['nullable', 'string', Rule::in(PaymentGateway::values())],
             ]);
 
             $vendor = $request->user('api');
             $business = $this->businessInfoService->resolveBusinessFromRequest($request);
 
             $result = $this->boostPurchaseService->resumeBoostPayment($business, (int) $validated['request_id']);
+            $payment = $result['payment'];
 
-            return sendResponse(true, 'Boost payment session restored. Complete payment to send the request to admin.', [
-                'payment' => $this->paymentService->toArray($result['payment']),
+            $gateway = isset($validated['gateway'])
+                ? PaymentGateway::from((string) $validated['gateway'])
+                : null;
+
+            if ($gateway !== null && $payment->gateway !== $gateway) {
+                $payment->update(['gateway' => $gateway]);
+                $payment = $payment->fresh();
+            }
+
+            $meta = is_array($payment->metadata) ? $payment->metadata : [];
+            $gatewayAmount = isset($meta['gateway_amount'])
+                ? (float) $meta['gateway_amount']
+                : (float) $payment->amount;
+
+            $payload = [
+                'payment' => $this->paymentService->toArray($payment),
                 'request' => new BoostPurchaseRequestResource($result['request']->load(['location', 'businessInfo', 'payment'])),
-            ]);
+                'total_amount' => (float) $payment->amount,
+                'gateway_amount' => $gatewayAmount,
+                'wallet_applied' => (float) ($meta['wallet_applied'] ?? 0),
+            ];
+
+            // Only mint a Paystack access code when the client is about to open checkout
+            // (passes gateway=paystack). Soft resume on page load must not burn a reference.
+            if ($gateway === PaymentGateway::Paystack) {
+                $payload = $this->paystackCheckoutService->appendAccessCodeIfNeeded(
+                    $payload,
+                    $vendor,
+                    $payment,
+                    $gateway,
+                    $gatewayAmount,
+                );
+            }
+
+            return sendResponse(true, 'Boost payment session restored. Complete payment to send the request to admin.', $payload);
         } catch (RuntimeException $exception) {
             return sendResponse(false, $exception->getMessage(), null, Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (Throwable $throwable) {

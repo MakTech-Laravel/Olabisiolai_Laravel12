@@ -275,7 +275,13 @@ class PaymentService
 
     private function generateTxRef(PaymentPurpose $purpose, int $userId): string
     {
-        return sprintf('%s_%s_%s', $purpose->value, $userId, Str::lower(Str::random(12)));
+        return sprintf(
+            '%s_%s_%s%s',
+            $purpose->value,
+            $userId,
+            dechex((int) (microtime(true) * 1000)),
+            Str::lower(Str::random(10)),
+        );
     }
 
     public function refreshTransactionReference(Payment $payment): Payment

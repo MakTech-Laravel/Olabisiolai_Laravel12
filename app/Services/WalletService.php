@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Wallet;
 use App\Models\WalletTransaction;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 class WalletService
@@ -131,7 +132,7 @@ class WalletService
             'package_id' => 'wallet_topup',
             'amount' => $amount,
             'currency' => config('subscription.currency', 'NGN'),
-            'tx_ref' => 'wallet_'.$user->id.'_'.now()->timestamp.'_'.random_int(1000, 9999),
+            'tx_ref' => 'wallet_'.$user->id.'_'.Str::lower(Str::random(16)),
             'gateway' => $gateway ?? PaymentGateway::Paystack,
             'status' => PaymentStatus::Pending,
             'metadata' => [
