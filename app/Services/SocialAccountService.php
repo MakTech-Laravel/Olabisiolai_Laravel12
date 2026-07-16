@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\SocialPlatform;
+use Illuminate\Validation\ValidationException;
 
 class SocialAccountService
 {
@@ -19,7 +20,7 @@ class SocialAccountService
         $allowed = SocialPlatform::values();
         $normalized = [];
 
-        foreach ($accounts as $account) {
+        foreach ($accounts as $index => $account) {
             if (! is_array($account)) {
                 continue;
             }
@@ -31,10 +32,24 @@ class SocialAccountService
                 continue;
             }
 
+            if (! $this->platformAllowsHandle($platform) && ! $this->looksLikeProfileUrl($url)) {
+                throw ValidationException::withMessages([
+                    "social_accounts.{$index}.url" => [
+                        $this->platformLabel($platform).' requires a full profile link (URL), not a username.',
+                    ],
+                ]);
+            }
+
             $url = $this->normalizeUrl($platform, $url);
 
             if ($url === '') {
-                continue;
+                throw ValidationException::withMessages([
+                    "social_accounts.{$index}.url" => [
+                        $this->platformAllowsHandle($platform)
+                            ? 'Enter a valid Instagram @handle or profile link.'
+                            : 'Enter a valid profile link (URL) for '.$this->platformLabel($platform).'.',
+                    ],
+                ]);
             }
 
             $normalized[] = [
@@ -50,6 +65,44 @@ class SocialAccountService
         return array_values($normalized);
     }
 
+    private function platformAllowsHandle(string $platform): bool
+    {
+        return $platform === SocialPlatform::Instagram->value;
+    }
+
+    private function looksLikeProfileUrl(string $raw): bool
+    {
+        $trimmed = trim($raw);
+
+        if ($trimmed === '' || str_starts_with($trimmed, '@')) {
+            return false;
+        }
+
+        if (preg_match('/^https?:\/\//i', $trimmed)) {
+            return true;
+        }
+
+        $withoutScheme = ltrim(preg_replace('/^https?:\/\//i', '', $trimmed) ?? $trimmed, '/');
+
+        return (bool) preg_match('/^[a-z0-9.-]+\.[a-z]{2,}(\/|\?|#|$)/i', $withoutScheme);
+    }
+
+    private function platformLabel(string $platform): string
+    {
+        return match ($platform) {
+            'instagram' => 'Instagram',
+            'facebook' => 'Facebook',
+            'x' => 'X (Twitter)',
+            'linkedin' => 'LinkedIn',
+            'tiktok' => 'TikTok',
+            'youtube' => 'YouTube',
+            'pinterest' => 'Pinterest',
+            'threads' => 'Threads',
+            'snapchat' => 'Snapchat',
+            default => ucfirst($platform),
+        };
+    }
+
     private function normalizeUrl(string $platform, string $raw): string
     {
         if (preg_match('/^https?:\/\//i', $raw)) {
@@ -61,6 +114,10 @@ class SocialAccountService
             return 'https://'.ltrim($withoutScheme, '/');
         }
 
+        if (! $this->platformAllowsHandle($platform)) {
+            return '';
+        }
+
         $handle = ltrim(trim($raw), '@/');
         $handle = rtrim($handle, '/');
 
@@ -70,15 +127,7 @@ class SocialAccountService
 
         return match ($platform) {
             'instagram' => "https://instagram.com/{$handle}",
-            'facebook' => "https://facebook.com/{$handle}",
-            'x' => "https://x.com/{$handle}",
-            'linkedin' => "https://linkedin.com/in/{$handle}",
-            'tiktok' => "https://tiktok.com/@{$handle}",
-            'youtube' => "https://youtube.com/@{$handle}",
-            'pinterest' => "https://pinterest.com/{$handle}",
-            'threads' => "https://threads.net/@{$handle}",
-            'snapchat' => "https://snapchat.com/add/{$handle}",
-            default => 'https://'.ltrim($raw, '/'),
+            default => '',
         };
     }
 }
