@@ -191,11 +191,20 @@ class CategoryController extends Controller
 
             $validated = $request->validate([
                 'id' => ['required', 'integer', 'exists:categories,id'],
+                'move_to_category_id' => [
+                    'nullable',
+                    'integer',
+                    'exists:categories,id',
+                    'different:id',
+                ],
             ]);
 
             $categoryId = $this->resolveCategoryId($validated);
             $category = $this->categoryService->getCategoryById($categoryId);
-            $this->categoryService->deleteCategory($category);
+            $this->categoryService->deleteCategory(
+                $category,
+                isset($validated['move_to_category_id']) ? (int) $validated['move_to_category_id'] : null,
+            );
 
             return sendResponse(true, 'Category deleted successfully.');
         } catch (ValidationException $exception) {
