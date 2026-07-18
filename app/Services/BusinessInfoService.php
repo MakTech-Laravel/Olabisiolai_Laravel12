@@ -216,7 +216,7 @@ class BusinessInfoService
 
         $business = $businessQuery
             ->where('id', $businessId)
-            ->tap(fn (Builder $query) => $this->applyPublicMarketplaceVisibility($query))
+            ->tap(fn(Builder $query) => $this->applyPublicMarketplaceVisibility($query))
             ->first();
 
         if ($business === null) {
@@ -333,7 +333,7 @@ class BusinessInfoService
 
     private function appendPublicSearchTermClauses(Builder $query, string $term): void
     {
-        $like = '%'.$term.'%';
+        $like = '%' . $term . '%';
 
         $query->where('business_name', 'like', $like)
             ->orWhere('business_description', 'like', $like)
@@ -533,18 +533,18 @@ class BusinessInfoService
 
         if ($existingCount === 0) {
             return trim((string) $user->name) !== ''
-                ? trim((string) $user->name).' Business'
+                ? trim((string) $user->name) . ' Business'
                 : 'My Business';
         }
 
-        return 'Business '.($existingCount + 1);
+        return 'Business ' . ($existingCount + 1);
     }
 
     private function createTemplateBusinessForUser(User $user, ?string $businessName, int $sortOrder): BusinessInfo
     {
         if ($businessName === null || trim($businessName) === '') {
             $businessName = trim((string) $user->name) !== ''
-                ? trim((string) $user->name).' Business'
+                ? trim((string) $user->name) . ' Business'
                 : 'My Business';
         }
 
@@ -618,17 +618,17 @@ class BusinessInfoService
             throw new \RuntimeException('A business profile already exists for this account.');
         }
 
-        $basePath = 'businesses/'.$user->id;
-        $logoFolder = $basePath.'/logo';
-        $coverFolder = $basePath.'/covers';
+        $basePath = 'businesses/' . $user->id;
+        $logoFolder = $basePath . '/logo';
+        $coverFolder = $basePath . '/covers';
         $logoPath = null;
         $coverPaths = [];
 
         try {
-            $logoPath = $this->handleFileUpload($logo, $logoFolder, $businessName.' logo');
+            $logoPath = $this->handleFileUpload($logo, $logoFolder, $businessName . ' logo');
 
             foreach ($coverPhotos as $file) {
-                $coverPaths[] = $this->handleFileUpload($file, $coverFolder, $businessName.' cover');
+                $coverPaths[] = $this->handleFileUpload($file, $coverFolder, $businessName . ' cover');
             }
 
             $isPremium = $subscriptionPlan === SubscriptionPlan::Premium;
@@ -803,9 +803,9 @@ class BusinessInfoService
             throw new \InvalidArgumentException('Invalid category ID.');
         }
 
-        $basePath = 'businesses/'.$user->id;
-        $logoFolder = $basePath.'/logo';
-        $coverFolder = $basePath.'/covers';
+        $basePath = 'businesses/' . $user->id;
+        $logoFolder = $basePath . '/logo';
+        $coverFolder = $basePath . '/covers';
 
         $oldLogoPath = $business->logo_path;
         $oldCoverPaths = is_array($business->cover_photo_paths) ? $business->cover_photo_paths : [];
@@ -816,7 +816,7 @@ class BusinessInfoService
         try {
             $finalLogoPath = $business->logo_path;
             if ($logo !== null) {
-                $newLogoPath = $this->handleFileUpload($logo, $logoFolder, $businessName.' logo');
+                $newLogoPath = $this->handleFileUpload($logo, $logoFolder, $businessName . ' logo');
                 $finalLogoPath = $newLogoPath;
             }
 
@@ -840,7 +840,7 @@ class BusinessInfoService
                 }
 
                 foreach ($coverPhotos as $file) {
-                    $newCoverPaths[] = $this->handleFileUpload($file, $coverFolder, $businessName.' cover');
+                    $newCoverPaths[] = $this->handleFileUpload($file, $coverFolder, $businessName . ' cover');
                 }
 
                 $finalCoverPaths = array_values(array_merge($keptPaths, $newCoverPaths));
@@ -990,6 +990,7 @@ class BusinessInfoService
         ?int $categoryId = null,
         ?string $boostStatus = null,
         ?string $subscriptionPlan = null,
+        ?string $premiumSource = null,
     ): Builder {
         return BusinessInfo::query()
             ->when($search !== null && trim($search) !== '', function ($query) use ($search): void {
@@ -1033,7 +1034,8 @@ class BusinessInfoService
                         });
                 });
             })
-            ->tap(fn (Builder $query) => $this->applyAdminSubscriptionPlanFilter($query, $subscriptionPlan))
+            ->tap(fn(Builder $query) => $this->applyAdminSubscriptionPlanFilter($query, $subscriptionPlan))
+            ->tap(fn(Builder $query) => $this->applyAdminPremiumSourceFilter($query, $premiumSource))
             ->latest();
     }
 
@@ -1044,7 +1046,7 @@ class BusinessInfoService
         }
 
         if ($subscriptionPlan === SubscriptionPlan::Premium->value) {
-            $query->whereHas('subscription', fn (Builder $inner) => $this->scopeActivePremiumSubscription($inner));
+            $query->whereHas('subscription', fn(Builder $inner) => $this->scopeActivePremiumSubscription($inner));
 
             return;
         }
@@ -1052,7 +1054,21 @@ class BusinessInfoService
         if ($subscriptionPlan === SubscriptionPlan::Free->value) {
             $query->where(function (Builder $outer): void {
                 $outer->whereDoesntHave('subscription')
-                    ->orWhereHas('subscription', fn (Builder $inner) => $this->scopeEffectivelyFreeSubscription($inner));
+                    ->orWhereHas('subscription', fn(Builder $inner) => $this->scopeEffectivelyFreeSubscription($inner));
+            });
+        }
+    }
+
+    private function applyAdminPremiumSourceFilter(Builder $query, ?string $premiumSource): void
+    {
+        if ($premiumSource === null || $premiumSource === '' || $premiumSource === 'all') {
+            return;
+        }
+
+        if ($premiumSource === 'manual') {
+            $query->whereHas('subscription', function (Builder $inner): void {
+                $this->scopeActivePremiumSubscription($inner)
+                    ->where('is_manual_grant', true);
             });
         }
     }
@@ -1093,13 +1109,14 @@ class BusinessInfoService
      *     business_statuses: list<array{value: string, label: string}>,
      *     boost_statuses: list<array{value: string, label: string}>,
      *     subscription_plans: list<array{value: string, label: string}>,
+     *     premium_sources: list<array{value: string, label: string}>,
      *     categories: list<array{id: int, name: string}>
      * }
      */
     public function getAdminBusinessFilterOptions(): array
     {
         $verificationStatuses = array_map(
-            fn (VerificationStatus $status): array => [
+            fn(VerificationStatus $status): array => [
                 'value' => $status->value,
                 'label' => $status->label(),
             ],
@@ -1107,7 +1124,7 @@ class BusinessInfoService
         );
 
         $businessStatuses = array_map(
-            fn (BusinessStatus $status): array => [
+            fn(BusinessStatus $status): array => [
                 'value' => $status->value,
                 'label' => ucfirst($status->value),
             ],
@@ -1117,7 +1134,7 @@ class BusinessInfoService
         $categories = Category::query()
             ->orderBy('name')
             ->get(['id', 'name'])
-            ->map(fn (Category $category): array => [
+            ->map(fn(Category $category): array => [
                 'id' => $category->id,
                 'name' => $category->name,
             ])
@@ -1135,6 +1152,9 @@ class BusinessInfoService
                 ['value' => SubscriptionPlan::Premium->value, 'label' => 'Premium'],
                 ['value' => SubscriptionPlan::Free->value, 'label' => 'Free'],
             ],
+            'premium_sources' => [
+                ['value' => 'manual', 'label' => 'Manual (admin)'],
+            ],
             'categories' => $categories,
         ];
     }
@@ -1149,6 +1169,7 @@ class BusinessInfoService
         ?int $categoryId = null,
         ?string $boostStatus = null,
         ?string $subscriptionPlan = null,
+        ?string $premiumSource = null,
     ): array {
         $base = $this->adminBusinessListBaseQuery(
             $search,
@@ -1157,6 +1178,7 @@ class BusinessInfoService
             $categoryId,
             $boostStatus,
             $subscriptionPlan,
+            $premiumSource,
         );
 
         return [
@@ -1165,10 +1187,10 @@ class BusinessInfoService
             'approved_verification' => (clone $base)->where('verification_status', VerificationStatus::Approved)->count(),
             'free_plan' => (clone $base)->where(function (Builder $outer): void {
                 $outer->whereDoesntHave('subscription')
-                    ->orWhereHas('subscription', fn (Builder $inner) => $this->scopeEffectivelyFreeSubscription($inner));
+                    ->orWhereHas('subscription', fn(Builder $inner) => $this->scopeEffectivelyFreeSubscription($inner));
             })->count(),
             'premium_plan' => (clone $base)
-                ->whereHas('subscription', fn (Builder $inner) => $this->scopeActivePremiumSubscription($inner))
+                ->whereHas('subscription', fn(Builder $inner) => $this->scopeActivePremiumSubscription($inner))
                 ->count(),
         ];
     }
@@ -1182,6 +1204,7 @@ class BusinessInfoService
         ?int $page = null,
         ?string $boostStatus = null,
         ?string $subscriptionPlan = null,
+        ?string $premiumSource = null,
     ): LengthAwarePaginator {
         $page = max(1, $page ?? 1);
 
@@ -1192,6 +1215,7 @@ class BusinessInfoService
             $categoryId,
             $boostStatus,
             $subscriptionPlan,
+            $premiumSource,
         )
             ->with([
                 'category:id,name,subcategories,icon',
@@ -1212,7 +1236,7 @@ class BusinessInfoService
                 'user:id,first_name,last_name,name,email,phone,role',
                 'verifiedBy:id,name,email,phone,role',
                 'boost:id,business_info_id,is_active,activated_at,deactivated_at',
-                'messages' => fn ($query) => $query
+                'messages' => fn($query) => $query
                     ->with(['admin:id,name,email', 'vendor:id,name,email'])
                     ->latest(),
             ])

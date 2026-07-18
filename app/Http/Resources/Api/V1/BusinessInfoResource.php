@@ -96,7 +96,7 @@ class BusinessInfoResource extends JsonResource
             'member_since' => humanDateTime($this->created_at, 'F Y'),
             'response_time_label' => $this->when(
                 $this->relationLoaded('user') && $this->user !== null,
-                fn () => app(VendorAnalyticsService::class)->publicResponseTimeLabel((int) $this->id, (int) $this->user->id),
+                fn() => app(VendorAnalyticsService::class)->publicResponseTimeLabel((int) $this->id, (int) $this->user->id),
             ),
             'verified_since' => $verificationService->showsVerifiedBadge($this->resource)
                 ? humanDateTime($this->verified_at ?? $this->updated_at, 'F Y')
@@ -106,6 +106,7 @@ class BusinessInfoResource extends JsonResource
             'subscription_status' => $subscription?->status->value,
             'subscription_expires_at' => $subscription?->expires_at ? humanDateTime($subscription->expires_at) : null,
             'subscription_expires_at_iso' => $subscription?->expires_at?->toIso8601String(),
+            'is_manual_premium' => (bool) ($subscription?->is_manual_grant ?? false),
             'requires_subscription_payment' => $subscriptionService->requiresPayment($this->resource),
             'can_pay_premium' => $subscriptionService->canPayForPremium($this->resource),
             'is_premium_active' => $subscriptionService->hasActivePremium($this->resource),
@@ -122,12 +123,12 @@ class BusinessInfoResource extends JsonResource
             'business_hours_display' => $businessHoursService->buildDisplayGroups($this->resource),
             'catalog_items' => $this->when(
                 $this->relationLoaded('catalogItems') && $subscriptionService->hasActivePremium($this->resource),
-                fn () => BusinessCatalogItemResource::collection($this->catalogItems),
+                fn() => BusinessCatalogItemResource::collection($this->catalogItems),
             ),
             'catalog_locked' => ! $subscriptionService->hasActivePremium($this->resource),
             'catalog_count' => $this->when(
                 $this->relationLoaded('catalogItems'),
-                fn () => $this->catalogItems->count(),
+                fn() => $this->catalogItems->count(),
             ),
             'created_at' => humanDateTime($this->created_at),
             'updated_at' => humanDateTime($this->updated_at),

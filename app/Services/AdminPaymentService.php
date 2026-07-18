@@ -37,7 +37,7 @@ class AdminPaymentService
 
         return [
             'items' => $paginator->getCollection()
-                ->flatMap(fn (Payment $payment) => $this->expandAdminListItems($payment))
+                ->flatMap(fn(Payment $payment) => $this->expandAdminListItems($payment))
                 ->values()
                 ->all(),
             'pagination' => [
@@ -118,17 +118,84 @@ class AdminPaymentService
             array_merge($base, [
                 'amount' => $split['wallet_applied'],
                 'method' => 'wallet',
-                'reference' => $payment->tx_ref.'-wallet',
-                'reference_display' => strtoupper((string) $payment->tx_ref).'-WALLET',
-                'list_key' => $payment->id.'-wallet',
+                'reference' => $payment->tx_ref . '-wallet',
+                'reference_display' => strtoupper((string) $payment->tx_ref) . '-WALLET',
+                'list_key' => $payment->id . '-wallet',
                 'split_part' => 'wallet',
             ]),
             array_merge($base, [
                 'amount' => $split['gateway_amount'],
                 'method' => $this->resolveGatewayCardMethod($payment),
-                'list_key' => $payment->id.'-gateway',
+                'list_key' => $payment->id . '-gateway',
                 'split_part' => 'gateway',
             ]),
+        ];
+    }
+
+    /**
+     * Payment history for a single business (admin business detail).
+     *
+     * @return array{
+     *     summary: array{
+     *         total_transactions: int,
+     *         completed_transactions: int,
+     *         pending_transactions: int,
+     *         failed_transactions: int,
+     *         total_amount_completed: float,
+     *     },
+     *     items: list<array<string, mixed>>,
+     * }
+     */
+    public function historyForBusiness(int $businessInfoId, int $limit = 50): array
+    {
+        $limit = max(1, min(100, $limit));
+
+        $base = Payment::query()->where('business_info_id', $businessInfoId);
+
+        $summary = [
+            'total_transactions' => (clone $base)->count(),
+            'completed_transactions' => (clone $base)->where('status', PaymentStatus::Completed)->count(),
+            'pending_transactions' => (clone $base)->where('status', PaymentStatus::Pending)->count(),
+            'failed_transactions' => (clone $base)->where('status', PaymentStatus::Failed)->count(),
+            'total_amount_completed' => (float) (clone $base)
+                ->where('status', PaymentStatus::Completed)
+                ->sum('amount'),
+        ];
+
+        $payments = (clone $base)
+            ->with(['user', 'businessInfo'])
+            ->orderByRaw('COALESCE(paid_at, created_at) DESC')
+            ->orderByDesc('id')
+            ->limit($limit)
+            ->get();
+
+        $items = $payments
+            ->flatMap(function (Payment $payment): array {
+                return array_map(
+                    function (array $item) use ($payment): array {
+                        $meta = is_array($payment->metadata) ? $payment->metadata : [];
+                        $packageId = (string) ($payment->package_id ?? '');
+                        $packageTitle = is_string($meta['package_title'] ?? null)
+                            ? (string) $meta['package_title']
+                            : null;
+
+                        return array_merge($item, [
+                            'manual_grant' => (bool) ($meta['manual_grant'] ?? false),
+                            'metadata' => $meta,
+                            'purpose_label' => $payment->purpose->label(),
+                            'package_id' => $packageId !== '' ? $packageId : null,
+                            'package_label' => $this->resolvePackageLabel($packageId, $packageTitle),
+                        ]);
+                    },
+                    $this->expandAdminListItems($payment),
+                );
+            })
+            ->values()
+            ->all();
+
+        return [
+            'summary' => $summary,
+            'items' => $items,
         ];
     }
 
@@ -204,7 +271,7 @@ class AdminPaymentService
     public function toAdminCsvRow(Payment $payment): array
     {
         return array_map(
-            fn (array $item): array => [
+            fn(array $item): array => [
                 $item['business'],
                 $item['payer_name'],
                 $item['payer_email'],
@@ -281,8 +348,46 @@ class AdminPaymentService
         };
     }
 
+    private function resolvePackageLabel(?string $packageId, ?string $packageTitle = null): ?string
+    {
+        $packageId = strtolower(trim((string) $packageId));
+        if ($packageId === '') {
+            return null;
+        }
+
+        if (str_contains($packageId, 'yearly') || str_contains($packageId, 'annual')) {
+            return 'Yearly';
+        }
+
+        if (str_contains($packageId, 'monthly')) {
+            return 'Monthly';
+        }
+
+        if (str_contains($packageId, 'quarterly')) {
+            return 'Quarterly';
+        }
+
+        if (str_contains($packageId, 'lifetime')) {
+            return 'Lifetime';
+        }
+
+        $title = trim((string) $packageTitle);
+        if ($title !== '') {
+            return $title;
+        }
+
+        return str_replace('_', ' ', $packageId);
+    }
+
     private function resolvePaymentMethod(Payment $payment): string
     {
+        $meta = is_array($payment->metadata) ? $payment->metadata : [];
+        $raw = strtolower((string) ($meta['payment_method'] ?? $meta['payment_type'] ?? $meta['payment_option'] ?? ''));
+
+        if (! empty($meta['payment_waived']) || str_contains($raw, 'waiv')) {
+            return 'waived';
+        }
+
         if ($payment->gateway === PaymentGateway::Wallet) {
             return 'wallet';
         }
@@ -294,10 +399,11 @@ class AdminPaymentService
             return 'card';
         }
 
-        $meta = is_array($payment->metadata) ? $payment->metadata : [];
-        $raw = strtolower((string) ($meta['payment_method'] ?? $meta['payment_type'] ?? $meta['payment_option'] ?? ''));
-
         if (str_contains($raw, 'bank') || str_contains($raw, 'transfer')) {
+            return 'bank_transfer';
+        }
+
+        if (str_contains($raw, 'cash')) {
             return 'bank_transfer';
         }
 

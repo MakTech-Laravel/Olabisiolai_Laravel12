@@ -392,7 +392,7 @@ class SubscriptionService
         $subscriptionPayment->update([
             'status' => PaymentStatus::Completed,
             'paid_at' => now(),
-            'gateway_transaction_id' => 'wallet_'.$subscriptionPayment->tx_ref,
+            'gateway_transaction_id' => 'wallet_' . $subscriptionPayment->tx_ref,
             'gateway' => PaymentGateway::Wallet,
         ]);
 
@@ -403,7 +403,7 @@ class SubscriptionService
             $boostPayment->update([
                 'status' => PaymentStatus::Completed,
                 'paid_at' => now(),
-                'gateway_transaction_id' => 'wallet_'.$boostPayment->tx_ref,
+                'gateway_transaction_id' => 'wallet_' . $boostPayment->tx_ref,
                 'gateway' => PaymentGateway::Wallet,
             ]);
             $this->paymentService->consumePayment($boostPayment);
@@ -512,6 +512,7 @@ class SubscriptionService
             'expires_at' => $expiresAt,
             'pricing_package_id' => $packageId,
             'trial_ends_at' => null,
+            'is_manual_grant' => (bool) ($meta['manual_grant'] ?? false),
         ]);
 
         if ($wasTrialing) {
@@ -649,7 +650,7 @@ class SubscriptionService
         $subscriptionPayment->update([
             'status' => PaymentStatus::Completed,
             'paid_at' => now(),
-            'gateway_transaction_id' => 'wallet_'.$subscriptionPayment->tx_ref,
+            'gateway_transaction_id' => 'wallet_' . $subscriptionPayment->tx_ref,
             'gateway' => PaymentGateway::Wallet,
         ]);
 
@@ -660,7 +661,7 @@ class SubscriptionService
             $boostPayment->update([
                 'status' => PaymentStatus::Completed,
                 'paid_at' => now(),
-                'gateway_transaction_id' => 'wallet_'.$boostPayment->tx_ref,
+                'gateway_transaction_id' => 'wallet_' . $boostPayment->tx_ref,
                 'gateway' => PaymentGateway::Wallet,
             ]);
             $this->paymentService->consumePayment($boostPayment);

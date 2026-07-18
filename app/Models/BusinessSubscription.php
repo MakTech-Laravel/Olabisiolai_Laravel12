@@ -21,6 +21,7 @@ class BusinessSubscription extends Model
         'status',
         'expires_at',
         'trial_ends_at',
+        'is_manual_grant',
     ];
 
     /**
@@ -33,6 +34,7 @@ class BusinessSubscription extends Model
             'status' => SubscriptionStatus::class,
             'expires_at' => 'datetime',
             'trial_ends_at' => 'datetime',
+            'is_manual_grant' => 'boolean',
         ];
     }
 

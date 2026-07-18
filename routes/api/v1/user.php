@@ -37,7 +37,7 @@ Route::prefix('user')->name('user.')->group(function () {
     });
 
     Route::middleware('verified')->group(function (): void {
-        Route::get('/dashboard', fn () => response()->json(['message' => 'User dashboard.']))->name('dashboard');
+        Route::get('/dashboard', fn() => response()->json(['message' => 'User dashboard.']))->name('dashboard');
 
         Route::get('/profile', [UserSettingsController::class, 'profileShow'])->name('profile.show');
         Route::patch('/profile', [UserSettingsController::class, 'profileUpdate'])->name('profile.update');

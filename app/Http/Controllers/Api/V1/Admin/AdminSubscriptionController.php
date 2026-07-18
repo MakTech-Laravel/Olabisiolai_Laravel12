@@ -4,13 +4,15 @@ namespace App\Http\Controllers\Api\V1\Admin;
 
 use App\Enums\PaymentGateway;
 use App\Enums\PaymentPurpose;
+use App\Enums\SubscriptionPlan;
+use App\Enums\SubscriptionStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V1\BusinessInfoResource;
 use App\Models\BusinessInfo;
+use App\Models\BusinessSubscription;
 use App\Models\Payment;
 use App\Services\AdminPaymentService;
 use App\Services\PaymentReconciliationService;
-use App\Services\PaymentService;
 use App\Services\SubscriptionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -24,7 +26,6 @@ class AdminSubscriptionController extends Controller
     public function __construct(
         private readonly PaymentReconciliationService $paymentReconciliation,
         private readonly SubscriptionService $subscriptionService,
-        private readonly PaymentService $paymentService,
         private readonly AdminPaymentService $adminPaymentService,
     ) {}
 
@@ -36,7 +37,21 @@ class AdminSubscriptionController extends Controller
                 'reason' => ['required', 'string', 'max:500'],
                 'duration_days' => ['nullable', 'integer', 'min:1', 'max:730'],
                 'paystack_reference' => ['nullable', 'string', 'max:255'],
+                'payment_handling' => ['nullable', 'string', Rule::in(['waived', 'recorded'])],
+                'payment_method' => ['nullable', 'string', Rule::in(['bank_transfer', 'cash', 'other'])],
+                'payment_reference' => ['nullable', 'string', 'max:255'],
+                'amount' => ['nullable', 'numeric', 'min:0'],
+                'package_id' => ['nullable', 'string', 'max:100'],
             ]);
+
+            if (($validated['payment_handling'] ?? null) === 'recorded' && empty($validated['payment_method'])) {
+                return sendResponse(
+                    false,
+                    'Select a payment method when recording a payment (e.g. bank transfer).',
+                    null,
+                    Response::HTTP_UNPROCESSABLE_ENTITY,
+                );
+            }
 
             $business = BusinessInfo::query()
                 ->with(['subscription', 'user'])
@@ -48,18 +63,181 @@ class AdminSubscriptionController extends Controller
                 $request->user('admin_api')?->id,
                 isset($validated['duration_days']) ? (int) $validated['duration_days'] : null,
                 isset($validated['paystack_reference']) ? (string) $validated['paystack_reference'] : null,
+                [
+                    'payment_handling' => $validated['payment_handling'] ?? null,
+                    'payment_method' => $validated['payment_method'] ?? null,
+                    'payment_reference' => $validated['payment_reference'] ?? null,
+                    'amount' => array_key_exists('amount', $validated) ? (float) $validated['amount'] : null,
+                    'package_id' => $validated['package_id'] ?? null,
+                ],
             );
 
             $activatedBusiness = $result['business'];
             $activatedBusiness->load(['category:id,name,subcategories,icon', 'location:id,lga_name,state_name,city_name,country_name']);
 
-            return sendResponse(true, 'Premium subscription activated successfully.', [
-                'payment' => $this->paymentService->toArray($result['payment']),
+            $message = ($validated['payment_handling'] ?? null) === 'waived'
+                ? 'Premium activated with payment waived. Record saved on the payments page.'
+                : 'Premium subscription activated successfully.';
+
+            return sendResponse(true, $message, [
+                'payment' => $this->adminPaymentService->toAdminDetail($result['payment']),
                 'subscription' => $this->subscriptionService->subscriptionPayload($activatedBusiness),
                 'business' => new BusinessInfoResource($activatedBusiness),
             ]);
         } catch (RuntimeException $exception) {
             return sendResponse(false, $exception->getMessage(), null, Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
+     * Premium expiration tracker for admin follow-up / reactivation outreach.
+     */
+    public function expirationTracker(Request $request): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'page' => ['nullable', 'integer', 'min:1'],
+                'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+                'search' => ['nullable', 'string', 'max:255'],
+                'urgency' => ['nullable', 'string', Rule::in(['all', 'active', 'expiring_soon', 'expired'])],
+                'days_ahead' => ['nullable', 'integer', 'min:1', 'max:90'],
+            ]);
+
+            $page = max(1, (int) ($validated['page'] ?? 1));
+            $perPage = max(1, min(100, (int) ($validated['per_page'] ?? 15)));
+            $search = trim((string) ($validated['search'] ?? ''));
+            $urgency = (string) ($validated['urgency'] ?? 'all');
+            $daysAhead = max(1, (int) ($validated['days_ahead'] ?? 14));
+            $now = now();
+            $soonCutoff = $now->copy()->addDays($daysAhead);
+
+            $baseQuery = BusinessSubscription::query()
+                ->with([
+                    'businessInfo:id,user_id,business_name,business_status,category_id',
+                    'businessInfo.user:id,name,email,phone',
+                    'businessInfo.category:id,name',
+                ])
+                ->where('plan', SubscriptionPlan::Premium)
+                ->whereIn('status', [
+                    SubscriptionStatus::Active,
+                    SubscriptionStatus::Trialing,
+                    SubscriptionStatus::Expired,
+                ])
+                ->whereNotNull('expires_at');
+
+            $summaryQuery = clone $baseQuery;
+            $summaryRows = $summaryQuery->get(['id', 'status', 'expires_at', 'trial_ends_at']);
+
+            $summary = [
+                'total_premium' => $summaryRows->count(),
+                'active' => 0,
+                'expiring_soon' => 0,
+                'expired' => 0,
+            ];
+
+            foreach ($summaryRows as $row) {
+                $expiresAt = $row->expires_at;
+                if ($expiresAt === null) {
+                    continue;
+                }
+                if ($expiresAt->lte($now) || $row->status === SubscriptionStatus::Expired) {
+                    $summary['expired']++;
+                } elseif ($expiresAt->lte($soonCutoff)) {
+                    $summary['expiring_soon']++;
+                } else {
+                    $summary['active']++;
+                }
+            }
+
+            $listQuery = clone $baseQuery;
+
+            if ($search !== '') {
+                $listQuery->whereHas('businessInfo', function ($query) use ($search): void {
+                    $query->where(function ($inner) use ($search): void {
+                        $inner->where('business_name', 'like', "%{$search}%")
+                            ->orWhereHas('user', function ($userQuery) use ($search): void {
+                                $userQuery->where('name', 'like', "%{$search}%")
+                                    ->orWhere('email', 'like', "%{$search}%")
+                                    ->orWhere('phone', 'like', "%{$search}%");
+                            });
+                    });
+                });
+            }
+
+            if ($urgency === 'expired') {
+                $listQuery->where(function ($query) use ($now): void {
+                    $query->where('status', SubscriptionStatus::Expired)
+                        ->orWhere('expires_at', '<=', $now);
+                });
+            } elseif ($urgency === 'expiring_soon') {
+                $listQuery->whereIn('status', [SubscriptionStatus::Active, SubscriptionStatus::Trialing])
+                    ->where('expires_at', '>', $now)
+                    ->where('expires_at', '<=', $soonCutoff);
+            } elseif ($urgency === 'active') {
+                $listQuery->whereIn('status', [SubscriptionStatus::Active, SubscriptionStatus::Trialing])
+                    ->where('expires_at', '>', $soonCutoff);
+            }
+
+            $listQuery->orderByRaw('CASE WHEN expires_at <= ? THEN 0 ELSE 1 END', [$now])
+                ->orderBy('expires_at');
+
+            $paginator = $listQuery->paginate($perPage, ['*'], 'page', $page);
+
+            $items = $paginator->getCollection()->map(function (BusinessSubscription $subscription) use ($now, $soonCutoff): array {
+                $business = $subscription->businessInfo;
+                $expiresAt = $subscription->expires_at;
+                $daysRemaining = $expiresAt !== null
+                    ? (int) $now->copy()->startOfDay()->diffInDays($expiresAt->copy()->startOfDay(), false)
+                    : null;
+
+                $isExpired = $expiresAt === null
+                    || $expiresAt->lte($now)
+                    || $subscription->status === SubscriptionStatus::Expired;
+
+                $urgencyKey = $isExpired
+                    ? 'expired'
+                    : ($expiresAt !== null && $expiresAt->lte($soonCutoff) ? 'expiring_soon' : 'active');
+
+                return [
+                    'subscription_id' => $subscription->id,
+                    'business_id' => $business?->id,
+                    'business_name' => $business?->business_name ?? '—',
+                    'business_status' => $business?->business_status?->value ?? null,
+                    'category' => $business?->category?->name ?? '—',
+                    'vendor_name' => $business?->user?->name ?? '—',
+                    'vendor_email' => $business?->user?->email ?? '',
+                    'vendor_phone' => $business?->user?->phone ?? '',
+                    'plan' => $subscription->plan->value,
+                    'status' => $subscription->status->value,
+                    'status_label' => $subscription->status->label(),
+                    'is_trial' => $subscription->status === SubscriptionStatus::Trialing,
+                    'expires_at' => $expiresAt?->toIso8601String(),
+                    'expires_at_label' => $expiresAt ? humanDateTime($expiresAt) : null,
+                    'days_remaining' => $daysRemaining,
+                    'urgency' => $urgencyKey,
+                    'needs_follow_up' => in_array($urgencyKey, ['expired', 'expiring_soon'], true),
+                ];
+            })->values()->all();
+
+            return sendResponse(true, 'Premium expiration tracker loaded.', [
+                'summary' => $summary,
+                'items' => $items,
+                'pagination' => [
+                    'current_page' => $paginator->currentPage(),
+                    'last_page' => $paginator->lastPage(),
+                    'per_page' => $paginator->perPage(),
+                    'total' => $paginator->total(),
+                ],
+                'filters' => [
+                    'urgency' => $urgency,
+                    'days_ahead' => $daysAhead,
+                    'search' => $search,
+                ],
+            ]);
         } catch (Throwable $throwable) {
             report($throwable);
 
