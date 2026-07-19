@@ -28,8 +28,19 @@ class UserWalletController extends Controller
             return sendResponse(false, 'Unauthenticated.', null, Response::HTTP_UNAUTHORIZED);
         }
 
+        $validated = $request->validate([
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'page' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        $wallet = $this->walletService->walletPayload(
+            $user,
+            (int) ($validated['per_page'] ?? 20),
+            (int) ($validated['page'] ?? 1),
+        );
+
         return sendResponse(true, 'Wallet retrieved successfully.', [
-            'wallet' => $this->walletService->walletPayload($user),
+            'wallet' => $wallet,
         ]);
     }
 
