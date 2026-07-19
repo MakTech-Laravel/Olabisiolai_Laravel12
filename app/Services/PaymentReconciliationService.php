@@ -394,12 +394,30 @@ class PaymentReconciliationService
      *
      * @return array{payment: Payment, business: BusinessInfo}
      */
+    /**
+     * Manually move a vendor to premium (admin panel).
+     *
+     * Payment handling:
+     * - omitted / legacy: complete pending checkout if any, else create a completed grant payment
+     * - waived: create a ₦0 payment record marked as waived (advocates / internal pages)
+     * - recorded: create a completed payment with an offline method (e.g. bank transfer) so it appears on Payments
+     *
+     * @param  array{
+     *     payment_handling?: 'waived'|'recorded'|null,
+     *     payment_method?: string|null,
+     *     payment_reference?: string|null,
+     *     amount?: float|null,
+     *     package_id?: string|null,
+     * }  $options
+     * @return array{payment: Payment, business: BusinessInfo}
+     */
     public function grantPremiumManually(
         BusinessInfo $business,
         string $reason,
         ?int $grantedByAdminId = null,
         ?int $durationDays = null,
         ?string $paystackReference = null,
+        array $options = [],
     ): array {
         $reason = trim($reason);
         if ($reason === '') {
@@ -420,65 +438,167 @@ class PaymentReconciliationService
             ];
         }
 
-        $pendingPayment = Payment::query()
-            ->where('business_info_id', $business->id)
-            ->where('purpose', PaymentPurpose::Subscription)
-            ->where('status', PaymentStatus::Pending)
-            ->latest('id')
-            ->first();
+        $paymentHandling = isset($options['payment_handling'])
+            ? strtolower(trim((string) $options['payment_handling']))
+            : null;
 
-        if ($pendingPayment instanceof Payment) {
-            return $this->completeAdminVerifiedPendingPayment(
-                $pendingPayment,
-                $vendor,
-                $business,
-                $reason,
-                $grantedByAdminId,
-                $durationDays,
-            );
+        if (! in_array($paymentHandling, [null, '', 'waived', 'recorded'], true)) {
+            throw new RuntimeException('Invalid payment handling. Use waived or recorded.');
+        }
+
+        $explicitHandling = in_array($paymentHandling, ['waived', 'recorded'], true);
+
+        if (! $explicitHandling) {
+            $pendingPayment = Payment::query()
+                ->where('business_info_id', $business->id)
+                ->where('purpose', PaymentPurpose::Subscription)
+                ->where('status', PaymentStatus::Pending)
+                ->latest('id')
+                ->first();
+
+            if ($pendingPayment instanceof Payment) {
+                return $this->completeAdminVerifiedPendingPayment(
+                    $pendingPayment,
+                    $vendor,
+                    $business,
+                    $reason,
+                    $grantedByAdminId,
+                    $durationDays,
+                );
+            }
         }
 
         if ($this->subscriptionService->hasActivePremium($business)) {
             throw new RuntimeException('Premium is already active for this business.');
         }
 
-        $durationDays = max(1, $durationDays ?? $this->subscriptionService->subscriptionDurationDays());
-        $expiresAt = now()->addDays($durationDays);
+        $packageKey = trim((string) ($options['package_id'] ?? 'premium_yearly'));
+        if ($packageKey === '') {
+            $packageKey = 'premium_yearly';
+        }
 
-        return DB::transaction(function () use ($business, $vendor, $reason, $grantedByAdminId, $expiresAt, $durationDays): array {
-            $package = $this->paymentService->findPackage(PaymentPurpose::Subscription, 'premium_yearly');
-            $amount = (float) ($package['amount'] ?? 0);
+        $package = $this->paymentService->findPackage(PaymentPurpose::Subscription, $packageKey);
+        if ($package === null) {
+            throw new RuntimeException('Selected subscription package was not found.');
+        }
+
+        $pricingPackage = \App\Models\PricingPackage::query()
+            ->where('type', \App\Enums\PricingPackageType::Subscription)
+            ->where('package_key', $packageKey)
+            ->where('is_active', true)
+            ->first();
+
+        // Yearly / monthly durations are fixed by the selected plan (365 / 30).
+        // Custom day overrides are not allowed for admin Move to Premium.
+        $resolvedDuration = max(
+            1,
+            $pricingPackage?->billing_period?->durationDays()
+                ?? $this->subscriptionService->subscriptionDurationDays()
+        );
+        $expiresAt = now()->addDays($resolvedDuration);
+
+        $isWaived = $paymentHandling === 'waived';
+        $paymentMethod = $isWaived
+            ? 'waived'
+            : strtolower(trim((string) ($options['payment_method'] ?? 'bank_transfer')));
+
+        if (! $isWaived && $explicitHandling && $paymentMethod === '') {
+            throw new RuntimeException('Select a payment method for the recorded payment.');
+        }
+
+        if (! $isWaived && $explicitHandling && ! in_array($paymentMethod, ['bank_transfer', 'cash', 'other'], true)) {
+            throw new RuntimeException('Payment method must be bank_transfer, cash, or other.');
+        }
+
+        $amount = $isWaived
+            ? 0.0
+            : (isset($options['amount']) && $options['amount'] !== null
+                ? max(0, (float) $options['amount'])
+                : (float) ($package['amount'] ?? 0));
+
+        if (! $isWaived && $amount <= 0) {
+            throw new RuntimeException('Payment amount must be greater than zero when recording a payment.');
+        }
+
+        $paymentReference = isset($options['payment_reference'])
+            ? trim((string) $options['payment_reference'])
+            : '';
+
+        return DB::transaction(function () use (
+            $business,
+            $vendor,
+            $reason,
+            $grantedByAdminId,
+            $expiresAt,
+            $resolvedDuration,
+            $package,
+            $packageKey,
+            $pricingPackage,
+            $isWaived,
+            $paymentMethod,
+            $amount,
+            $paymentReference,
+            $explicitHandling,
+        ): array {
+            $txRef = sprintf(
+                'admin_%s_%s_%s',
+                $isWaived ? 'waive' : 'grant',
+                $vendor->id,
+                strtolower(\Illuminate\Support\Str::random(10)),
+            );
+
+            $metadata = [
+                'package_title' => $package['title'] ?? $packageKey,
+                'line_item' => 'subscription',
+                'manual_grant' => true,
+                'grant_reason' => $reason,
+                'granted_by_admin_id' => $grantedByAdminId,
+                'granted_at' => now()->toIso8601String(),
+                'payment_method' => $paymentMethod,
+                'duration_days' => $resolvedDuration,
+            ];
+
+            if ($pricingPackage !== null) {
+                $metadata['pricing_package_id'] = $pricingPackage->id;
+            }
+
+            if ($isWaived) {
+                $metadata['payment_waived'] = true;
+                $metadata['payment_handling'] = 'waived';
+            } elseif ($explicitHandling) {
+                $metadata['payment_handling'] = 'recorded';
+                $metadata['payment_received'] = true;
+            }
+
+            if ($paymentReference !== '') {
+                $metadata['payment_reference'] = $paymentReference;
+            }
+
+            $useOfflineGateway = $isWaived || $explicitHandling;
 
             $payment = Payment::query()->create([
                 'user_id' => $vendor->id,
                 'business_info_id' => $business->id,
                 'purpose' => PaymentPurpose::Subscription,
-                'package_id' => 'premium_yearly',
+                'package_id' => $packageKey,
                 'amount' => $amount,
                 'currency' => config('subscription.currency', 'NGN'),
-                'tx_ref' => sprintf('admin_grant_%s_%s', $vendor->id, strtolower(\Illuminate\Support\Str::random(10))),
-                'gateway' => PaymentGateway::Paystack,
-                'gateway_transaction_id' => 'admin_manual_' . now()->timestamp,
+                'tx_ref' => $txRef,
+                'gateway' => $useOfflineGateway ? null : PaymentGateway::Paystack,
+                'gateway_transaction_id' => $useOfflineGateway
+                    ? ($paymentReference !== '' ? $paymentReference : ('admin_offline_' . now()->timestamp))
+                    : ('admin_manual_' . now()->timestamp),
                 'status' => PaymentStatus::Completed,
                 'paid_at' => now(),
                 'is_consumed' => false,
-                'metadata' => [
-                    'package_title' => $package['title'] ?? 'Premium Yearly',
-                    'line_item' => 'subscription',
-                    'manual_grant' => true,
-                    'grant_reason' => $reason,
-                    'granted_by_admin_id' => $grantedByAdminId,
-                    'granted_at' => now()->toIso8601String(),
-                ],
+                'metadata' => $metadata,
             ]);
 
             $this->subscriptionService->preparePremiumCheckout($business->fresh(['subscription']));
             $activated = $this->subscriptionService->activatePremiumAfterPayment($payment, $vendor);
 
-            if ($durationDays !== $this->subscriptionService->subscriptionDurationDays()) {
-                $activated->subscription?->update(['expires_at' => $expiresAt]);
-                $activated = $activated->fresh(['subscription']);
-            }
+            $activated->subscription?->update(['expires_at' => $expiresAt]);
+            $activated = $activated->fresh(['subscription']);
 
             Log::info('subscription.premium.granted_manually', [
                 'payment_id' => $payment->id,
@@ -486,6 +606,9 @@ class PaymentReconciliationService
                 'user_id' => $vendor->id,
                 'granted_by_admin_id' => $grantedByAdminId,
                 'reason' => $reason,
+                'payment_handling' => $metadata['payment_handling'] ?? 'legacy',
+                'payment_method' => $paymentMethod,
+                'amount' => $amount,
             ]);
 
             return [

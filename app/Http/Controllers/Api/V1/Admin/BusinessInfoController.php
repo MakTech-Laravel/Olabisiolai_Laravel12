@@ -12,6 +12,7 @@ use App\Http\Resources\MessageResource;
 use App\Models\BusinessInfo;
 use App\Models\User;
 use App\Services\AdminMessagingService;
+use App\Services\AdminPaymentService;
 use App\Services\BusinessInfoService;
 use App\Services\VerificationService;
 use Illuminate\Http\Request;
@@ -27,6 +28,7 @@ class BusinessInfoController extends Controller
         private readonly BusinessInfoService $businessInfoService,
         private readonly AdminMessagingService $adminMessaging,
         private readonly VerificationService $verificationService,
+        private readonly AdminPaymentService $adminPaymentService,
     ) {}
 
     public function allBusinessInfo(Request $request)
@@ -43,6 +45,7 @@ class BusinessInfoController extends Controller
                 'category_id' => ['nullable', 'integer', 'exists:categories,id'],
                 'boost_status' => ['nullable', 'string', Rule::in(['active', 'none'])],
                 'subscription_plan' => ['nullable', 'string', Rule::in(SubscriptionPlan::values())],
+                'premium_source' => ['nullable', 'string', Rule::in(['all', 'manual'])],
                 'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
                 'page' => ['nullable', 'integer', 'min:1'],
             ]);
@@ -52,6 +55,10 @@ class BusinessInfoController extends Controller
 
             $boostStatus = $validated['boost_status'] ?? null;
             $subscriptionPlan = $validated['subscription_plan'] ?? null;
+            $premiumSource = $validated['premium_source'] ?? null;
+            if ($premiumSource === 'all') {
+                $premiumSource = null;
+            }
 
             $businessProfiles = $this->businessInfoService->paginateForAdmin(
                 $search,
@@ -62,6 +69,7 @@ class BusinessInfoController extends Controller
                 isset($validated['page']) ? (int) $validated['page'] : null,
                 $boostStatus,
                 $subscriptionPlan,
+                $premiumSource,
             );
 
             $summary = $this->businessInfoService->getAdminBusinessListSummary(
@@ -71,6 +79,7 @@ class BusinessInfoController extends Controller
                 isset($validated['category_id']) ? (int) $validated['category_id'] : null,
                 $boostStatus,
                 $subscriptionPlan,
+                $premiumSource,
             );
 
             $items = $businessProfiles->items();
@@ -88,6 +97,7 @@ class BusinessInfoController extends Controller
                     'category_id' => $validated['category_id'] ?? null,
                     'boost_status' => $boostStatus ?? 'all',
                     'subscription_plan' => $subscriptionPlan ?? 'all',
+                    'premium_source' => $validated['premium_source'] ?? 'all',
                 ],
                 'filter_options' => $this->businessInfoService->getAdminBusinessFilterOptions(),
                 'summary' => $summary,
@@ -128,10 +138,12 @@ class BusinessInfoController extends Controller
             ]);
 
             $businessInfo = $this->businessInfoService->getBusinessInfoByIdForAdmin((int) $validated['business_info_id']);
+            $paymentHistory = $this->adminPaymentService->historyForBusiness((int) $validated['business_info_id']);
 
             return sendResponse(true, 'Business profile retrieved successfully.', [
                 'business' => new BusinessInfoResource($businessInfo),
                 'messages' => AdminVendorMessageResource::collection($businessInfo->messages),
+                'payment_history' => $paymentHistory,
             ]);
         } catch (ValidationException $exception) {
             return sendResponse(

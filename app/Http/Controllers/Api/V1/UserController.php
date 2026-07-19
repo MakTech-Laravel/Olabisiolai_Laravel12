@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V1\UserDetailResource;
 use App\Http\Resources\Api\V1\UserResource;
 use App\Services\UserService;
+use App\Services\WalletService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -15,7 +16,7 @@ use Throwable;
 
 class UserController extends Controller
 {
-    public function __construct(private UserService $userService) {}
+    public function __construct(private UserService $userService, private WalletService $walletService) {}
 
     public function userManagementSummary(Request $request)
     {
@@ -183,6 +184,48 @@ class UserController extends Controller
         } catch (Throwable $throwable) {
             report($throwable);
 
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    public function userWallet(Request $request)
+    {
+        try {
+            if (! adminAuthCheck($request)) {
+                return sendResponse(false, 'Admin access required.', null, Response::HTTP_UNAUTHORIZED);
+            }
+
+            $validated = $request->validate([
+                'user_id' => ['required', 'integer', 'exists:users,id'],
+                'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+                'page' => ['nullable', 'integer', 'min:1'],
+            ], [
+                'user_id.required' => 'The user id field is required.',
+                'user_id.integer' => 'The user id must be an integer.',
+                'user_id.exists' => 'The user id does not exist.',
+            ]);
+
+            $user = $this->userService->getUserById((int) $validated['user_id']);
+            $wallet = $this->walletService->adminWalletPayload(
+                $user,
+                (int) ($validated['per_page'] ?? 50),
+                (int) ($validated['page'] ?? 1),
+            );
+
+            return sendResponse(true, 'User wallet retrieved successfully.', [
+                'wallet' => $wallet,
+            ]);
+        } catch (ValidationException $exception) {
+            return sendResponse(
+                false,
+                $exception->validator->errors()->first(),
+                [
+                    'errors' => $exception->errors(),
+                ],
+                Response::HTTP_UNPROCESSABLE_ENTITY
+            );
+        } catch (Throwable $throwable) {
+            report($throwable);
             return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }

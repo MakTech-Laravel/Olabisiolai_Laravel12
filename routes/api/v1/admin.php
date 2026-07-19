@@ -52,6 +52,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('/view', [UserController::class, 'viewUser'])->name('view');
         Route::post('/status-change', [UserController::class, 'changeUserStatus'])->name('status-change');
         Route::post('/delete', [UserController::class, 'deleteUser'])->name('delete');
+        Route::post('/wallet', [UserController::class, 'userWallet'])->name('wallet');
     });
 
     Route::prefix('cms')->name('cms.')->group(function () {
@@ -132,6 +133,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
     Route::prefix('subscriptions')->name('subscriptions.')->group(function () {
         Route::post('/grant-premium', [AdminSubscriptionController::class, 'grantPremium'])->name('grant-premium');
+        Route::post('/expiration-tracker', [AdminSubscriptionController::class, 'expirationTracker'])->name('expiration-tracker');
     });
 
     Route::prefix('pricing')->name('pricing.')->group(function () {

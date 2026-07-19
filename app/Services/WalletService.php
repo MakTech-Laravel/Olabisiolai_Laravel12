@@ -28,27 +28,131 @@ class WalletService
     }
 
     /**
+     * Lean wallet payload for the authenticated user (balance + history).
+     *
      * @return array<string, mixed>
      */
-    public function walletPayload(User $user, int $transactionLimit = 20): array
+    public function walletPayload(User $user, int $transactionLimit = 50, int $page = 1): array
     {
         $wallet = $this->getOrCreateWallet($user);
-        $wallet->load([
-            'transactions' => fn ($query) => $query->limit($transactionLimit),
-        ]);
+        [$transactions, $pagination] = $this->paginatedTransactions($wallet, $transactionLimit, $page);
 
         return [
             'balance' => (float) $wallet->balance,
             'currency' => $wallet->currency,
-            'transactions' => $wallet->transactions->map(fn (WalletTransaction $tx): array => [
-                'id' => $tx->id,
-                'type' => $tx->type,
-                'amount' => (float) $tx->amount,
-                'balance_after' => (float) $tx->balance_after,
-                'description' => $tx->description,
-                'reference' => $tx->reference,
-                'created_at' => $tx->created_at?->toIso8601String(),
-            ])->all(),
+            'transactions' => $transactions,
+            'pagination' => $pagination,
+        ];
+    }
+
+    /**
+     * Admin wallet view — includes earn vs top-up totals and identity fields.
+     *
+     * @return array<string, mixed>
+     */
+    public function adminWalletPayload(User $user, int $transactionLimit = 50, int $page = 1): array
+    {
+        $wallet = $this->getOrCreateWallet($user);
+        [$transactions, $pagination] = $this->paginatedTransactions($wallet, $transactionLimit, $page);
+
+        $topUpBalance = $this->sumCreditsByKind($wallet->id, 'top_up');
+        $earnBalance = $this->sumCreditsByKind($wallet->id, 'earn');
+
+        $creditTotal = (float) WalletTransaction::query()
+            ->where('wallet_id', $wallet->id)
+            ->where('type', 'credit')
+            ->sum('amount');
+
+        $debitTotal = (float) WalletTransaction::query()
+            ->where('wallet_id', $wallet->id)
+            ->where('type', 'debit')
+            ->sum('amount');
+
+        return [
+            'id' => $wallet->id,
+            'user_id' => $wallet->user_id,
+            'balance' => (float) $wallet->balance,
+            'currency' => $wallet->currency,
+            'earn_balance' => $earnBalance,
+            'top_up_balance' => $topUpBalance,
+            'summary' => [
+                'transaction_count' => (int) ($pagination['total'] ?? 0),
+                'total_credited' => $creditTotal,
+                'total_debited' => $debitTotal,
+            ],
+            'transactions' => $transactions,
+            'pagination' => $pagination,
+        ];
+    }
+
+    /**
+     * @return array{0: list<array<string, mixed>>, 1: array{current_page: int, per_page: int, last_page: int, total: int}}
+     */
+    private function paginatedTransactions(Wallet $wallet, int $transactionLimit, int $page): array
+    {
+        $perPage = max(1, min(100, $transactionLimit));
+        $page = max(1, $page);
+
+        $paginator = WalletTransaction::query()
+            ->where('wallet_id', $wallet->id)
+            ->latest('created_at')
+            ->latest('id')
+            ->paginate($perPage, ['*'], 'page', $page);
+
+        $transactions = collect($paginator->items())->map(
+            fn (WalletTransaction $tx): array => $this->transactionToArray($tx)
+        )->values()->all();
+
+        return [
+            $transactions,
+            [
+                'current_page' => $paginator->currentPage(),
+                'per_page' => $paginator->perPage(),
+                'last_page' => $paginator->lastPage(),
+                'total' => $paginator->total(),
+            ],
+        ];
+    }
+
+    /**
+     * @param  'earn'|'top_up'  $kind
+     */
+    private function sumCreditsByKind(int $walletId, string $kind): float
+    {
+        $query = WalletTransaction::query()
+            ->where('wallet_id', $walletId)
+            ->where('type', 'credit');
+
+        if ($kind === 'top_up') {
+            $query->where(function ($inner): void {
+                $inner->where('description', 'Wallet top-up')
+                    ->orWhere('reference', 'like', 'wallet_%');
+            });
+        } else {
+            $query->where(function ($inner): void {
+                $inner->where('description', 'like', 'Referral%')
+                    ->orWhere('reference', 'like', 'referral_%');
+            });
+        }
+
+        return (float) $query->sum('amount');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function transactionToArray(WalletTransaction $tx): array
+    {
+        return [
+            'id' => $tx->id,
+            'type' => $tx->type,
+            'amount' => (float) $tx->amount,
+            'balance_after' => (float) $tx->balance_after,
+            'description' => $tx->description,
+            'reference' => $tx->reference,
+            'metadata' => is_array($tx->metadata) ? $tx->metadata : null,
+            'created_at' => $tx->created_at?->toIso8601String(),
+            'created_at_human' => humanDateTime($tx->created_at),
         ];
     }
 
