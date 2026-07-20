@@ -150,6 +150,21 @@ class User extends Authenticatable
         return $this->notificationPreference('push', true);
     }
 
+    public function wantsEmailNotifications(): bool
+    {
+        return $this->notificationPreference('email', true);
+    }
+
+    public function wantsSmsNotifications(): bool
+    {
+        return $this->notificationPreference('sms', false);
+    }
+
+    public function wantsWhatsappNotifications(): bool
+    {
+        return $this->notificationPreference('whatsapp', true);
+    }
+
     /**
      * Public profile image URL (uploaded file or default avatar).
      */

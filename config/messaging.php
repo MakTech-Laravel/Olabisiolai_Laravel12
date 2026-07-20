@@ -27,4 +27,8 @@ return [
         'audio/mpeg',
         'audio/wav',
     ],
+
+    /** Minutes between outbound email/SMS alerts per vendor+conversation while away. */
+    'away_alert_debounce_minutes' => (int) env('MESSAGING_AWAY_ALERT_DEBOUNCE_MINUTES', 15),
+    'away_alert_app_url' => env('FRONTEND_URL', env('APP_URL')),
 ];

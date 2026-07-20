@@ -14,6 +14,7 @@ use App\Events\MessageSent;
 use App\Events\UserTyping;
 use App\Exceptions\ConversationNotFoundException;
 use App\Jobs\ProcessAttachment;
+use App\Jobs\SendAwayMessageAlert;
 use App\Jobs\SendMessageNotification;
 use App\Models\Attachment;
 use App\Models\Conversation;
@@ -141,6 +142,7 @@ final class MessageService
         }
 
         SendMessageNotification::dispatch($message->id)->afterCommit();
+        // SendAwayMessageAlert::dispatch($message->id)->afterCommit();
 
         return $message;
     }

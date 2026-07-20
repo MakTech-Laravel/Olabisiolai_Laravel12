@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Contracts\Messaging\AttachmentScannerInterface;
+use App\Contracts\WhatsAppServiceInterface;
 use App\Events\MessageRead;
 use App\Events\MessageSent;
 use App\Events\UserPresenceUpdated;
@@ -14,6 +15,7 @@ use App\Repositories\Contracts\MessageRepositoryInterface;
 use App\Repositories\ConversationRepository;
 use App\Repositories\MessageRepository;
 use App\Services\Messaging\NoopAttachmentScanner;
+use App\Services\WhatsAppService;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -31,6 +33,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(ConversationRepositoryInterface::class, ConversationRepository::class);
         $this->app->bind(MessageRepositoryInterface::class, MessageRepository::class);
         $this->app->bind(AttachmentScannerInterface::class, NoopAttachmentScanner::class);
+        $this->app->bind(WhatsAppServiceInterface::class, WhatsAppService::class);
     }
 
     /**
