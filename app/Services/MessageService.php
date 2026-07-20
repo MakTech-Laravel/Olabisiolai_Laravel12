@@ -142,7 +142,7 @@ final class MessageService
         }
 
         SendMessageNotification::dispatch($message->id)->afterCommit();
-        // SendAwayMessageAlert::dispatch($message->id)->afterCommit();
+        SendAwayMessageAlert::dispatch($message->id)->afterCommit();
 
         return $message;
     }
