@@ -57,6 +57,10 @@ class ReferralService
             ->limit(50)
             ->get();
 
+        $totalInvites = ReferralInvite::query()
+            ->where('referrer_user_id', $user->id)
+            ->count();
+
         $totalEarned = (float) ReferralInvite::query()
             ->where('referrer_user_id', $user->id)
             ->where('status', 'paid')
@@ -66,7 +70,7 @@ class ReferralService
             'code' => $code->code,
             'referral_link' => $link,
             'total_earned' => $totalEarned,
-            'total_invites' => $invites->count(),
+            'total_invites' => $totalInvites,
             'invites' => $invites->map(function (ReferralInvite $invite): array {
                 return [
                     'id' => $invite->id,
