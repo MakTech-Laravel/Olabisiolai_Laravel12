@@ -94,6 +94,12 @@ class VendorBusinessPaths
                                 example: true,
                             ),
                             new OA\Property(
+                                property: 'is_24_hours',
+                                description: 'When true, the day is treated as open 24 hours (00:00 - 23:59) regardless of opens_at/closes_at.',
+                                type: 'boolean',
+                                example: false,
+                            ),
+                            new OA\Property(
                                 property: 'opens_at',
                                 type: 'string',
                                 example: 'Example Text',
@@ -352,6 +358,12 @@ class VendorBusinessPaths
                                 example: true,
                             ),
                             new OA\Property(
+                                property: 'is_24_hours',
+                                description: 'When true, the day is treated as open 24 hours (00:00 - 23:59) regardless of opens_at/closes_at.',
+                                type: 'boolean',
+                                example: false,
+                            ),
+                            new OA\Property(
                                 property: 'opens_at',
                                 type: 'string',
                                 example: 'Example Text',
@@ -593,6 +605,12 @@ class VendorBusinessPaths
                                 property: 'is_closed',
                                 type: 'boolean',
                                 example: true,
+                            ),
+                            new OA\Property(
+                                property: 'is_24_hours',
+                                description: 'When true, the day is treated as open 24 hours (00:00 - 23:59) regardless of opens_at/closes_at.',
+                                type: 'boolean',
+                                example: false,
                             ),
                             new OA\Property(
                                 property: 'opens_at',
