@@ -62,4 +62,20 @@ return [
         'otp_brand' => env('TERMII_OTP_BRAND', 'Gidira'),
     ],
 
+    /*
+    | WhatsApp away-message alerts (notify-only template; disabled until credentials are set).
+    | Termii: device_id = WHATSAPP_SENDER_ID, template_id = WHATSAPP_NEW_MESSAGE_TEMPLATE.
+    */
+    'whatsapp' => [
+        'enabled' => env('WHATSAPP_ENABLED', false),
+        'driver' => env('WHATSAPP_DRIVER', 'termii'),
+        'api_key' => env('WHATSAPP_API_KEY'),
+        'sender_id' => env('WHATSAPP_SENDER_ID'),
+        'base_url' => env('WHATSAPP_BASE_URL', 'https://api.ng.termii.com'),
+        'timeout' => (int) env('WHATSAPP_TIMEOUT', 15),
+        'template_id' => env('WHATSAPP_NEW_MESSAGE_TEMPLATE'),
+        'template_sender_key' => env('WHATSAPP_TEMPLATE_SENDER_KEY', '1'),
+        'template_url_key' => env('WHATSAPP_TEMPLATE_URL_KEY', '2'),
+    ],
+
 ];
