@@ -39,6 +39,17 @@ function ruleTokens(array $rules): array
         if ($rule instanceof Closure) {
             continue;
         }
+        if ($rule instanceof \Illuminate\Validation\Rules\ImageFile) {
+            $tokens[] = 'image';
+            $tokens[] = 'file';
+
+            continue;
+        }
+        if ($rule instanceof \Illuminate\Validation\Rules\File) {
+            $tokens[] = 'file';
+
+            continue;
+        }
         try {
             $s = (string) $rule;
             if ($s !== '') {
@@ -75,6 +86,9 @@ function isMultipartRules(array $rules): bool
 {
     foreach ($rules as $ruleset) {
         foreach ((array) $ruleset as $rule) {
+            if ($rule instanceof \Illuminate\Validation\Rules\File) {
+                return true;
+            }
             if (is_string($rule) && (str_contains($rule, 'file') || str_contains($rule, 'image') || str_contains($rule, 'mimes'))) {
                 return true;
             }

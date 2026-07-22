@@ -77,6 +77,16 @@ class AdminBusinessInfoPaths
                     nullable: true,
                 ),
                 new OA\Property(
+                    property: 'premium_source',
+                    enum: [
+                        'all',
+                        'manual',
+                    ],
+                    example: 'all',
+                    type: 'string',
+                    nullable: true,
+                ),
+                new OA\Property(
                     property: 'per_page',
                     type: 'integer',
                     example: 10,

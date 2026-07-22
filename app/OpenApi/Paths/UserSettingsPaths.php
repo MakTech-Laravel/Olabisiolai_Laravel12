@@ -19,8 +19,10 @@ class UserSettingsPaths
     ],
     requestBody: new OA\RequestBody(
         required: true,
-        content: new OA\JsonContent(
-            properties: [
+        content: new OA\MediaType(
+            mediaType: 'multipart/form-data',
+            schema: new OA\Schema(
+                properties: [
                 new OA\Property(
                     property: 'first_name',
                     type: 'string',
@@ -54,8 +56,9 @@ class UserSettingsPaths
                 ),
                 new OA\Property(
                     property: 'image',
+                    description: 'Image file upload',
                     type: 'string',
-                    example: 'Example Text',
+                    format: 'binary',
                     nullable: true,
                 ),
                 new OA\Property(
@@ -67,6 +70,7 @@ class UserSettingsPaths
                     ),
                 ),
             ],
+            ),
         ),
     ),
     responses: [

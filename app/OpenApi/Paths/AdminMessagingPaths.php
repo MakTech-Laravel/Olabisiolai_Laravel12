@@ -308,11 +308,13 @@ class AdminMessagingPaths
                 ),
                 new OA\Property(
                     property: 'attachments',
+                    description: 'One or more image files',
                     type: 'array',
                     items: new OA\Items(
                         type: 'string',
-                        example: 'Example Text',
+                        format: 'binary',
                     ),
+                    nullable: true,
                 ),
                 new OA\Property(
                     property: 'attachment_ids',
@@ -644,6 +646,7 @@ class AdminMessagingPaths
                 properties: [
                 new OA\Property(
                     property: 'file',
+                    description: 'File upload',
                     type: 'string',
                     format: 'binary',
                 ),

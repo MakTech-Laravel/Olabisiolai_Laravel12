@@ -242,7 +242,15 @@ function oaPropertiesFromRules(array $rules): array
 
         if (in_array('file', $tokens, true) || in_array('image', $tokens, true)) {
             $hasFile = true;
-            $properties[] = ['property' => $field, 'type' => 'string', 'format' => 'binary'];
+            $properties[] = [
+                'property' => $field,
+                'description' => in_array('image', $tokens, true)
+                    ? 'Image file upload'
+                    : 'File upload',
+                'type' => 'string',
+                'format' => 'binary',
+                'nullable' => in_array('nullable', $tokens, true) ? true : null,
+            ];
             if (in_array('required', $tokens, true)) {
                 $required[] = $field;
             }
@@ -270,9 +278,20 @@ function oaPropertiesFromRules(array $rules): array
                 $properties[] = ['property' => $field, 'type' => 'array', 'items' => ['type' => 'object', 'properties' => $itemProps]];
             } else {
                 $itemTokens = $tokensByField[$field.'.*'] ?? ['string'];
-                $itemSchema = oaFieldSchema($field, $itemTokens);
-                unset($itemSchema['property']);
-                $properties[] = ['property' => $field, 'type' => 'array', 'items' => $itemSchema];
+                if (in_array('file', $itemTokens, true) || in_array('image', $itemTokens, true)) {
+                    $hasFile = true;
+                    $properties[] = [
+                        'property' => $field,
+                        'description' => 'One or more image files',
+                        'type' => 'array',
+                        'items' => ['type' => 'string', 'format' => 'binary'],
+                        'nullable' => in_array('nullable', $tokens, true) ? true : null,
+                    ];
+                } else {
+                    $itemSchema = oaFieldSchema($field, $itemTokens);
+                    unset($itemSchema['property']);
+                    $properties[] = ['property' => $field, 'type' => 'array', 'items' => $itemSchema];
+                }
             }
         } else {
             $properties[] = oaFieldSchema($field, $tokens);
