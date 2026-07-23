@@ -111,9 +111,21 @@ class VendorCatalogPaths
                     example: true,
                 ),
                 new OA\Property(
+                    property: 'images',
+                    description: 'One or more image files',
+                    type: 'array',
+                    items: new OA\Items(
+                        type: 'string',
+                        format: 'binary',
+                    ),
+                    nullable: true,
+                ),
+                new OA\Property(
                     property: 'image',
+                    description: 'Image file upload',
                     type: 'string',
                     format: 'binary',
+                    nullable: true,
                 ),
             ],
             ),
@@ -232,9 +244,34 @@ class VendorCatalogPaths
                     example: true,
                 ),
                 new OA\Property(
+                    property: 'remove_images',
+                    type: 'boolean',
+                    example: true,
+                ),
+                new OA\Property(
+                    property: 'keep_image_paths',
+                    type: 'array',
+                    items: new OA\Items(
+                        type: 'string',
+                        example: 'Example Text',
+                    ),
+                ),
+                new OA\Property(
+                    property: 'images',
+                    description: 'One or more image files',
+                    type: 'array',
+                    items: new OA\Items(
+                        type: 'string',
+                        format: 'binary',
+                    ),
+                    nullable: true,
+                ),
+                new OA\Property(
                     property: 'image',
+                    description: 'Image file upload',
                     type: 'string',
                     format: 'binary',
+                    nullable: true,
                 ),
             ],
             ),

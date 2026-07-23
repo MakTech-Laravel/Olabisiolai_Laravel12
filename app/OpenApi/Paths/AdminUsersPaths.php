@@ -322,4 +322,85 @@ class AdminUsersPaths
     ],
 )]
     private function opPOSTAdminUsersDelete_5a2d68(): void {}
+
+    #[OA\Post(
+    path: '/v1/admin/users/wallet',
+    summary: 'Submit Wallet',
+    tags: [
+        'Admin',
+    ],
+    security: [
+        [
+            'passport' => [],
+        ],
+    ],
+    requestBody: new OA\RequestBody(
+        required: true,
+        content: new OA\JsonContent(
+            required: [
+                'user_id',
+            ],
+            properties: [
+                new OA\Property(
+                    property: 'user_id',
+                    type: 'integer',
+                    example: 1,
+                ),
+                new OA\Property(
+                    property: 'per_page',
+                    type: 'integer',
+                    example: 10,
+                    nullable: true,
+                ),
+                new OA\Property(
+                    property: 'page',
+                    type: 'integer',
+                    example: 10,
+                    nullable: true,
+                ),
+                new OA\Property(
+                    property: 'type',
+                    enum: [
+                        'credit',
+                        'debit',
+                    ],
+                    example: 'credit',
+                    type: 'string',
+                    nullable: true,
+                ),
+            ],
+        ),
+    ),
+    responses: [
+        new OA\Response(
+        response: 200,
+        description: 'Submit Wallet successfully',
+        content: new OA\JsonContent(
+            ref: '#/components/schemas/ApiResponse',
+        ),
+    ),
+        new OA\Response(
+        response: 401,
+        description: 'Unauthenticated',
+        content: new OA\JsonContent(
+            ref: '#/components/schemas/ErrorResponse',
+        ),
+    ),
+        new OA\Response(
+        response: 422,
+        description: 'Validation error',
+        content: new OA\JsonContent(
+            ref: '#/components/schemas/ErrorResponse',
+        ),
+    ),
+        new OA\Response(
+        response: 500,
+        description: 'Unexpected server error',
+        content: new OA\JsonContent(
+            ref: '#/components/schemas/ErrorResponse',
+        ),
+    ),
+    ],
+)]
+    private function opPOSTAdminUsersWallet_c5dea4(): void {}
 }

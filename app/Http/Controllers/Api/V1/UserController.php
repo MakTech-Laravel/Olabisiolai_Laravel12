@@ -6,6 +6,7 @@ use App\Enums\UserStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V1\UserDetailResource;
 use App\Http\Resources\Api\V1\UserResource;
+use App\Services\ReferralService;
 use App\Services\UserService;
 use App\Services\WalletService;
 use Illuminate\Http\Request;
@@ -16,7 +17,11 @@ use Throwable;
 
 class UserController extends Controller
 {
-    public function __construct(private UserService $userService, private WalletService $walletService) {}
+    public function __construct(
+        private UserService $userService,
+        private WalletService $walletService,
+        private ReferralService $referralService,
+    ) {}
 
     public function userManagementSummary(Request $request)
     {
@@ -199,6 +204,7 @@ class UserController extends Controller
                 'user_id' => ['required', 'integer', 'exists:users,id'],
                 'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
                 'page' => ['nullable', 'integer', 'min:1'],
+                'type' => ['nullable', 'string', 'in:credit,debit'],
             ], [
                 'user_id.required' => 'The user id field is required.',
                 'user_id.integer' => 'The user id must be an integer.',
@@ -210,7 +216,9 @@ class UserController extends Controller
                 $user,
                 (int) ($validated['per_page'] ?? 50),
                 (int) ($validated['page'] ?? 1),
+                $validated['type'] ?? null,
             );
+            $wallet['referrals'] = $this->referralService->referralsPayload($user);
 
             return sendResponse(true, 'User wallet retrieved successfully.', [
                 'wallet' => $wallet,

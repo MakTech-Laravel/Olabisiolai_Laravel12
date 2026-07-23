@@ -300,6 +300,17 @@ class VendorBoostPaths
                     type: 'integer',
                     example: 1,
                 ),
+                new OA\Property(
+                    property: 'gateway',
+                    enum: [
+                        'flutterwave',
+                        'paystack',
+                        'wallet',
+                    ],
+                    example: 'flutterwave',
+                    type: 'string',
+                    nullable: true,
+                ),
             ],
         ),
     ),

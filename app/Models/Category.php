@@ -50,4 +50,15 @@ class Category extends Model
                     ->whereColumn('business_info.category_id', 'categories.id')
             );
     }
+    
+    /**
+     * Public URL for the category icon. Falls back to the default grid SVG when
+     * the stored icon path is null or empty.
+     */
+    public function getIconUrlAttribute(): string
+    {
+        $default = asset('images/categories/layout-grid.svg');
+
+        return public_media_url($this->icon, $default) ?? $default;
+    }
 }

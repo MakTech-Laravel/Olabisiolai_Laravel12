@@ -11,6 +11,11 @@ use Illuminate\Validation\ValidationException;
 
 class BusinessHoursService
 {
+    /** Sentinel times representing an "open 24 hours" day. */
+    public const TWENTY_FOUR_HOURS_OPENS_AT = '00:00';
+
+    public const TWENTY_FOUR_HOURS_CLOSES_AT = '23:59';
+
     /**
      * @return list<array{day: string, is_closed: bool, opens_at: string|null, closes_at: string|null}>
      */
@@ -50,8 +55,15 @@ class BusinessHoursService
             }
 
             $isClosed = filter_var($entry['is_closed'] ?? false, FILTER_VALIDATE_BOOLEAN);
+            $isTwentyFourHours = filter_var($entry['is_24_hours'] ?? false, FILTER_VALIDATE_BOOLEAN);
             $opensAt = $this->normalizeTimeValue($entry['opens_at'] ?? $entry['opening_time'] ?? null);
             $closesAt = $this->normalizeTimeValue($entry['closes_at'] ?? $entry['closing_time'] ?? null);
+
+            if ($isTwentyFourHours) {
+                $isClosed = false;
+                $opensAt = self::TWENTY_FOUR_HOURS_OPENS_AT;
+                $closesAt = self::TWENTY_FOUR_HOURS_CLOSES_AT;
+            }
 
             if ($isClosed) {
                 $opensAt = null;
@@ -294,6 +306,7 @@ class BusinessHoursService
             'day_label' => $day->label(),
             'day_short' => $day->shortLabel(),
             'is_closed' => $entry['is_closed'],
+            'is_24_hours' => $this->isTwentyFourHours($entry['is_closed'], $entry['opens_at'], $entry['closes_at']),
             'opens_at' => $entry['opens_at'],
             'closes_at' => $entry['closes_at'],
             'opens_at_formatted' => $this->formatTimeForDisplay($entry['opens_at']),
@@ -314,11 +327,19 @@ class BusinessHoursService
             'day_label' => $hour->day->label(),
             'day_short' => $hour->day->shortLabel(),
             'is_closed' => (bool) $hour->is_closed,
+            'is_24_hours' => $this->isTwentyFourHours((bool) $hour->is_closed, $opensAt, $closesAt),
             'opens_at' => $opensAt,
             'closes_at' => $closesAt,
             'opens_at_formatted' => $this->formatTimeForDisplay($opensAt),
             'closes_at_formatted' => $this->formatTimeForDisplay($closesAt),
         ];
+    }
+
+    private function isTwentyFourHours(bool $isClosed, ?string $opensAt, ?string $closesAt): bool
+    {
+        return ! $isClosed
+            && $opensAt === self::TWENTY_FOUR_HOURS_OPENS_AT
+            && $closesAt === self::TWENTY_FOUR_HOURS_CLOSES_AT;
     }
 
     private function extractTimeValue(mixed $value): ?string
@@ -376,6 +397,7 @@ class BusinessHoursService
         return [
             'label' => $label,
             'is_closed' => $isClosed,
+            'is_24_hours' => (bool) ($start['is_24_hours'] ?? false),
             'opens_at' => $start['opens_at'] ?? null,
             'closes_at' => $start['closes_at'] ?? null,
             'opens_at_formatted' => $start['opens_at_formatted'] ?? null,

@@ -206,6 +206,7 @@ class AdminCmsPaths
                 properties: [
                 new OA\Property(
                     property: 'image',
+                    description: 'Image file upload',
                     type: 'string',
                     format: 'binary',
                 ),

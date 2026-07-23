@@ -50,10 +50,10 @@ class WalletService
      *
      * @return array<string, mixed>
      */
-    public function adminWalletPayload(User $user, int $transactionLimit = 50, int $page = 1): array
+    public function adminWalletPayload(User $user, int $transactionLimit = 50, int $page = 1, ?string $transactionType = null): array
     {
         $wallet = $this->getOrCreateWallet($user);
-        [$transactions, $pagination] = $this->paginatedTransactions($wallet, $transactionLimit, $page);
+        [$transactions, $pagination] = $this->paginatedTransactions($wallet, $transactionLimit, $page, $transactionType);
 
         $topUpBalance = $this->sumCreditsByKind($wallet->id, 'top_up');
         $earnBalance = $this->sumCreditsByKind($wallet->id, 'earn');
@@ -86,15 +86,20 @@ class WalletService
     }
 
     /**
+     * @param  'credit'|'debit'|null  $transactionType
      * @return array{0: list<array<string, mixed>>, 1: array{current_page: int, per_page: int, last_page: int, total: int}}
      */
-    private function paginatedTransactions(Wallet $wallet, int $transactionLimit, int $page): array
+    private function paginatedTransactions(Wallet $wallet, int $transactionLimit, int $page, ?string $transactionType = null): array
     {
         $perPage = max(1, min(100, $transactionLimit));
         $page = max(1, $page);
 
         $paginator = WalletTransaction::query()
             ->where('wallet_id', $wallet->id)
+            ->when(
+                in_array($transactionType, ['credit', 'debit'], true),
+                fn ($query) => $query->where('type', $transactionType),
+            )
             ->latest('created_at')
             ->latest('id')
             ->paginate($perPage, ['*'], 'page', $page);

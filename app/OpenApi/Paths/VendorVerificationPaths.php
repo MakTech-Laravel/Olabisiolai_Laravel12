@@ -371,6 +371,7 @@ class VendorVerificationPaths
                 ),
                 new OA\Property(
                     property: 'document',
+                    description: 'File upload',
                     type: 'string',
                     format: 'binary',
                 ),

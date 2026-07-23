@@ -56,18 +56,20 @@ class VendorBusinessPaths
     ],
     requestBody: new OA\RequestBody(
         required: true,
-        content: new OA\JsonContent(
-            required: [
-                'location_id',
-                'category_id',
-                'business_name',
-                'business_description',
-                'services',
-                'phone',
-                'logo',
-                'cover_photos',
-            ],
-            properties: [
+        content: new OA\MediaType(
+            mediaType: 'multipart/form-data',
+            schema: new OA\Schema(
+                required: [
+                    'location_id',
+                    'category_id',
+                    'business_name',
+                    'business_description',
+                    'services',
+                    'phone',
+                    'logo',
+                    'cover_photos',
+                ],
+                properties: [
                 new OA\Property(
                     property: 'business_hours',
                     type: 'array',
@@ -90,6 +92,11 @@ class VendorBusinessPaths
                             ),
                             new OA\Property(
                                 property: 'is_closed',
+                                type: 'boolean',
+                                example: true,
+                            ),
+                            new OA\Property(
+                                property: 'is_24_hours',
                                 type: 'boolean',
                                 example: true,
                             ),
@@ -211,15 +218,17 @@ class VendorBusinessPaths
                 ),
                 new OA\Property(
                     property: 'logo',
+                    description: 'Image file upload',
                     type: 'string',
-                    example: 'Example Text',
+                    format: 'binary',
                 ),
                 new OA\Property(
                     property: 'cover_photos',
+                    description: 'One or more image files',
                     type: 'array',
                     items: new OA\Items(
                         type: 'string',
-                        example: 'Example Text',
+                        format: 'binary',
                     ),
                 ),
                 new OA\Property(
@@ -233,6 +242,7 @@ class VendorBusinessPaths
                     nullable: true,
                 ),
             ],
+            ),
         ),
     ),
     responses: [
@@ -318,14 +328,16 @@ class VendorBusinessPaths
     ],
     requestBody: new OA\RequestBody(
         required: true,
-        content: new OA\JsonContent(
-            required: [
-                'business_name',
-                'business_description',
-                'services',
-                'phone',
-            ],
-            properties: [
+        content: new OA\MediaType(
+            mediaType: 'multipart/form-data',
+            schema: new OA\Schema(
+                required: [
+                    'business_name',
+                    'business_description',
+                    'services',
+                    'phone',
+                ],
+                properties: [
                 new OA\Property(
                     property: 'business_hours',
                     type: 'array',
@@ -348,6 +360,11 @@ class VendorBusinessPaths
                             ),
                             new OA\Property(
                                 property: 'is_closed',
+                                type: 'boolean',
+                                example: true,
+                            ),
+                            new OA\Property(
+                                property: 'is_24_hours',
                                 type: 'boolean',
                                 example: true,
                             ),
@@ -492,8 +509,9 @@ class VendorBusinessPaths
                 ),
                 new OA\Property(
                     property: 'logo',
+                    description: 'Image file upload',
                     type: 'string',
-                    example: 'Example Text',
+                    format: 'binary',
                     nullable: true,
                 ),
                 new OA\Property(
@@ -506,13 +524,16 @@ class VendorBusinessPaths
                 ),
                 new OA\Property(
                     property: 'cover_photos',
+                    description: 'One or more image files',
                     type: 'array',
                     items: new OA\Items(
                         type: 'string',
-                        example: 'Example Text',
+                        format: 'binary',
                     ),
+                    nullable: true,
                 ),
             ],
+            ),
         ),
     ),
     responses: [
@@ -561,14 +582,16 @@ class VendorBusinessPaths
     ],
     requestBody: new OA\RequestBody(
         required: true,
-        content: new OA\JsonContent(
-            required: [
-                'business_name',
-                'business_description',
-                'services',
-                'phone',
-            ],
-            properties: [
+        content: new OA\MediaType(
+            mediaType: 'multipart/form-data',
+            schema: new OA\Schema(
+                required: [
+                    'business_name',
+                    'business_description',
+                    'services',
+                    'phone',
+                ],
+                properties: [
                 new OA\Property(
                     property: 'business_hours',
                     type: 'array',
@@ -591,6 +614,11 @@ class VendorBusinessPaths
                             ),
                             new OA\Property(
                                 property: 'is_closed',
+                                type: 'boolean',
+                                example: true,
+                            ),
+                            new OA\Property(
+                                property: 'is_24_hours',
                                 type: 'boolean',
                                 example: true,
                             ),
@@ -735,8 +763,9 @@ class VendorBusinessPaths
                 ),
                 new OA\Property(
                     property: 'logo',
+                    description: 'Image file upload',
                     type: 'string',
-                    example: 'Example Text',
+                    format: 'binary',
                     nullable: true,
                 ),
                 new OA\Property(
@@ -749,13 +778,16 @@ class VendorBusinessPaths
                 ),
                 new OA\Property(
                     property: 'cover_photos',
+                    description: 'One or more image files',
                     type: 'array',
                     items: new OA\Items(
                         type: 'string',
-                        example: 'Example Text',
+                        format: 'binary',
                     ),
+                    nullable: true,
                 ),
             ],
+            ),
         ),
     ),
     responses: [
