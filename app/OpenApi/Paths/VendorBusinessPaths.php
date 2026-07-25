@@ -278,43 +278,6 @@ class VendorBusinessPaths
 )]
     private function opPOSTVendorBusinessCreate_9d6159(): void {}
 
-    #[OA\Get(
-    path: '/v1/vendor/business/show',
-    summary: 'Get Show',
-    tags: [
-        'Vendors',
-    ],
-    security: [
-        [
-            'passport' => [],
-        ],
-    ],
-    responses: [
-        new OA\Response(
-        response: 200,
-        description: 'Get Show successfully',
-        content: new OA\JsonContent(
-            ref: '#/components/schemas/ApiResponse',
-        ),
-    ),
-        new OA\Response(
-        response: 401,
-        description: 'Unauthenticated',
-        content: new OA\JsonContent(
-            ref: '#/components/schemas/ErrorResponse',
-        ),
-    ),
-        new OA\Response(
-        response: 500,
-        description: 'Unexpected server error',
-        content: new OA\JsonContent(
-            ref: '#/components/schemas/ErrorResponse',
-        ),
-    ),
-    ],
-)]
-    private function opGETVendorBusinessShow_ec7fca(): void {}
-
     #[OA\Put(
     path: '/v1/vendor/business/update',
     summary: 'Update Update',

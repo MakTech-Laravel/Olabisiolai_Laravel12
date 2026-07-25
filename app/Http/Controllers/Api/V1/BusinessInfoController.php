@@ -17,6 +17,7 @@ use App\Services\SubscriptionService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
+use OpenApi\Attributes as OA;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
@@ -53,11 +54,49 @@ class BusinessInfoController extends Controller
     /**
      * Current user's business profile (if any).
      */
-    public function show(Request $request)
+    #[OA\Get(
+        path: '/v1/vendor/business/show/{businessId}',
+        summary: 'Get vendor business profile',
+        description: 'Returns the authenticated vendor\'s business profile. Pass an optional businessId to load a specific business; omit it (call `/v1/vendor/business/show`) to use the active business.',
+        tags: ['Vendors'],
+        security: [['passport' => []]],
+        parameters: [
+            new OA\Parameter(
+                name: 'businessId',
+                description: 'Optional business ID owned by the authenticated vendor. Leave empty to use settings.active_business_id (or the first business).',
+                in: 'path',
+                required: false,
+                allowEmptyValue: true,
+                schema: new OA\Schema(type: 'integer', example: 1, nullable: true),
+            ),
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Business profile retrieved successfully',
+                content: new OA\JsonContent(ref: '#/components/schemas/ApiResponse'),
+            ),
+            new OA\Response(
+                response: 401,
+                description: 'Unauthenticated',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse'),
+            ),
+            new OA\Response(
+                response: 404,
+                description: 'No business profile found',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse'),
+            ),
+            new OA\Response(
+                response: 500,
+                description: 'Unexpected server error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse'),
+            ),
+        ],
+    )]
+    public function show(Request $request, ?int $businessId = null)
     {
         $user = $request->user('api');
-        $businessId = $request->integer('business_id');
-        $business = $businessId > 0
+        $business = $businessId !== null
             ? $this->businessInfoService->findForUser($user, $businessId)
             : $this->businessInfoService->findForUser($user);
 
