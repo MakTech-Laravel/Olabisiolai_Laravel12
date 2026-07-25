@@ -38,7 +38,6 @@ class AuthService
 
     public function register(array $validated): array
     {
-        $channel = (string) $validated['verification_channel'];
         $email = filled($validated['email'] ?? null) ? Str::lower((string) $validated['email']) : null;
         $phone = filled($validated['phone'] ?? null)
             ? (PhoneNormalizer::normalize((string) $validated['phone']) ?? (string) $validated['phone'])
@@ -55,18 +54,18 @@ class AuthService
             'wants_marketing_emails' => $validated['wants_marketing_emails'] ?? false,
             'password' => $validated['password'],
             'settings' => [
-                'registration_verification_channel' => $channel,
+                'registration_verification_channel' => 'both',
             ],
         ]);
 
         $otp = $this->issueOtp($user, OtpPurpose::Register);
 
-        $this->deliverRegistrationOtp($user, $otp->code, $channel);
+        $this->deliverRegistrationOtp($user, $otp->code);
 
         return [
             'user' => $user,
             'otp' => $otp,
-            'verification_channel' => $channel,
+            'verification_channel' => 'both',
         ];
     }
 
@@ -836,9 +835,7 @@ class AuthService
         $otp = $this->issueOtp($subject, OtpPurpose::Register);
 
         if ($subject instanceof User) {
-            $channel = $subject->registrationVerificationChannel()
-                ?? ($subject->phone && ! $subject->email ? 'phone' : 'email');
-            $this->deliverRegistrationOtp($subject, $otp->code, $channel);
+            $this->deliverRegistrationOtp($subject, $otp->code);
         } else {
             $this->deliverOtpMail($subject, $otp->code, false);
         }
@@ -1168,25 +1165,39 @@ class AuthService
         return hash_equals((string) $tokenRow->token, hash('sha256', $token));
     }
 
-    private function deliverRegistrationOtp(User $user, string $otpCode, string $channel): bool
+    private function deliverRegistrationOtp(User $user, string $otpCode, ?string $channel = null): bool
     {
-        if ($channel === 'phone') {
-            return $this->deliverOtpSms($user, $otpCode, OtpPurpose::Register, allowEmailFallback: false);
+        unset($channel); // Kept for call-site compatibility; OTP is always sent to every available channel.
+
+        $delivered = false;
+
+        if (filled($user->phone)) {
+            if ($this->deliverOtpSms($user, $otpCode, OtpPurpose::Register, allowEmailFallback: false)) {
+                $delivered = true;
+            }
         }
 
-        try {
-            $this->deliverOtpMail($user, $otpCode, false);
+        if (filled($user->email)) {
+            try {
+                $this->deliverOtpMail($user, $otpCode, false);
+                $delivered = true;
+            } catch (\Throwable $throwable) {
+                Log::error('Registration OTP email delivery failed.', [
+                    'user_id' => $user->id,
+                    'error' => $throwable->getMessage(),
+                ]);
+            }
+        }
 
-            return true;
-        } catch (\Throwable $throwable) {
-            Log::error('Registration OTP delivery failed.', [
+        if (! $delivered) {
+            Log::error('Registration OTP delivery failed on all channels.', [
                 'user_id' => $user->id,
-                'channel' => $channel,
-                'error' => $throwable->getMessage(),
+                'has_email' => filled($user->email),
+                'has_phone' => filled($user->phone),
             ]);
-
-            return false;
         }
+
+        return $delivered;
     }
 
     private function markRegistrationVerified(User|Admin $subject): void
@@ -1212,20 +1223,14 @@ class AuthService
 
         $wasUnverified = ! $subject->isAccountVerified();
 
-        $channel = $subject->registrationVerificationChannel();
         $payload = ['status' => UserStatus::Active->value];
 
-        if ($channel === 'phone') {
-            $payload['phone_verified_at'] = now();
-        } elseif ($channel === 'email') {
+        // Dual-channel registration: verifying the shared OTP confirms both contacts.
+        if (filled($subject->email)) {
             $payload['email_verified_at'] = now();
-        } else {
-            if ($subject->email) {
-                $payload['email_verified_at'] = now();
-            }
-            if ($subject->phone) {
-                $payload['phone_verified_at'] = now();
-            }
+        }
+        if (filled($subject->phone)) {
+            $payload['phone_verified_at'] = now();
         }
 
         $subject->forceFill($payload)->save();

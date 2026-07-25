@@ -114,7 +114,7 @@ class User extends Authenticatable
         $settings = is_array($this->settings) ? $this->settings : [];
         $channel = $settings['registration_verification_channel'] ?? null;
 
-        return is_string($channel) && in_array($channel, ['email', 'phone'], true)
+        return is_string($channel) && in_array($channel, ['email', 'phone', 'both'], true)
             ? $channel
             : null;
     }

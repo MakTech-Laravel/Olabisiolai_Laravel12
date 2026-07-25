@@ -26,8 +26,8 @@ class AuthRegistrationTest extends TestCase
         $registerResponse = $this->postJson('/api/v1/auth/register', [
             'first_name' => 'Test',
             'last_name' => 'User',
-            'verification_channel' => 'email',
             'email' => 'newuser@example.com',
+            'phone' => '+2348012345678',
             'role' => 'user',
             'password' => 'Secret12!',
             'password_confirmation' => 'Secret12!',
@@ -36,26 +36,34 @@ class AuthRegistrationTest extends TestCase
 
         $registerResponse->assertCreated();
         $registerResponse->assertJsonStructure([
-            'data' => ['token', 'verification_status', 'otp', 'verification_channel'],
+            'data' => ['verification_status', 'otp', 'verification_channel', 'user'],
         ]);
         $registerResponse->assertJsonPath('data.verification_status', 'unverified');
-        $registerResponse->assertJsonPath('data.verification_channel', 'email');
-        $this->assertNotEmpty($registerResponse->json('data.token'));
-        $this->assertSame('pending', User::where('email', 'newuser@example.com')->first()?->status->value);
+        $registerResponse->assertJsonPath('data.verification_channel', 'both');
+        $this->assertNotEmpty($registerResponse->json('data.otp'));
+        $user = User::where('email', 'newuser@example.com')->first();
+        $this->assertSame('pending', $user?->status->value);
+        $this->assertSame('2348012345678', $user?->phone);
+        $this->assertSame('both', $user?->registrationVerificationChannel());
 
         $verifyResponse = $this->postJson('/api/v1/auth/otp/verify', [
             'code' => $registerResponse->json('data.otp'),
+            'email' => 'newuser@example.com',
+            'phone' => '+2348012345678',
         ]);
 
         $verifyResponse->assertOk();
         $verifyResponse->assertJsonPath('data.verification_status', 'verified');
+        $this->assertNotEmpty($verifyResponse->json('data.token'));
         $this->assertDatabaseHas('users', [
             'email' => 'newuser@example.com',
+            'phone' => '2348012345678',
             'role' => 'user',
             'status' => 'active',
         ]);
-        $this->assertNotNull(User::where('email', 'newuser@example.com')->value('email_verified_at'));
-        $this->assertInstanceOf(User::class, User::where('email', 'newuser@example.com')->first());
+        $verified = User::where('email', 'newuser@example.com')->first();
+        $this->assertNotNull($verified?->email_verified_at);
+        $this->assertNotNull($verified?->phone_verified_at);
     }
 
     public function test_register_validation_requires_fields(): void
@@ -63,7 +71,7 @@ class AuthRegistrationTest extends TestCase
         $response = $this->postJson('/api/v1/auth/register', []);
 
         $response->assertUnprocessable();
-        $response->assertJsonValidationErrors(['first_name', 'last_name', 'verification_channel', 'role', 'password']);
+        $response->assertJsonValidationErrors(['first_name', 'last_name', 'email', 'phone', 'role', 'password']);
     }
 
     public function test_marketplace_login_rejects_admin_user(): void
