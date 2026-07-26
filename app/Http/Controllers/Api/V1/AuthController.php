@@ -42,19 +42,19 @@ class AuthController extends Controller
     #[OA\Post(
         path: '/v1/auth/register',
         summary: 'Register a new user or vendor account',
-        description: 'Creates an unverified account and sends an OTP to the chosen verification channel (email or phone). '
+        description: 'Creates an unverified account and sends the same OTP to both email and phone. '
             .'The account must be verified via POST /v1/auth/otp/verify before it can log in.',
         tags: ['Auth'],
         requestBody: new OA\RequestBody(
             required: true,
             content: new OA\JsonContent(
-                required: ['first_name', 'last_name', 'verification_channel', 'role', 'password', 'password_confirmation'],
+                required: ['first_name', 'last_name', 'email', 'phone', 'role', 'password', 'password_confirmation'],
                 properties: [
                     new OA\Property(property: 'first_name', type: 'string', maxLength: 120, example: 'Ada'),
                     new OA\Property(property: 'last_name', type: 'string', maxLength: 120, example: 'Obi'),
-                    new OA\Property(property: 'verification_channel', type: 'string', enum: ['email', 'phone']),
-                    new OA\Property(property: 'email', type: 'string', format: 'email', nullable: true, description: 'Required if verification_channel is email; must be omitted/null if verification_channel is phone.'),
-                    new OA\Property(property: 'phone', type: 'string', nullable: true, description: 'Nigerian phone number; required if verification_channel is phone; must be omitted/null if verification_channel is email.'),
+                    new OA\Property(property: 'verification_channel', type: 'string', enum: ['email', 'phone', 'both'], nullable: true, description: 'Optional legacy field. Registration always requires email and phone.'),
+                    new OA\Property(property: 'email', type: 'string', format: 'email', description: 'Required. OTP is also emailed here.'),
+                    new OA\Property(property: 'phone', type: 'string', description: 'Required Nigerian phone number. OTP is also sent by SMS.'),
                     new OA\Property(property: 'role', type: 'string', enum: ['user', 'vendor']),
                     new OA\Property(property: 'password', type: 'string', format: 'password', minLength: 8),
                     new OA\Property(property: 'password_confirmation', type: 'string', format: 'password'),
@@ -64,9 +64,8 @@ class AuthController extends Controller
                 example: [
                     'first_name' => 'Ada',
                     'last_name' => 'Obi',
-                    'verification_channel' => 'email',
                     'email' => 'ada@example.com',
-                    'phone' => null,
+                    'phone' => '08012345678',
                     'role' => 'user',
                     'password' => 'Passw0rd123',
                     'password_confirmation' => 'Passw0rd123',
@@ -84,7 +83,7 @@ class AuthController extends Controller
                     new OA\Property(property: 'message', type: 'string'),
                     new OA\Property(property: 'data', properties: [
                         new OA\Property(property: 'verification_status', type: 'string', example: 'unverified'),
-                        new OA\Property(property: 'verification_channel', type: 'string', enum: ['email', 'phone']),
+                        new OA\Property(property: 'verification_channel', type: 'string', enum: ['email', 'phone', 'both']),
                         new OA\Property(property: 'otp', type: 'string', description: 'Present in non-production environments only.'),
                         new OA\Property(property: 'user', ref: '#/components/schemas/User'),
                     ], type: 'object'),
@@ -445,6 +444,14 @@ class AuthController extends Controller
                     new OA\Property(property: 'device_id', type: 'string', format: 'uuid', nullable: true, description: 'Identifies this device for the trusted-device / new-device-verification flow.'),
                     new OA\Property(property: 'device_name', type: 'string', nullable: true, example: 'iPhone 15 Pro'),
                 ],
+                example: [
+                    'email' => 'user@dev.com',
+                    'phone' => '08012345678',
+                    'password' => 'user@dev.com',
+                    'role' => 'user',
+                    'device_id' => '123e4567-e89b-12d3-a456-426614174000',
+                    'device_name' => 'iPhone 15 Pro',
+                ],
             ),
         ),
         responses: [
@@ -505,8 +512,14 @@ class AuthController extends Controller
 
             if (! $user->isAccountVerified()) {
                 $channel = $user->registrationVerificationChannel()
-                    ?? ($user->phone && ! $user->email ? 'phone' : 'email');
-                $destination = $channel === 'phone' ? 'phone number' : 'email';
+                    ?? (filled($user->email) && filled($user->phone)
+                        ? 'both'
+                        : ($user->phone && ! $user->email ? 'phone' : 'email'));
+                $destination = match ($channel) {
+                    'both' => 'email and phone number',
+                    'phone' => 'phone number',
+                    default => 'email',
+                };
 
                 return sendResponse(
                     false,

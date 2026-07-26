@@ -454,7 +454,8 @@ function buildOperationAttribute(Route $route, string $method, string $controlle
 {
     $uri = $route->uri();
     $uriAfterV1 = Str::after($uri, 'api/v1/');
-    $path = '/v1/'.$uriAfterV1;
+    // OpenAPI path params cannot include Laravel's optional `?` marker.
+    $path = '/v1/'.preg_replace('/\{(\w+)\?\}/', '{$1}', $uriAfterV1);
 
     [$tags] = classifyForOpenApi($uriAfterV1);
     $middleware = $route->gatherMiddleware();
@@ -463,11 +464,16 @@ function buildOperationAttribute(Route $route, string $method, string $controlle
     $parameters = [];
     foreach ($route->parameterNames() as $paramName) {
         $varName = pathVariableFor($paramName);
+        $isOptional = str_contains($uri, '{'.$paramName.'?}');
         $parameters[] = oaNew('OA\\Parameter', [
             'name' => $paramName,
             'in' => 'path',
-            'required' => true,
-            'schema' => oaNew('OA\\Schema', ['type' => $varName === 'id' || str_ends_with($varName, '_id') ? 'integer' : 'string'], 1),
+            'required' => ! $isOptional,
+            'allowEmptyValue' => $isOptional ? true : null,
+            'schema' => oaNew('OA\\Schema', [
+                'type' => $varName === 'id' || str_ends_with($varName, '_id') || str_ends_with($varName, 'Id') ? 'integer' : 'string',
+                'nullable' => $isOptional ? true : null,
+            ], 1),
             'example' => 1,
         ], 1);
     }
