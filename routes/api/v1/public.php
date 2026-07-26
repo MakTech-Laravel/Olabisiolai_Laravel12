@@ -34,6 +34,9 @@ Route::post('/contact-messages', [ContactMessageController::class, 'store'])
 Route::get('/categories', [PublicCategoryCatalogController::class, 'index'])->name('public.categories');
 Route::get('/categories/{category}', [PublicCategoryCatalogController::class, 'show'])->name('public.categories.show');
 Route::get('/catalog/home', [PublicCatalogDiscoveryController::class, 'home'])->name('public.catalog.home');
+Route::get('/catalog/items/{catalogItem}', [PublicCatalogDiscoveryController::class, 'show'])
+    ->whereNumber('catalogItem')
+    ->name('public.czatalog.items.show');
 Route::get('/catalog', [PublicCatalogDiscoveryController::class, 'index'])->name('public.catalog');
 Route::get('/locations', [PublicLocationCatalogController::class, 'index'])->name('public.locations');
 Route::get('/subscription-packages', [PublicSubscriptionPlanController::class, 'index'])->name('public.subscription-packages');

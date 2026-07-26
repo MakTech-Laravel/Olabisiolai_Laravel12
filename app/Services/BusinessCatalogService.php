@@ -88,6 +88,13 @@ class BusinessCatalogService
         return $query->paginate(max(1, min($perPage, 50)));
     }
 
+    public function findDiscoverableItem(int $catalogItemId): ?BusinessCatalogItem
+    {
+        return $this->discoveryBaseQuery()
+            ->whereKey($catalogItemId)
+            ->first();
+    }
+
     /**
      * Premium + active businesses, ranked for discovery.
      *

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1\Public;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V1\PublicCatalogDiscoveryItemResource;
+use App\Models\BusinessCatalogItem;
 use App\Services\BusinessCatalogService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -117,6 +118,38 @@ class PublicCatalogDiscoveryController extends Controller
                 ['errors' => $exception->errors()],
                 Response::HTTP_UNPROCESSABLE_ENTITY
             );
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    #[OA\Get(
+        path: '/v1/catalog/items/{catalogItem}',
+        summary: 'Single discoverable catalog item details',
+        tags: ['Public'],
+        parameters: [
+            new OA\Parameter(name: 'catalogItem', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: 'Catalog item retrieved'),
+            new OA\Response(response: 404, description: 'Catalog item not found'),
+            new OA\Response(response: 500, description: 'Unexpected server error'),
+        ],
+    )]
+    public function show(BusinessCatalogItem $catalogItem)
+    {
+        try {
+            $item = $this->catalogService->findDiscoverableItem((int) $catalogItem->id);
+
+            if ($item === null) {
+                return sendResponse(false, 'Catalog item not found.', null, Response::HTTP_NOT_FOUND);
+            }
+
+            return sendResponse(true, 'Catalog item retrieved successfully.', [
+                'item' => (new PublicCatalogDiscoveryItemResource($item))->resolve(),
+            ]);
         } catch (Throwable $throwable) {
             report($throwable);
 
