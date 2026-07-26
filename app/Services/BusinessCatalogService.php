@@ -18,6 +18,8 @@ use Illuminate\Validation\ValidationException;
 
 class BusinessCatalogService
 {
+    public const MAX_ITEMS_PER_BUSINESS = 50;
+
     public function __construct(
         private readonly SubscriptionService $subscriptionService,
     ) {}
@@ -143,6 +145,13 @@ class BusinessCatalogService
         $this->assertCanManageCatalog($business);
 
         return DB::transaction(function () use ($business, $data, $images): BusinessCatalogItem {
+            $currentCount = $business->catalogItems()->lockForUpdate()->count();
+            if ($currentCount >= self::MAX_ITEMS_PER_BUSINESS) {
+                throw ValidationException::withMessages([
+                    'catalog' => 'You can add up to '.self::MAX_ITEMS_PER_BUSINESS.' catalog items.',
+                ]);
+            }
+
             $sortOrder = (int) ($data['sort_order'] ?? ($business->catalogItems()->max('sort_order') + 1));
 
             $paths = [];

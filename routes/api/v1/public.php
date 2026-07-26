@@ -34,6 +34,11 @@ Route::post('/contact-messages', [ContactMessageController::class, 'store'])
 Route::get('/categories', [PublicCategoryCatalogController::class, 'index'])->name('public.categories');
 Route::get('/categories/{category}', [PublicCategoryCatalogController::class, 'show'])->name('public.categories.show');
 Route::get('/catalog/home', [PublicCatalogDiscoveryController::class, 'home'])->name('public.catalog.home');
+/** Collection alias for mobile clients expecting /catalog/items. */
+Route::get('/catalog/items', [PublicCatalogDiscoveryController::class, 'index'])->name('public.catalog.items');
+Route::get('/catalog/items/{catalogItem}', [PublicCatalogDiscoveryController::class, 'show'])
+    ->whereNumber('catalogItem')
+    ->name('public.catalog.items.show');
 Route::get('/catalog', [PublicCatalogDiscoveryController::class, 'index'])->name('public.catalog');
 Route::get('/locations', [PublicLocationCatalogController::class, 'index'])->name('public.locations');
 Route::get('/subscription-packages', [PublicSubscriptionPlanController::class, 'index'])->name('public.subscription-packages');
