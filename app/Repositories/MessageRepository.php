@@ -18,10 +18,11 @@ final class MessageRepository implements MessageRepositoryInterface
             ->forUser($user)
             ->where('uuid', $uuid)
             ->with([
-                'sender.businessInfo:id,user_id,logo_path,verified_at',
+                'sender.businessInfo:id,user_id,business_name,logo_path,verified_at',
                 'attachments',
                 'reads',
-                'parent.sender.businessInfo:id,user_id,logo_path,verified_at',
+                'parent.sender.businessInfo:id,user_id,business_name,logo_path,verified_at',
+                'conversation.businessInfo:id,user_id,business_name,logo_path',
                 'conversation.participantRows.user:id,name',
             ])
             ->first();
@@ -32,10 +33,11 @@ final class MessageRepository implements MessageRepositoryInterface
         return Message::query()
             ->where('conversation_id', $conversation->id)
             ->with([
-                'sender.businessInfo:id,user_id,logo_path,verified_at',
+                'sender.businessInfo:id,user_id,business_name,logo_path,verified_at',
                 'attachments',
                 'reads',
-                'parent.sender.businessInfo:id,user_id,logo_path,verified_at',
+                'parent.sender.businessInfo:id,user_id,business_name,logo_path,verified_at',
+                'conversation.businessInfo:id,user_id,business_name,logo_path',
             ])
             ->orderByDesc('id')
             ->cursorPaginate($perPage, ['*'], 'cursor', $cursor);

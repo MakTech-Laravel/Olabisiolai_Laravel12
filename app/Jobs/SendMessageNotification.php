@@ -28,7 +28,11 @@ final class SendMessageNotification implements ShouldQueue
         RealtimeNotificationService $realtimeNotifications,
     ): void {
         $message = Message::query()
-            ->with(['sender', 'conversation.participantRows.user', 'conversation.businessInfo'])
+            ->with([
+                'sender.businessInfo:id,user_id,business_name,logo_path,verified_at',
+                'conversation.participantRows.user',
+                'conversation.businessInfo:id,user_id,business_name,logo_path',
+            ])
             ->find($this->messageId);
 
         if ($message === null) {
@@ -65,7 +69,7 @@ final class SendMessageNotification implements ShouldQueue
 
             $senderName = $fromPlatformAdmin
                 ? (string) config('messaging.platform_admin_display_name', 'Olabisiolai Admin')
-                : MessagingHelper::userPersonalName($sender);
+                : MessagingHelper::messageSenderDisplayName($sender, $message->conversation, $user);
 
             $conversation = $message->conversation;
             $conversationUuid = (string) $conversation->uuid;

@@ -120,10 +120,11 @@ final class MessageService
             $markedAsRead = $this->persistUnreadPeerMessagesAsRead($conversation, $sender, null);
 
             $message->load([
-                'sender.businessInfo:id,user_id,logo_path,verified_at',
+                'sender.businessInfo:id,user_id,business_name,logo_path,verified_at',
                 'attachments',
                 'reads',
-                'parent.sender',
+                'parent.sender.businessInfo:id,user_id,business_name,logo_path,verified_at',
+                'conversation.businessInfo:id,user_id,business_name,logo_path',
             ]);
 
             return ['message' => $message, 'marked_as_read' => $markedAsRead];
@@ -173,10 +174,11 @@ final class MessageService
         $this->messages->save($message);
 
         $message->load([
-            'sender.businessInfo:id,user_id,logo_path,verified_at',
+            'sender.businessInfo:id,user_id,business_name,logo_path,verified_at',
             'attachments',
             'reads',
-            'parent.sender',
+            'parent.sender.businessInfo:id,user_id,business_name,logo_path,verified_at',
+            'conversation.businessInfo:id,user_id,business_name,logo_path',
         ]);
 
         $this->broadcast->broadcast(new MessageEdited($message));

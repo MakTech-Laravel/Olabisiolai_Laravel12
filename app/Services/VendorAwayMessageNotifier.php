@@ -19,46 +19,47 @@ final class VendorAwayMessageNotifier
     ) {}
 
     /**
-     * Notify-only outbound channels (no message body). Channels are independent.
+     * Notify-only outbound channels for offline users/vendors (no message body).
+     * Channels are independent.
      */
-    public function notify(User $vendor, string $senderName, string $actionUrl): void
+    public function notify(User $recipient, string $senderName, string $actionUrl): void
     {
         $absoluteUrl = $this->absoluteActionUrl($actionUrl);
 
-        if ($vendor->wantsEmailNotifications()) {
-            $this->sendEmail($vendor, $senderName, $absoluteUrl);
+        if ($recipient->wantsEmailNotifications()) {
+            $this->sendEmail($recipient, $senderName, $absoluteUrl);
         }
 
-        if ($vendor->wantsSmsNotifications()) {
-            $this->sendSms($vendor, $senderName, $absoluteUrl);
+        if ($recipient->wantsSmsNotifications()) {
+            $this->sendSms($recipient, $senderName, $absoluteUrl);
         }
 
-        if ($vendor->wantsWhatsappNotifications()) {
-            $this->sendWhatsapp($vendor, $senderName, $absoluteUrl);
+        if ($recipient->wantsWhatsappNotifications()) {
+            $this->sendWhatsapp($recipient, $senderName, $absoluteUrl);
         }
     }
 
-    private function sendEmail(User $vendor, string $senderName, string $actionUrl): void
+    private function sendEmail(User $recipient, string $senderName, string $actionUrl): void
     {
-        $email = trim((string) $vendor->email);
+        $email = trim((string) $recipient->email);
 
         if ($email === '') {
             return;
         }
 
         try {
-            Mail::to($email)->send(new NewGidiraMessageMail($vendor, $senderName, $actionUrl));
+            Mail::to($email)->send(new NewGidiraMessageMail($recipient, $senderName, $actionUrl));
         } catch (Throwable $exception) {
-            Log::error('Vendor away-message email failed.', [
-                'user_id' => $vendor->id,
+            Log::error('Away-message email failed.', [
+                'user_id' => $recipient->id,
                 'message' => $exception->getMessage(),
             ]);
         }
     }
 
-    private function sendSms(User $vendor, string $senderName, string $actionUrl): void
+    private function sendSms(User $recipient, string $senderName, string $actionUrl): void
     {
-        $phone = trim((string) $vendor->phone);
+        $phone = trim((string) $recipient->phone);
 
         if ($phone === '') {
             return;
@@ -73,20 +74,20 @@ final class VendorAwayMessageNotifier
         try {
             $this->termii->sendAlert($phone, $sms);
         } catch (Throwable $exception) {
-            Log::error('Vendor away-message SMS failed.', [
-                'user_id' => $vendor->id,
+            Log::error('Away-message SMS failed.', [
+                'user_id' => $recipient->id,
                 'message' => $exception->getMessage(),
             ]);
         }
     }
 
-    private function sendWhatsapp(User $vendor, string $senderName, string $actionUrl): void
+    private function sendWhatsapp(User $recipient, string $senderName, string $actionUrl): void
     {
         try {
-            $this->whatsapp->sendNewMessageAlert($vendor, $senderName, $actionUrl);
+            $this->whatsapp->sendNewMessageAlert($recipient, $senderName, $actionUrl);
         } catch (Throwable $exception) {
-            Log::error('Vendor away-message WhatsApp failed.', [
-                'user_id' => $vendor->id,
+            Log::error('Away-message WhatsApp failed.', [
+                'user_id' => $recipient->id,
                 'message' => $exception->getMessage(),
             ]);
         }
