@@ -8,10 +8,8 @@ Base: `/api/v1`
 
 | Method | Path | Notes |
 |--------|------|--------|
-| GET | `/catalog` | Feed with filters + pagination |
-| GET | `/catalog/items` | **Alias** of `/catalog` for mobile clients |
+| GET | `/catalog` | Feed with filters + pagination (`per_page` for home strips) |
 | GET | `/catalog/items/{id}` | Single item |
-| GET | `/catalog/home` | Curated home strip |
 
 ## Cart (authenticated, verified user/vendor)
 

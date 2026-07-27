@@ -130,20 +130,4 @@ class BuyerCatalogCartPaths
     )]
     private function getSentCart(): void {}
 
-    #[OA\Get(
-        path: '/v1/catalog/items',
-        summary: 'List discoverable catalog items (alias of GET /v1/catalog)',
-        tags: ['Public Catalog'],
-        parameters: [
-            new OA\Parameter(name: 'type', in: 'query', schema: new OA\Schema(type: 'string', enum: ['all', 'product', 'service'])),
-            new OA\Parameter(name: 'category_id', in: 'query', schema: new OA\Schema(type: 'integer')),
-            new OA\Parameter(name: 'q', in: 'query', schema: new OA\Schema(type: 'string')),
-            new OA\Parameter(name: 'page', in: 'query', schema: new OA\Schema(type: 'integer')),
-            new OA\Parameter(name: 'per_page', in: 'query', schema: new OA\Schema(type: 'integer')),
-        ],
-        responses: [
-            new OA\Response(response: 200, description: 'Catalog feed', content: new OA\JsonContent(ref: '#/components/schemas/ApiResponse')),
-        ],
-    )]
-    private function getCatalogItemsAlias(): void {}
 }

@@ -31,25 +31,37 @@ final class BuyerCatalogCartService
      */
     public function listOpenCarts(User $user): Collection
     {
-        return BuyerCart::query()
-            ->with(['items', 'businessInfo.user'])
+        $carts = BuyerCart::query()
+            ->with(['items.catalogItem', 'businessInfo.user'])
             ->where('user_id', $user->id)
             ->where('status', BuyerCart::STATUS_OPEN)
             ->orderByDesc('updated_at')
             ->get();
+
+        foreach ($carts as $cart) {
+            $this->healLinePrices($cart);
+        }
+
+        return $carts;
     }
 
     public function getOpenCart(User $user, int $businessInfoId, bool $createIfMissing = false): ?BuyerCart
     {
         $cart = BuyerCart::query()
-            ->with(['items', 'businessInfo.user'])
+            ->with(['items.catalogItem', 'businessInfo.user'])
             ->where('user_id', $user->id)
             ->where('business_info_id', $businessInfoId)
             ->where('status', BuyerCart::STATUS_OPEN)
             ->first();
 
-        if ($cart || ! $createIfMissing) {
+        if ($cart) {
+            $this->healLinePrices($cart);
+
             return $cart;
+        }
+
+        if (! $createIfMissing) {
+            return null;
         }
 
         return $this->createOpenCart($user, $businessInfoId);
@@ -319,6 +331,29 @@ final class BuyerCatalogCartService
     }
 
     /**
+     * Re-sync numeric unit prices for open-cart lines that were snapshotted
+     * without unit_price_kobo (legacy "price from" behavior).
+     */
+    private function healLinePrices(BuyerCart $cart): void
+    {
+        $cart->loadMissing('items.catalogItem');
+
+        foreach ($cart->items as $line) {
+            if ($line->unit_price_kobo !== null || ! $line->catalogItem) {
+                continue;
+            }
+
+            $snapshot = $this->snapshotFromCatalogItem($line->catalogItem);
+            if ($snapshot['unit_price_kobo'] === null) {
+                continue;
+            }
+
+            $line->fill($snapshot);
+            $line->save();
+        }
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function snapshotFromCatalogItem(BusinessCatalogItem $item): array
@@ -328,30 +363,30 @@ final class BuyerCatalogCartService
             array_map(static fn (string $path) => public_media_url($path, null), $paths),
         ));
 
+        $unitPriceKobo = $item->price_kobo !== null ? (int) $item->price_kobo : null;
+
         return [
             'name' => trim((string) $item->name),
-            'unit_price_kobo' => $item->price_from ? null : $item->price_kobo,
-            'price_display' => $this->formatCatalogPrice($item),
+            'unit_price_kobo' => $unitPriceKobo,
+            'price_display' => $this->formatExactCatalogPrice($item),
             'price_from' => (bool) $item->price_from,
             'image_url' => $urls[0] ?? null,
         ];
     }
 
-    private function formatCatalogPrice(BusinessCatalogItem $item): string
+    /** Cart lines always show an exact naira amount when price_kobo exists. */
+    private function formatExactCatalogPrice(BusinessCatalogItem $item): string
     {
-        if ($item->price_label) {
-            $label = trim((string) $item->price_label);
-            if ($label !== '') {
-                return $item->price_from ? 'from '.$label : $label;
-            }
+        if ($item->price_kobo !== null) {
+            return '₦'.number_format(((int) $item->price_kobo) / 100, 0);
         }
 
-        if ($item->price_kobo === null) {
-            return 'Price on request';
+        $label = trim((string) ($item->price_label ?? ''));
+        if ($label !== '') {
+            return $label;
         }
 
-        $formatted = '₦'.number_format(((int) $item->price_kobo) / 100, 0);
-        return $item->price_from ? 'from '.$formatted : $formatted;
+        return 'Price on request';
     }
 
     /**

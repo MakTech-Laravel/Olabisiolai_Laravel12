@@ -19,7 +19,7 @@ use RuntimeException;
 
 /**
  * Seeds demo catalog items for user id 100 with Faker copy and
- * copyright-free Lorem Picsum image URLs (https://picsum.photos).
+ * local public demo images (no remote CDN) so catalog pages stay fast.
  */
 class BusinessCatalogSeeder extends Seeder
 {
@@ -77,7 +77,8 @@ class BusinessCatalogSeeder extends Seeder
 
             $priceFrom = $faker->boolean(35);
             $priceKobo = $faker->numberBetween(15, 850) * 10000; // ₦1,500 – ₦85,000
-            $imageSeed = 'gidira-u'.self::TARGET_USER_ID.'-'.$business->id.'-'.($existing + $i + 1);
+            // Local static assets only — remote Picsum floods the browser (~100+ slow requests).
+            $imagePath = $this->localSeedImagePath($existing + $i);
 
             $rows[] = [
                 'business_info_id' => $business->id,
@@ -87,11 +88,7 @@ class BusinessCatalogSeeder extends Seeder
                 'price_kobo' => $priceKobo,
                 'price_label' => null,
                 'price_from' => $priceFrom,
-                // Full HTTPS URLs are supported by public_media_url(); Lorem Picsum = free stock photos.
-                'image_paths' => json_encode([
-                    "https://picsum.photos/seed/{$imageSeed}/800/600",
-                    "https://picsum.photos/seed/{$imageSeed}-b/800/600",
-                ]),
+                'image_paths' => json_encode([$imagePath]),
                 'sort_order' => $existing + $i + 1,
                 'created_at' => $now->copy()->subDays($faker->numberBetween(0, 40)),
                 'updated_at' => $now,
@@ -168,5 +165,32 @@ class BusinessCatalogSeeder extends Seeder
         $this->command?->warn("Created business #{$business->id} for user #{$userId}.");
 
         return $business;
+    }
+
+    /**
+     * Cycle through local public demo images (served by APP_URL / Vite public).
+     * One image per item — avoids remote CDN storms on catalog pages.
+     */
+    private function localSeedImagePath(int $index): string
+    {
+        $images = [
+            '/images/feature/1.jpg',
+            '/images/feature/1-1.jpg',
+            '/images/feature/1-2.jpg',
+            '/images/feature/1-3.jpg',
+            '/images/feature/1-4.jpg',
+            '/images/feature/1-5.jpg',
+            '/images/favorites/sparkle-clean.jpg',
+            '/images/favorites/elite-electrical.jpg',
+            '/images/favorites/glamour-spa.jpg',
+            '/images/favorites/premium-plumbing.jpg',
+            '/images/service/photo1.jpg',
+            '/images/service/photo2.jpg',
+            '/images/service/photo3.jpg',
+            '/images/service/photo4.jpg',
+            '/images/service/hero.jpg',
+        ];
+
+        return $images[$index % count($images)];
     }
 }

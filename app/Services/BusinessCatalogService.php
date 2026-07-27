@@ -36,19 +36,8 @@ class BusinessCatalogService
     }
 
     /**
-     * Small curated homepage strip: premium-vendor catalog items only.
-     *
-     * @return Collection<int, BusinessCatalogItem>
-     */
-    public function curatedPremiumHomeItems(int $limit = 6): Collection
-    {
-        return $this->discoveryBaseQuery()
-            ->limit(max(1, min($limit, 12)))
-            ->get();
-    }
-
-    /**
      * Full Catalog-tab discovery feed (premium vendors, with optional filters).
+     * Homepage strips use the same endpoint with a smaller `per_page`.
      *
      * @param  array{category_id?: int|null, city?: string|null, type?: string|null, search?: string|null}  $filters
      */
@@ -90,6 +79,13 @@ class BusinessCatalogService
         return $query->paginate(max(1, min($perPage, 50)));
     }
 
+    public function findDiscoverableItem(int $catalogItemId): ?BusinessCatalogItem
+    {
+        return $this->discoveryBaseQuery()
+            ->whereKey($catalogItemId)
+            ->first();
+    }
+
     /**
      * Premium + active businesses, ranked for discovery.
      *
@@ -97,9 +93,12 @@ class BusinessCatalogService
      */
     private function discoveryBaseQuery(): Builder
     {
+        $viewerId = auth('api')->id();
+
         return BusinessCatalogItem::query()
-            ->whereHas('businessInfo', function (Builder $business): void {
+            ->whereHas('businessInfo', function (Builder $business) use ($viewerId): void {
                 $business->where('business_status', BusinessStatus::Active->value)
+                    ->when($viewerId, fn (Builder $q) => $q->where('user_id', '!=', $viewerId))
                     ->whereHas('subscription', function (Builder $subscription): void {
                         $subscription->where('plan', SubscriptionPlan::Premium->value)
                             ->where('status', SubscriptionStatus::Active->value)

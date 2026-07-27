@@ -51,7 +51,7 @@ class BuyerCartItem extends Model
 
     public function lineTotalKobo(): ?int
     {
-        if ($this->unit_price_kobo === null || $this->price_from) {
+        if ($this->unit_price_kobo === null) {
             return null;
         }
 

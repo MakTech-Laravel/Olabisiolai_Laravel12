@@ -23,9 +23,13 @@ class VendorCatalogController extends Controller
     public function index(Request $request): Response
     {
         try {
+            $validated = $request->validate([
+                'business_id' => ['nullable', 'integer', 'min:1'],
+            ]);
+
             $business = $this->catalogService->resolveBusinessForUser(
                 $request->user('api'),
-                $request->integer('business_id') ?: null,
+                isset($validated['business_id']) ? (int) $validated['business_id'] : null,
             );
 
             $items = $this->catalogService->listForBusiness($business);
@@ -151,9 +155,13 @@ class VendorCatalogController extends Controller
     public function destroy(Request $request, BusinessCatalogItem $catalogItem): Response
     {
         try {
+            $validated = $request->validate([
+                'business_id' => ['nullable', 'integer', 'min:1'],
+            ]);
+
             $business = $this->catalogService->resolveBusinessForUser(
                 $request->user('api'),
-                $request->integer('business_id') ?: null,
+                isset($validated['business_id']) ? (int) $validated['business_id'] : null,
             );
 
             $this->catalogService->deleteItem($business, $catalogItem);
