@@ -54,6 +54,8 @@ class VendorCatalogController extends Controller
 
     public function store(Request $request): Response
     {
+        $this->normalizeCatalogPriceInput($request);
+
         $validated = $request->validate([
             'business_id' => ['nullable', 'integer', 'min:1'],
             'type' => ['required', 'in:product,service'],
@@ -99,6 +101,8 @@ class VendorCatalogController extends Controller
 
     public function update(Request $request, BusinessCatalogItem $catalogItem): Response
     {
+        $this->normalizeCatalogPriceInput($request);
+
         $validated = $request->validate([
             'business_id' => ['nullable', 'integer', 'min:1'],
             'type' => ['sometimes', 'in:product,service'],
@@ -202,5 +206,30 @@ class VendorCatalogController extends Controller
         }
 
         return $images;
+    }
+
+    /**
+     * FormData sends empty strings; coerce blank price fields to null before validation.
+     * Numeric amounts use price_kobo; free-text / ranges like "from 1500 - 2000" use price_label.
+     */
+    private function normalizeCatalogPriceInput(Request $request): void
+    {
+        $merge = [];
+
+        if ($request->exists('price_kobo')) {
+            $priceKobo = $request->input('price_kobo');
+            $merge['price_kobo'] = ($priceKobo === '' || $priceKobo === null) ? null : $priceKobo;
+        }
+
+        if ($request->exists('price_label')) {
+            $priceLabel = $request->input('price_label');
+            $merge['price_label'] = is_string($priceLabel) && trim($priceLabel) === ''
+                ? null
+                : $priceLabel;
+        }
+
+        if ($merge !== []) {
+            $request->merge($merge);
+        }
     }
 }

@@ -331,24 +331,37 @@ final class BuyerCatalogCartService
     }
 
     /**
-     * Re-sync numeric unit prices for open-cart lines that were snapshotted
-     * without unit_price_kobo (legacy "price from" behavior).
+     * Re-sync open-cart line pricing when the catalog item changes between
+     * exact amounts and non-exact ("from" / free-text label) pricing.
      */
     private function healLinePrices(BuyerCart $cart): void
     {
         $cart->loadMissing('items.catalogItem');
 
         foreach ($cart->items as $line) {
-            if ($line->unit_price_kobo !== null || ! $line->catalogItem) {
+            if (! $line->catalogItem) {
                 continue;
             }
 
             $snapshot = $this->snapshotFromCatalogItem($line->catalogItem);
-            if ($snapshot['unit_price_kobo'] === null) {
+            $sameUnit = $line->unit_price_kobo === null
+                ? $snapshot['unit_price_kobo'] === null
+                : $snapshot['unit_price_kobo'] !== null
+                    && (int) $line->unit_price_kobo === (int) $snapshot['unit_price_kobo'];
+
+            if (
+                $sameUnit
+                && $line->price_display === $snapshot['price_display']
+                && (bool) $line->price_from === (bool) $snapshot['price_from']
+            ) {
                 continue;
             }
 
-            $line->fill($snapshot);
+            $line->fill([
+                'unit_price_kobo' => $snapshot['unit_price_kobo'],
+                'price_display' => $snapshot['price_display'],
+                'price_from' => $snapshot['price_from'],
+            ]);
             $line->save();
         }
     }
@@ -363,27 +376,35 @@ final class BuyerCatalogCartService
             array_map(static fn (string $path) => public_media_url($path, null), $paths),
         ));
 
-        $unitPriceKobo = $item->price_kobo !== null ? (int) $item->price_kobo : null;
+        $priceFrom = (bool) $item->price_from;
+        // Exact cart math only when there is a numeric price and it is not a "from" estimate.
+        $unitPriceKobo = ($item->price_kobo !== null && ! $priceFrom)
+            ? (int) $item->price_kobo
+            : null;
 
         return [
             'name' => trim((string) $item->name),
             'unit_price_kobo' => $unitPriceKobo,
-            'price_display' => $this->formatExactCatalogPrice($item),
-            'price_from' => (bool) $item->price_from,
+            'price_display' => $this->formatCatalogPriceDisplay($item),
+            'price_from' => $priceFrom,
             'image_url' => $urls[0] ?? null,
         ];
     }
 
-    /** Cart lines always show an exact naira amount when price_kobo exists. */
-    private function formatExactCatalogPrice(BusinessCatalogItem $item): string
+    /** Display label for cart lines; exact totals only when unit_price_kobo is set. */
+    private function formatCatalogPriceDisplay(BusinessCatalogItem $item): string
     {
         if ($item->price_kobo !== null) {
-            return '₦'.number_format(((int) $item->price_kobo) / 100, 0);
+            $naira = '₦'.number_format(((int) $item->price_kobo) / 100, 0);
+
+            return $item->price_from ? 'from '.$naira : $naira;
         }
 
         $label = trim((string) ($item->price_label ?? ''));
         if ($label !== '') {
-            return $label;
+            return $item->price_from && ! str_starts_with(strtolower($label), 'from ')
+                ? 'from '.$label
+                : $label;
         }
 
         return 'Price on request';
@@ -406,7 +427,7 @@ final class BuyerCatalogCartService
             'sent_at' => now()->toIso8601String(),
             'estimated_total_kobo' => $estimated,
             'estimated_total_display' => $estimated === null
-                ? 'Price on request'
+                ? 'Business will provide total price'
                 : '₦'.number_format($estimated / 100, 0),
             'item_count' => $itemCount,
             'items' => $cart->items->map(static function (BuyerCartItem $line): array {
@@ -418,9 +439,11 @@ final class BuyerCatalogCartService
                     'name' => $line->name,
                     'qty' => (int) $line->quantity,
                     'price_display' => $line->price_display,
+                    'price_from' => (bool) $line->price_from,
                     'line_total_kobo' => $lineTotal,
+                    // From / estimate lines omit an amount — business confirms the total.
                     'line_total_display' => $lineTotal === null
-                        ? $line->price_display
+                        ? ''
                         : '₦'.number_format($lineTotal / 100, 0),
                     'image_url' => $line->image_url,
                 ];
@@ -440,6 +463,16 @@ final class BuyerCatalogCartService
         }
 
         return $total;
+    }
+
+    /** Human-readable cart total label (exact estimate vs business-provided). */
+    public function estimatedTotalDisplay(BuyerCart $cart): string
+    {
+        $estimated = $this->estimatedTotalKobo($cart);
+
+        return $estimated === null
+            ? 'Business will provide total price'
+            : '₦'.number_format($estimated / 100, 0);
     }
 
     private function clampQty(int $quantity): int
