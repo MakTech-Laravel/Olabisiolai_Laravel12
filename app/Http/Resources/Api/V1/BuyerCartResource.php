@@ -35,9 +35,7 @@ class BuyerCartResource extends JsonResource
             'vendor_user_uuid' => $cart->businessInfo?->user?->uuid,
             'item_count' => $itemCount,
             'estimated_total_kobo' => $estimated,
-            'estimated_total_display' => $estimated === null
-                ? 'Price on request'
-                : '₦'.number_format($estimated / 100, 0),
+            'estimated_total_display' => $service->estimatedTotalDisplay($cart),
             'sent_at' => $cart->sent_at?->toIso8601String(),
             'conversation_uuid' => $cart->relationLoaded('conversation')
                 ? $cart->conversation?->uuid
@@ -58,7 +56,7 @@ class BuyerCartResource extends JsonResource
                     'price_from' => (bool) $line->price_from,
                     'line_total_kobo' => $lineTotal,
                     'line_total_display' => $lineTotal === null
-                        ? $line->price_display
+                        ? ''
                         : '₦'.number_format($lineTotal / 100, 0),
                     'image_url' => $line->image_url,
                 ];
