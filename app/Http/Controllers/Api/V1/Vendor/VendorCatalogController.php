@@ -9,6 +9,7 @@ use App\Services\BusinessCatalogService;
 use App\Services\SubscriptionService;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
@@ -64,12 +65,14 @@ class VendorCatalogController extends Controller
             'price_kobo' => ['nullable', 'integer', 'min:0'],
             'price_label' => ['nullable', 'string', 'max:64'],
             'price_from' => ['sometimes', 'boolean'],
+            'discount_type' => ['sometimes', 'nullable', Rule::in(['percent', 'flat'])],
+            'discount_value' => ['nullable', 'integer', 'min:1'],
             'images' => ['nullable', 'array'],
             'images.*' => ['required', 'image', 'max:10240'],
-            // Backward compatible single-file field
             'image' => ['nullable', 'image', 'max:5120'],
         ]);
 
+        $this->assertCatalogDiscountRules($validated);
         try {
             $business = $this->catalogService->resolveBusinessForUser(
                 $request->user('api'),
@@ -111,6 +114,8 @@ class VendorCatalogController extends Controller
             'price_kobo' => ['nullable', 'integer', 'min:0'],
             'price_label' => ['nullable', 'string', 'max:64'],
             'price_from' => ['sometimes', 'boolean'],
+            'discount_type' => ['sometimes', 'nullable', Rule::in(['percent', 'flat'])],
+            'discount_value' => ['nullable', 'integer', 'min:1'],
             'remove_image' => ['sometimes', 'boolean'],
             'remove_images' => ['sometimes', 'boolean'],
             'keep_image_paths' => ['nullable', 'array'],
@@ -120,6 +125,7 @@ class VendorCatalogController extends Controller
             'image' => ['nullable', 'image', 'max:5120'],
         ]);
 
+        $this->assertCatalogDiscountRules($validated);
         try {
             $business = $this->catalogService->resolveBusinessForUser(
                 $request->user('api'),
@@ -211,6 +217,7 @@ class VendorCatalogController extends Controller
     /**
      * FormData sends empty strings; coerce blank price fields to null before validation.
      * Numeric amounts use price_kobo; free-text / ranges like "from 1500 - 2000" use price_label.
+     * Vendor `price_kobo` is the list/base amount; discount fields compute the stored sale price.
      */
     private function normalizeCatalogPriceInput(Request $request): void
     {
@@ -228,8 +235,69 @@ class VendorCatalogController extends Controller
                 : $priceLabel;
         }
 
+        if ($request->exists('discount_type')) {
+            $type = $request->input('discount_type');
+            $merge['discount_type'] = ($type === '' || $type === null) ? null : $type;
+        }
+
+        if ($request->exists('discount_value')) {
+            $value = $request->input('discount_value');
+            $merge['discount_value'] = ($value === '' || $value === null) ? null : $value;
+        }
+
         if ($merge !== []) {
             $request->merge($merge);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function assertCatalogDiscountRules(array $validated): void
+    {
+        if (! array_key_exists('discount_type', $validated) && ! array_key_exists('discount_value', $validated)) {
+            return;
+        }
+
+        $type = $validated['discount_type'] ?? null;
+        $value = $validated['discount_value'] ?? null;
+        $priceFrom = (bool) ($validated['price_from'] ?? false);
+        $listKobo = array_key_exists('price_kobo', $validated) && $validated['price_kobo'] !== null
+            ? (int) $validated['price_kobo']
+            : null;
+
+        if ($type === null && ($value === null || $value === '')) {
+            return;
+        }
+
+        if ($type === null || $value === null) {
+            throw ValidationException::withMessages([
+                'discount_type' => ['Provide both discount_type and discount_value, or clear both.'],
+            ]);
+        }
+
+        if ($listKobo === null) {
+            throw ValidationException::withMessages([
+                'discount_type' => ['Discounts require an exact price_kobo.'],
+            ]);
+        }
+
+        if ($priceFrom) {
+            throw ValidationException::withMessages([
+                'discount_type' => ['Discounts cannot be used with “from” pricing.'],
+            ]);
+        }
+
+        if ($type === 'percent' && (int) $value > 100) {
+            throw ValidationException::withMessages([
+                'discount_value' => ['Percentage discount must be between 1 and 100.'],
+            ]);
+        }
+
+        if ($type === 'flat' && (int) $value > $listKobo) {
+            throw ValidationException::withMessages([
+                'discount_value' => ['Flat discount cannot exceed the list price.'],
+            ]);
         }
     }
 }

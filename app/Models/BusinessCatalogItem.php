@@ -16,8 +16,12 @@ class BusinessCatalogItem extends Model
         'name',
         'description',
         'price_kobo',
+        'original_price_kobo',
         'price_label',
         'price_from',
+        'discount_type',
+        'discount_value',
+        'has_discount',
         'image_paths',
         'sort_order',
     ];
@@ -29,7 +33,10 @@ class BusinessCatalogItem extends Model
     {
         return [
             'price_kobo' => 'integer',
+            'original_price_kobo' => 'integer',
+            'discount_value' => 'integer',
             'price_from' => 'boolean',
+            'has_discount' => 'boolean',
             'sort_order' => 'integer',
             'image_paths' => 'array',
         ];

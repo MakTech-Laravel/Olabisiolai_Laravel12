@@ -348,9 +348,14 @@ final class BuyerCatalogCartService
                 ? $snapshot['unit_price_kobo'] === null
                 : $snapshot['unit_price_kobo'] !== null
                     && (int) $line->unit_price_kobo === (int) $snapshot['unit_price_kobo'];
+            $sameOriginal = $line->original_unit_price_kobo === null
+                ? ($snapshot['original_unit_price_kobo'] ?? null) === null
+                : ($snapshot['original_unit_price_kobo'] ?? null) !== null
+                    && (int) $line->original_unit_price_kobo === (int) $snapshot['original_unit_price_kobo'];
 
             if (
                 $sameUnit
+                && $sameOriginal
                 && $line->price_display === $snapshot['price_display']
                 && (bool) $line->price_from === (bool) $snapshot['price_from']
             ) {
@@ -359,6 +364,7 @@ final class BuyerCatalogCartService
 
             $line->fill([
                 'unit_price_kobo' => $snapshot['unit_price_kobo'],
+                'original_unit_price_kobo' => $snapshot['original_unit_price_kobo'] ?? null,
                 'price_display' => $snapshot['price_display'],
                 'price_from' => $snapshot['price_from'],
             ]);
@@ -377,14 +383,18 @@ final class BuyerCatalogCartService
         ));
 
         $priceFrom = (bool) $item->price_from;
-        // Exact cart math only when there is a numeric price and it is not a "from" estimate.
+        // Exact cart math only when there is a numeric sale price and it is not a "from" estimate.
         $unitPriceKobo = ($item->price_kobo !== null && ! $priceFrom)
             ? (int) $item->price_kobo
+            : null;
+        $originalUnitPriceKobo = ($item->has_discount && $item->original_price_kobo !== null && ! $priceFrom)
+            ? (int) $item->original_price_kobo
             : null;
 
         return [
             'name' => trim((string) $item->name),
             'unit_price_kobo' => $unitPriceKobo,
+            'original_unit_price_kobo' => $originalUnitPriceKobo,
             'price_display' => $this->formatCatalogPriceDisplay($item),
             'price_from' => $priceFrom,
             'image_url' => $urls[0] ?? null,
@@ -438,8 +448,13 @@ final class BuyerCatalogCartService
                     'cart_item_id' => (int) $line->id,
                     'name' => $line->name,
                     'qty' => (int) $line->quantity,
+                    'unit_price_kobo' => $line->unit_price_kobo,
+                    'original_unit_price_kobo' => $line->original_unit_price_kobo,
                     'price_display' => $line->price_display,
                     'price_from' => (bool) $line->price_from,
+                    'has_discount' => $line->original_unit_price_kobo !== null
+                        && $line->unit_price_kobo !== null
+                        && (int) $line->original_unit_price_kobo > (int) $line->unit_price_kobo,
                     'line_total_kobo' => $lineTotal,
                     // From / estimate lines omit an amount — business confirms the total.
                     'line_total_display' => $lineTotal === null
