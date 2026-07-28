@@ -8,7 +8,6 @@ use App\Http\Requests\Concerns\ValidatesSocialAccounts;
 use App\Models\Category;
 use App\Services\BusinessInfoService;
 use App\Support\BusinessSubcategoryResolver;
-use App\Services\LocationCatalogService;
 use App\Services\SubscriptionService;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -35,6 +34,7 @@ class UpdateBusinessInfoRequest extends FormRequest
         $this->prepareSocialAccountsFromRequest();
         $this->prepareSubcategoryFromServices();
         $this->normalizeOptionalForeignKeys();
+        $this->normalizeClearableStrings();
     }
 
     protected function normalizeOptionalForeignKeys(): void
@@ -42,7 +42,7 @@ class UpdateBusinessInfoRequest extends FormRequest
         $merge = [];
 
         foreach (['category_id', 'location_id'] as $key) {
-            if (! $this->has($key)) {
+            if (! $this->exists($key)) {
                 continue;
             }
 
@@ -63,8 +63,38 @@ class UpdateBusinessInfoRequest extends FormRequest
         }
     }
 
+    /**
+     * Empty strings on clearable fields become null so they pass validation and clear DB values.
+     */
+    protected function normalizeClearableStrings(): void
+    {
+        $merge = [];
+
+        foreach (['website', 'whatsapp', 'google_place_id', 'street_address', 'full_address'] as $key) {
+            if (! $this->exists($key)) {
+                continue;
+            }
+
+            $value = $this->input($key);
+            if (is_string($value) && trim($value) === '') {
+                $merge[$key] = null;
+            }
+        }
+
+        if ($merge !== []) {
+            $this->merge($merge);
+        }
+    }
+
+    /**
+     * Only invent a subcategory when the client is changing category (and left subcategory blank).
+     */
     protected function prepareSubcategoryFromServices(): void
     {
+        if (! $this->exists('category_id')) {
+            return;
+        }
+
         $subcategory = trim((string) $this->input('subcategory', ''));
         $categoryId = $this->input('category_id');
 
@@ -109,59 +139,76 @@ class UpdateBusinessInfoRequest extends FormRequest
      */
     public function rules(): array
     {
-        $locationCatalog = app(LocationCatalogService::class);
-
         return [
             ...$this->businessHoursRules(required: false),
+            'business_id' => ['sometimes', 'integer', 'min:1'],
             'location_id' => ['sometimes', 'nullable', 'integer', 'exists:locations,id'],
             'category_id' => ['sometimes', 'nullable', 'integer', 'exists:categories,id'],
-            'subcategory' => ['nullable', 'string', 'max:255'],
-            'business_name' => ['nullable', 'string', 'max:255'],
-            'full_address' => ['nullable', 'string', 'max:500'],
-            'street_address' => ['nullable', 'string', 'max:500'],
-            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
-            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
-            'google_place_id' => ['nullable', 'string', 'max:255'],
-            'business_description' => ['nullable', 'string', 'max:150'],
-            'services' => ['nullable', 'array', 'min:1'],
+            'subcategory' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'business_name' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'full_address' => ['sometimes', 'nullable', 'string', 'max:500'],
+            'street_address' => ['sometimes', 'nullable', 'string', 'max:500'],
+            'latitude' => ['sometimes', 'nullable', 'numeric', 'between:-90,90'],
+            'longitude' => ['sometimes', 'nullable', 'numeric', 'between:-180,180'],
+            'google_place_id' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'business_description' => ['sometimes', 'nullable', 'string', 'max:150'],
+            'services' => ['sometimes', 'nullable', 'array', 'min:1'],
             'services.*' => ['nullable', 'string', 'max:255'],
-            'phone' => ['nullable', 'string', 'max:30'],
-            'whatsapp' => ['nullable', 'string', 'max:30'],
-            'website' => ['nullable', 'string', 'max:2048', 'url'],
+            'phone' => ['sometimes', 'nullable', 'string', 'max:30'],
+            'whatsapp' => ['sometimes', 'nullable', 'string', 'max:30'],
+            'website' => ['sometimes', 'nullable', 'string', 'max:2048', 'url'],
             ...$this->socialAccountsRules(),
-            'logo' => ['nullable', File::image()->max(10 * 1024)],
-            'keep_cover_paths' => ['nullable', 'array'],
+            'logo' => ['sometimes', 'nullable', File::image()->max(10 * 1024)],
+            'keep_cover_paths' => ['sometimes', 'nullable', 'array'],
             'keep_cover_paths.*' => ['nullable', 'string', 'max:500'],
-            'cover_photos' => ['nullable', 'array'],
+            'cover_photos' => ['sometimes', 'nullable', 'array'],
             'cover_photos.*' => ['nullable', File::image()->max(10 * 1024)],
         ];
     }
 
     public function withValidator(Validator $validator): void
     {
-        $this->validateBusinessSubcategory($validator, requiredWhenAvailable: true);
+        $touchingCategoryOrSubcategory = $this->exists('category_id') || $this->exists('subcategory');
+
+        if ($touchingCategoryOrSubcategory) {
+            $this->validateBusinessSubcategory(
+                $validator,
+                requiredWhenAvailable: $this->exists('category_id'),
+            );
+        }
 
         $validator->after(function (Validator $validator): void {
-            $keepPaths = $this->input('keep_cover_paths');
+            $hasKeep = $this->exists('keep_cover_paths');
             $newPhotos = $this->file('cover_photos', []);
-            $hasKeep = is_array($keepPaths);
             $hasNew = is_array($newPhotos) && count($newPhotos) > 0;
 
             if (! $hasKeep && ! $hasNew) {
                 return;
             }
 
+            $keepPaths = $hasKeep ? ($this->input('keep_cover_paths') ?? []) : [];
+            if (! is_array($keepPaths)) {
+                $keepPaths = [];
+            }
+
             $user = $this->user('api');
-            $business = $user !== null ? app(BusinessInfoService::class)->findForUser($user) : null;
+            $businessId = (int) $this->input('business_id', 0);
+            $business = null;
+            if ($user !== null) {
+                $business = $businessId > 0
+                    ? app(BusinessInfoService::class)->findForUser($user, $businessId)
+                    : app(BusinessInfoService::class)->findForUser($user);
+            }
+
             $maxPhotos = $business !== null
                 ? app(SubscriptionService::class)->maxCoverPhotos($business)
                 : app(SubscriptionService::class)->freePhotoLimit();
 
-            $keepCount = $hasKeep ? count($keepPaths) : 0;
+            $keepCount = count($keepPaths);
             $newCount = $hasNew ? count($newPhotos) : 0;
-            $total = $keepCount + $newCount;
+            $total = ($hasKeep ? $keepCount : 0) + $newCount;
 
-            if ($total < 1) {
+            if ($hasKeep && $total < 1) {
                 $validator->errors()->add('cover_photos', 'Please keep or upload at least one gallery photo.');
             }
 
