@@ -70,8 +70,9 @@ class AdminVerificationSystemTest extends TestCase
             'user_id' => $vendor->id,
             'business_info_id' => $business->id,
             'purpose' => PaymentPurpose::Verification,
-            'package_id' => 'individual',
-            'amount' => 2500,
+            'package_id' => 'business',
+            'amount' => 5000,
+            'metadata' => ['package_title' => 'Business Name'],
         ]);
     }
 
@@ -90,7 +91,7 @@ class AdminVerificationSystemTest extends TestCase
         [$vendor, $business, $token] = $this->makeVendorWithBusiness('none');
 
         $init = $this->withToken($token)->postJson('/api/v1/vendor/verification/payment/init', [
-            'package_id' => 'individual',
+            'package_id' => 'business',
         ]);
 
         $init->assertCreated();
@@ -123,6 +124,16 @@ class AdminVerificationSystemTest extends TestCase
             'payment_id' => $payment->id,
             'documents' => [
                 [
+                    'document_type' => 'identity_proof',
+                    'title' => 'Identity Proof',
+                    'document' => UploadedFile::fake()->create('id.pdf', 200, 'application/pdf'),
+                ],
+                [
+                    'document_type' => 'address_proof',
+                    'title' => 'Address Proof',
+                    'document' => UploadedFile::fake()->create('address.pdf', 200, 'application/pdf'),
+                ],
+                [
                     'document_type' => 'business_registration',
                     'title' => 'CAC Certificate',
                     'document' => UploadedFile::fake()->create('cac.pdf', 200, 'application/pdf'),
@@ -136,7 +147,7 @@ class AdminVerificationSystemTest extends TestCase
         $this->assertDatabaseHas('verification_documents', [
             'business_info_id' => $business->id,
             'uploaded_by' => $vendor->id,
-            'document_type' => 'business_registration',
+            'document_type' => 'identity_proof',
         ]);
 
         $this->assertDatabaseHas('payments', [
@@ -198,9 +209,14 @@ class AdminVerificationSystemTest extends TestCase
             'payment_id' => $payment->id,
             'documents' => [
                 [
-                    'document_type' => 'bank_transfer',
-                    'title' => 'New docs',
-                    'document' => UploadedFile::fake()->create('transfer.jpg', 150, 'image/jpeg'),
+                    'document_type' => 'identity_proof',
+                    'title' => 'Identity Proof',
+                    'document' => UploadedFile::fake()->create('id.jpg', 150, 'image/jpeg'),
+                ],
+                [
+                    'document_type' => 'address_proof',
+                    'title' => 'Address Proof',
+                    'document' => UploadedFile::fake()->create('address.jpg', 150, 'image/jpeg'),
                 ],
             ],
         ], ['Accept' => 'application/json']);
@@ -232,8 +248,8 @@ class AdminVerificationSystemTest extends TestCase
         $response = $this->withToken($token)->getJson('/api/v1/vendor/verification/status');
 
         $response->assertOk();
-        $response->assertJsonPath('data.purchased_package.id', 'individual');
-        $response->assertJsonPath('data.purchased_package.title', 'Individual');
+        $response->assertJsonPath('data.purchased_package.id', 'business');
+        $response->assertJsonPath('data.purchased_package.title', 'Business Name');
         $response->assertJsonStructure(['data' => ['purchased_package' => ['usage_message', 'paid_at']]]);
         $response->assertJsonPath('data.awaiting_document_submission', true);
         $response->assertJsonPath('data.consumable_payment_id', $payment->id);
@@ -287,7 +303,7 @@ class AdminVerificationSystemTest extends TestCase
         [$vendor, $business] = $this->makeVendorWithBusiness('pending');
 
         $docIds = [];
-        foreach (['business_registration', 'identity_proof', 'address_proof'] as $type) {
+        foreach (['identity_proof', 'address_proof'] as $type) {
             $docIds[] = VerificationDocument::factory()->create([
                 'business_info_id' => $business->id,
                 'uploaded_by' => $vendor->id,
@@ -322,14 +338,12 @@ class AdminVerificationSystemTest extends TestCase
         $this->actingAsAdmin();
         [$vendor, $business] = $this->makeVendorWithBusiness('approved');
 
-        foreach (['business_registration', 'address_proof'] as $type) {
-            VerificationDocument::factory()->create([
-                'business_info_id' => $business->id,
-                'uploaded_by' => $vendor->id,
-                'document_type' => $type,
-                'status' => VerificationDocumentStatus::Approved,
-            ]);
-        }
+        VerificationDocument::factory()->create([
+            'business_info_id' => $business->id,
+            'uploaded_by' => $vendor->id,
+            'document_type' => 'address_proof',
+            'status' => VerificationDocumentStatus::Approved,
+        ]);
 
         $docId = VerificationDocument::factory()->create([
             'business_info_id' => $business->id,
@@ -356,6 +370,7 @@ class AdminVerificationSystemTest extends TestCase
         $this->actingAsAdmin();
         [$vendor, $business] = $this->makeVendorWithBusiness('pending');
 
+        // Optional CAC rejection must not block approval; required identity rejection must.
         VerificationDocument::factory()->create([
             'business_info_id' => $business->id,
             'uploaded_by' => $vendor->id,
@@ -386,8 +401,8 @@ class AdminVerificationSystemTest extends TestCase
         $response->assertStatus(422);
         $message = (string) $response->json('message');
         $this->assertStringContainsString('Cannot approve verification while rejected documents remain', $message);
-        $this->assertStringContainsString('business registration', $message);
         $this->assertStringContainsString('identity proof', $message);
+        $this->assertStringNotContainsString('business registration', $message);
 
         $this->assertDatabaseHas('business_info', [
             'id' => $business->id,
@@ -507,14 +522,14 @@ class AdminVerificationSystemTest extends TestCase
             'business_info_id' => $business->id,
             'uploaded_by' => $vendor->id,
             'document_type' => 'business_registration',
-            'status' => VerificationDocumentStatus::Rejected,
+            'status' => VerificationDocumentStatus::Approved,
         ]);
 
         VerificationDocument::factory()->create([
             'business_info_id' => $business->id,
             'uploaded_by' => $vendor->id,
             'document_type' => 'identity_proof',
-            'status' => VerificationDocumentStatus::Approved,
+            'status' => VerificationDocumentStatus::Rejected,
         ]);
 
         VerificationDocument::factory()->create([

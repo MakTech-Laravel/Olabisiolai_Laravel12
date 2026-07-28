@@ -4,18 +4,11 @@ return [
     'currency' => 'NGN',
 
     'packages' => [
-    //     [
-    //         'id' => 'individual',
-    //         'title' => 'Individual',
-    //         'amount' => 2500,
-    //         'description' => 'Best for solo entrepreneurs and independent contractors. Requires government ID and personal biometric verification.',
-    //         'perks' => ['Trusted badge'],
-    //     ],
         [
             'id' => 'business',
             'title' => 'Business Name',
             'amount' => 5000,
-            'description' => 'For registered sole proprietorships. Includes CAC document validation and business account linkage.',
+            'description' => 'For registered and unregistered sole proprietors. Includes identity verification, proof of address and optional CAC.',
             'perks' => ['Vendor priority', 'Storefront personalization'],
         ],
         [

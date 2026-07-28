@@ -116,7 +116,10 @@ class BusinessInfoController extends Controller
         try {
             $validated = $request->validated();
             $logo = $request->file('logo');
-            $coverPhotos = array_values($request->file('cover_photos', []));
+            $coverPhotos = array_values(array_filter(
+                $request->file('cover_photos', []) ?: [],
+                fn ($file) => $file instanceof \Illuminate\Http\UploadedFile,
+            ));
 
             $subscriptionPlan = SubscriptionPlan::tryFrom((string) ($validated['subscription_plan'] ?? 'free'))
                 ?? SubscriptionPlan::Free;

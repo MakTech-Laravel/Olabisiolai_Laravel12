@@ -32,6 +32,18 @@ class PricingPackageSeeder extends Seeder
             );
         }
 
+        $activeVerificationKeys = array_values(array_filter(array_map(
+            fn (array $package): string => (string) ($package['id'] ?? ''),
+            $verification,
+        )));
+
+        if ($activeVerificationKeys !== []) {
+            PricingPackage::query()
+                ->where('type', PricingPackageType::Verification)
+                ->whereNotIn('package_key', $activeVerificationKeys)
+                ->update(['is_active' => false]);
+        }
+
         $subCurrency = config('subscription.currency', 'NGN');
         $premiumPerks = [
             'Up to 25 photos',
