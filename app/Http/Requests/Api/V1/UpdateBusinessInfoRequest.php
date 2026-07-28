@@ -11,7 +11,6 @@ use App\Support\BusinessSubcategoryResolver;
 use App\Services\SubscriptionService;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rules\File;
 use Illuminate\Validation\Validator;
 
 class UpdateBusinessInfoRequest extends FormRequest
@@ -135,7 +134,10 @@ class UpdateBusinessInfoRequest extends FormRequest
     }
 
     /**
-     * @return array<string, array<int, File|string|ValidationRule>|string>
+     * Logo/covers are uploaded via POST /api/v1/media (`uploadable_type=business`),
+     * then attached here as storage paths.
+     *
+     * @return array<string, array<int, string|ValidationRule>|string>
      */
     public function rules(): array
     {
@@ -158,11 +160,11 @@ class UpdateBusinessInfoRequest extends FormRequest
             'whatsapp' => ['sometimes', 'nullable', 'string', 'max:30'],
             'website' => ['sometimes', 'nullable', 'string', 'max:2048', 'url'],
             ...$this->socialAccountsRules(),
-            'logo' => ['sometimes', 'nullable', File::image()->max(10 * 1024)],
+            'logo_path' => ['sometimes', 'nullable', 'string', 'max:500'],
             'keep_cover_paths' => ['sometimes', 'nullable', 'array'],
             'keep_cover_paths.*' => ['nullable', 'string', 'max:500'],
-            'cover_photos' => ['sometimes', 'nullable', 'array'],
-            'cover_photos.*' => ['nullable', File::image()->max(10 * 1024)],
+            'cover_photo_paths' => ['sometimes', 'nullable', 'array'],
+            'cover_photo_paths.*' => ['nullable', 'string', 'max:500'],
         ];
     }
 
@@ -179,8 +181,7 @@ class UpdateBusinessInfoRequest extends FormRequest
 
         $validator->after(function (Validator $validator): void {
             $hasKeep = $this->exists('keep_cover_paths');
-            $newPhotos = $this->file('cover_photos', []);
-            $hasNew = is_array($newPhotos) && count($newPhotos) > 0;
+            $hasNew = $this->exists('cover_photo_paths');
 
             if (! $hasKeep && ! $hasNew) {
                 return;
@@ -189,6 +190,11 @@ class UpdateBusinessInfoRequest extends FormRequest
             $keepPaths = $hasKeep ? ($this->input('keep_cover_paths') ?? []) : [];
             if (! is_array($keepPaths)) {
                 $keepPaths = [];
+            }
+
+            $newPaths = $hasNew ? ($this->input('cover_photo_paths') ?? []) : [];
+            if (! is_array($newPaths)) {
+                $newPaths = [];
             }
 
             $user = $this->user('api');
@@ -204,17 +210,20 @@ class UpdateBusinessInfoRequest extends FormRequest
                 ? app(SubscriptionService::class)->maxCoverPhotos($business)
                 : app(SubscriptionService::class)->freePhotoLimit();
 
-            $keepCount = count($keepPaths);
-            $newCount = $hasNew ? count($newPhotos) : 0;
+            $keepCount = count(array_filter($keepPaths, fn ($path) => is_string($path) && trim($path) !== ''));
+            $newCount = count(array_filter($newPaths, fn ($path) => is_string($path) && trim($path) !== ''));
             $total = ($hasKeep ? $keepCount : 0) + $newCount;
 
             if ($hasKeep && $total < 1) {
-                $validator->errors()->add('cover_photos', 'Please keep or upload at least one gallery photo.');
+                $validator->errors()->add(
+                    'cover_photo_paths',
+                    'Please keep or attach at least one gallery photo.',
+                );
             }
 
             if ($total > $maxPhotos) {
                 $validator->errors()->add(
-                    'cover_photos',
+                    'cover_photo_paths',
                     "You can have up to {$maxPhotos} gallery photos on your current plan.",
                 );
             }

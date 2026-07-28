@@ -6,6 +6,7 @@ namespace App\Jobs;
 
 use App\Enums\MediaStatus;
 use App\Models\Media;
+use App\Services\MediaOptimizeService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -13,7 +14,6 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
-use Spatie\ImageOptimizer\OptimizerChain;
 use Throwable;
 
 final class OptimizeImage implements ShouldQueue
@@ -29,7 +29,7 @@ final class OptimizeImage implements ShouldQueue
         public int $mediaId,
     ) {}
 
-    public function handle(OptimizerChain $optimizer): void
+    public function handle(MediaOptimizeService $optimizer): void
     {
         $media = Media::query()->find($this->mediaId);
 
@@ -47,12 +47,9 @@ final class OptimizeImage implements ShouldQueue
         $absolutePath = Storage::disk($media->disk)->path($media->path);
 
         try {
-            $optimizer->optimize($absolutePath);
+            $sizeAfter = $optimizer->optimizePath($absolutePath, $media->mime_type);
 
-            clearstatcache(true, $absolutePath);
-            $sizeAfter = is_file($absolutePath) ? (int) filesize($absolutePath) : $media->size_before;
-
-            $media->size_after = $sizeAfter;
+            $media->size_after = $sizeAfter > 0 ? $sizeAfter : $media->size_before;
             $media->status = MediaStatus::Optimized;
             $media->save();
         } catch (Throwable $e) {

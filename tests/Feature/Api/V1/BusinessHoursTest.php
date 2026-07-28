@@ -7,7 +7,6 @@ use App\Models\Category;
 use App\Models\Location;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Passport\ClientRepository;
 use Tests\TestCase;
@@ -45,8 +44,6 @@ class BusinessHoursTest extends TestCase
             'business_description' => 'We are open on custom hours.',
             'services' => ['Consulting'],
             'phone' => '+2348012345678',
-            'logo' => UploadedFile::fake()->image('logo.png', 100, 100),
-            'cover_photos' => [UploadedFile::fake()->image('cover.png', 200, 200)],
             'business_hours' => [
                 ['day' => 'monday', 'is_closed' => false, 'opens_at' => '09:00', 'closes_at' => '17:00'],
                 ['day' => 'tuesday', 'is_closed' => false, 'opens_at' => '09:00', 'closes_at' => '17:00'],

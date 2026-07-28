@@ -8,7 +8,6 @@ use App\Models\BusinessCatalogItem;
 use App\Services\BusinessCatalogService;
 use App\Services\SubscriptionService;
 use Illuminate\Http\Request;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
@@ -67,9 +66,6 @@ class VendorCatalogController extends Controller
             'price_from' => ['sometimes', 'boolean'],
             'discount_type' => ['sometimes', 'nullable', Rule::in(['percent', 'flat'])],
             'discount_value' => ['nullable', 'integer', 'min:1'],
-            'images' => ['nullable', 'array'],
-            'images.*' => ['required', 'image', 'max:10240'],
-            'image' => ['nullable', 'image', 'max:5120'],
         ]);
 
         $this->assertCatalogDiscountRules($validated);
@@ -79,11 +75,7 @@ class VendorCatalogController extends Controller
                 isset($validated['business_id']) ? (int) $validated['business_id'] : null,
             );
 
-            $item = $this->catalogService->createItem(
-                $business,
-                $validated,
-                $this->normalizeUploadedImages($request),
-            );
+            $item = $this->catalogService->createItem($business, $validated);
 
             return sendResponse(true, 'Catalog item added successfully.', [
                 'item' => new BusinessCatalogItemResource($item),
@@ -120,9 +112,8 @@ class VendorCatalogController extends Controller
             'remove_images' => ['sometimes', 'boolean'],
             'keep_image_paths' => ['nullable', 'array'],
             'keep_image_paths.*' => ['required', 'string', 'max:500'],
-            'images' => ['nullable', 'array'],
-            'images.*' => ['required', 'image', 'max:10240'],
-            'image' => ['nullable', 'image', 'max:5120'],
+            'image_paths' => ['nullable', 'array'],
+            'image_paths.*' => ['required', 'string', 'max:500'],
         ]);
 
         $this->assertCatalogDiscountRules($validated);
@@ -140,7 +131,7 @@ class VendorCatalogController extends Controller
                 $business,
                 $catalogItem,
                 $validated,
-                $this->normalizeUploadedImages($request),
+                $this->normalizeImagePaths($validated),
                 (bool) ($validated['remove_images'] ?? $validated['remove_image'] ?? false),
                 $keepImagePaths,
             );
@@ -192,26 +183,20 @@ class VendorCatalogController extends Controller
     }
 
     /**
-     * @return list<UploadedFile>
+     * @param  array<string, mixed>  $validated
+     * @return list<string>
      */
-    private function normalizeUploadedImages(Request $request): array
+    private function normalizeImagePaths(array $validated): array
     {
-        $images = $request->file('images', []);
-        if (! is_array($images)) {
-            $images = $images instanceof UploadedFile ? [$images] : [];
+        $paths = $validated['image_paths'] ?? [];
+        if (! is_array($paths)) {
+            return [];
         }
 
-        $images = array_values(array_filter(
-            $images,
-            static fn ($file) => $file instanceof UploadedFile,
+        return array_values(array_filter(
+            $paths,
+            static fn ($path) => is_string($path) && trim($path) !== '',
         ));
-
-        $single = $request->file('image');
-        if ($single instanceof UploadedFile) {
-            $images[] = $single;
-        }
-
-        return $images;
     }
 
     /**

@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace App\Http\Requests\Api\V1;
 
 use App\Enums\UploadableType;
+use App\Models\BusinessCatalogItem;
+use App\Models\BusinessInfo;
+use App\Models\Review;
+use App\Models\User;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Http\FormRequest;
@@ -72,9 +76,33 @@ class StoreMediaRequest extends FormRequest
                 return;
             }
 
+            $user = $this->user('api');
+            if ($user === null || ! $this->userOwnsUploadable($user, $type, $model)) {
+                $validator->errors()->add(
+                    'uploadable_id',
+                    'You are not allowed to upload media for this resource.',
+                );
+
+                return;
+            }
+
             $this->attributes->set('uploadable', $model);
             $this->attributes->set('uploadable_type_enum', $type);
         });
+    }
+
+    private function userOwnsUploadable(User $user, UploadableType $type, Model $model): bool
+    {
+        return match ($type) {
+            UploadableType::Profile => $model instanceof User
+                && (int) $model->getKey() === (int) $user->id,
+            UploadableType::Business => $model instanceof BusinessInfo
+                && (int) $model->user_id === (int) $user->id,
+            UploadableType::Product => $model instanceof BusinessCatalogItem
+                && (int) ($model->loadMissing('businessInfo')->businessInfo?->user_id ?? 0) === (int) $user->id,
+            UploadableType::Review => $model instanceof Review
+                && (int) $model->user_id === (int) $user->id,
+        };
     }
 
     public function uploadable(): Model

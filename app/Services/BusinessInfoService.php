@@ -20,10 +20,8 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Http\Request;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
-use Throwable;
 
 class BusinessInfoService
 {
@@ -589,7 +587,6 @@ class BusinessInfoService
 
     /**
      * @param  list<string>  $services
-     * @param  array<int, UploadedFile>  $coverPhotos
      * @param  array<int, array<string, mixed>>|null  $businessHours
      */
     public function createForUser(
@@ -605,8 +602,6 @@ class BusinessInfoService
         ?string $whatsapp,
         ?string $website,
         ?array $socialAccounts,
-        UploadedFile $logo,
-        array $coverPhotos,
         SubscriptionPlan $subscriptionPlan = SubscriptionPlan::Free,
         ?array $businessHours = null,
     ): BusinessInfo {
@@ -618,93 +613,70 @@ class BusinessInfoService
             throw new \RuntimeException('A business profile already exists for this account.');
         }
 
-        $basePath = 'businesses/' . $user->id;
-        $logoFolder = $basePath . '/logo';
-        $coverFolder = $basePath . '/covers';
-        $logoPath = null;
-        $coverPaths = [];
+        $isPremium = $subscriptionPlan === SubscriptionPlan::Premium;
 
-        try {
-            $logoPath = $this->handleFileUpload($logo, $logoFolder, $businessName . ' logo');
+        $normalizedHours = $this->businessHoursService->normalizeInput($businessHours);
+        $normalizedSocialAccounts = $this->socialAccountService->normalizeInput($socialAccounts);
 
-            foreach ($coverPhotos as $file) {
-                $coverPaths[] = $this->handleFileUpload($file, $coverFolder, $businessName . ' cover');
-            }
+        $normalizedStreetAddress = $streetAddress !== null && trim($streetAddress) !== ''
+            ? trim($streetAddress)
+            : null;
 
-            $isPremium = $subscriptionPlan === SubscriptionPlan::Premium;
+        $resolvedSubcategory = BusinessSubcategoryResolver::resolve($subcategory, $categoryId, $services);
 
-            $normalizedHours = $this->businessHoursService->normalizeInput($businessHours);
-            $normalizedSocialAccounts = $this->socialAccountService->normalizeInput($socialAccounts);
+        return DB::transaction(function () use (
+            $user,
+            $categoryId,
+            $resolvedSubcategory,
+            $locationId,
+            $businessName,
+            $normalizedStreetAddress,
+            $businessDescription,
+            $services,
+            $phone,
+            $whatsapp,
+            $website,
+            $normalizedSocialAccounts,
+            $subscriptionPlan,
+            $isPremium,
+            $normalizedHours,
+        ): BusinessInfo {
+            $business = BusinessInfo::query()->create([
+                'location_id' => $locationId,
+                'user_id' => $user->id,
+                'category_id' => $categoryId,
+                'subcategory' => $resolvedSubcategory,
+                'business_name' => $businessName,
+                'street_address' => $normalizedStreetAddress,
+                'business_description' => $businessDescription,
+                'services_offered' => $services,
+                'phone' => $phone,
+                'whatsapp' => $whatsapp,
+                'website' => $website,
+                'social_accounts' => $normalizedSocialAccounts,
+                'logo_path' => null,
+                'cover_photo_paths' => null,
+                'verification_status' => VerificationStatus::None,
+                'is_flagged' => false,
+                'business_status' => $isPremium ? BusinessStatus::Inactive : BusinessStatus::Active,
+            ]);
 
-            $normalizedStreetAddress = $streetAddress !== null && trim($streetAddress) !== ''
-                ? trim($streetAddress)
-                : null;
+            $this->businessHoursService->syncForBusiness($business, $normalizedHours);
 
-            $resolvedSubcategory = BusinessSubcategoryResolver::resolve($subcategory, $categoryId, $services);
-
-            return DB::transaction(function () use (
-                $user,
-                $categoryId,
-                $resolvedSubcategory,
-                $locationId,
-                $businessName,
-                $normalizedStreetAddress,
-                $businessDescription,
-                $services,
-                $phone,
-                $whatsapp,
-                $website,
-                $normalizedSocialAccounts,
-                $logoPath,
-                $coverPaths,
+            $this->subscriptionService->createForBusiness(
+                $business,
                 $subscriptionPlan,
-                $isPremium,
-                $normalizedHours,
-            ): BusinessInfo {
-                $business = BusinessInfo::query()->create([
-                    'location_id' => $locationId,
-                    'user_id' => $user->id,
-                    'category_id' => $categoryId,
-                    'subcategory' => $resolvedSubcategory,
-                    'business_name' => $businessName,
-                    'street_address' => $normalizedStreetAddress,
-                    'business_description' => $businessDescription,
-                    'services_offered' => $services,
-                    'phone' => $phone,
-                    'whatsapp' => $whatsapp,
-                    'website' => $website,
-                    'social_accounts' => $normalizedSocialAccounts,
-                    'logo_path' => $logoPath,
-                    'cover_photo_paths' => $coverPaths,
-                    'verification_status' => VerificationStatus::None,
-                    'is_flagged' => false,
-                    'business_status' => $isPremium ? BusinessStatus::Inactive : BusinessStatus::Active,
-                ]);
+                $isPremium ? SubscriptionStatus::PendingPayment : SubscriptionStatus::Active,
+            );
 
-                $this->businessHoursService->syncForBusiness($business, $normalizedHours);
+            $this->locationService->refreshVendorCount($locationId);
 
-                $this->subscriptionService->createForBusiness(
-                    $business,
-                    $subscriptionPlan,
-                    $isPremium ? SubscriptionStatus::PendingPayment : SubscriptionStatus::Active,
-                );
-
-                $this->locationService->refreshVendorCount($locationId);
-
-                if ($user->role !== 'vendor') {
-                    $user->forceFill(['role' => 'vendor'])->save();
-                }
-
-                return $business->load(['subscription', 'businessHours']);
-            });
-        } catch (Throwable $e) {
-            $this->fileDelete($logoPath);
-            foreach ($coverPaths as $path) {
-                $this->fileDelete($path);
+            if ($user->role !== 'vendor') {
+                $user->forceFill(['role' => 'vendor'])->save();
             }
 
-            throw $e;
-        }
+            return $business->load(['subscription', 'businessHours']);
+        });
     }
 
     public function findForUser(User $user, ?int $businessId = null): ?BusinessInfo
@@ -754,32 +726,22 @@ class BusinessInfoService
     }
 
     /**
-     * @param  list<string>  $services
-     * @param  array<int, UploadedFile>  $coverPhotos
-     */
-    /**
-     * @param  list<string>  $services
-     * @param  array<int, UploadedFile>  $coverPhotos
-     * @param  array<int, array<string, mixed>>|null  $businessHours
-     * @param  list<string>|null  $keepCoverPaths
-     */
-    /**
      * Partially update a vendor business. Only keys present in `$patch` are written;
      * omitted fields keep their existing values. Explicit null/empty clears nullable fields.
      *
      * Supported patch keys: category_id, location_id, subcategory, business_name,
      * street_address, business_description, services, phone, whatsapp, website,
-     * social_accounts, business_hours, latitude, longitude, google_place_id.
+     * social_accounts, business_hours, latitude, longitude, google_place_id,
+     * logo_path, cover_photo_paths.
+     *
+     * Logo/cover files are uploaded via POST /api/v1/media, then attached here as paths.
      *
      * @param  array<string, mixed>  $patch
-     * @param  list<UploadedFile>  $coverPhotos
      * @param  list<string>|null  $keepCoverPaths  null = do not touch gallery; array = replace kept set
      */
     public function updateForUser(
         User $user,
         array $patch,
-        ?UploadedFile $logo = null,
-        array $coverPhotos = [],
         ?array $keepCoverPaths = null,
         ?int $businessId = null,
     ): BusinessInfo {
@@ -817,55 +779,65 @@ class BusinessInfoService
             ))
             : (is_array($business->services_offered) ? $business->services_offered : []);
 
-        $basePath = 'businesses/' . $user->id;
-        $logoFolder = $basePath . '/logo';
-        $coverFolder = $basePath . '/covers';
-
         $oldLogoPath = $business->logo_path;
         $oldCoverPaths = is_array($business->cover_photo_paths) ? $business->cover_photo_paths : [];
+        $mediaPaths = app(MediaPathGuard::class);
 
-        $newLogoPath = null;
+        $finalLogoPath = $business->logo_path;
+        $logoUpdated = array_key_exists('logo_path', $patch);
+        if ($logoUpdated) {
+            $rawLogo = $patch['logo_path'];
+            if ($rawLogo === null || (is_string($rawLogo) && trim($rawLogo) === '')) {
+                $finalLogoPath = null;
+            } else {
+                $normalizedLogo = trim((string) $rawLogo);
+                if ($normalizedLogo !== (string) ($business->logo_path ?? '')) {
+                    $mediaPaths->assertOwnedBy($business, $normalizedLogo, 'logo_path');
+                }
+                $finalLogoPath = $normalizedLogo;
+            }
+        }
+
+        $finalCoverPaths = $oldCoverPaths;
+        $coverGalleryUpdated = $keepCoverPaths !== null || array_key_exists('cover_photo_paths', $patch);
         $newCoverPaths = [];
 
-        try {
-            $finalLogoPath = $business->logo_path;
-            if ($logo !== null) {
-                $newLogoPath = $this->handleFileUpload($logo, $logoFolder, $businessName . ' logo');
-                $finalLogoPath = $newLogoPath;
-            }
-
-            $finalCoverPaths = $oldCoverPaths;
-            $coverGalleryUpdated = $keepCoverPaths !== null || $coverPhotos !== [];
-
-            if ($coverGalleryUpdated) {
-                $keptPaths = [];
-                if ($keepCoverPaths !== null) {
-                    foreach ($keepCoverPaths as $path) {
-                        if (! is_string($path) || trim($path) === '') {
-                            continue;
-                        }
-                        $normalizedPath = trim($path);
-                        if (in_array($normalizedPath, $oldCoverPaths, true)) {
-                            $keptPaths[] = $normalizedPath;
-                        }
+        if ($coverGalleryUpdated) {
+            $keptPaths = [];
+            if ($keepCoverPaths !== null) {
+                foreach ($keepCoverPaths as $path) {
+                    if (! is_string($path) || trim($path) === '') {
+                        continue;
                     }
-                } elseif ($coverPhotos === []) {
-                    $keptPaths = $oldCoverPaths;
+                    $normalizedPath = trim($path);
+                    if (in_array($normalizedPath, $oldCoverPaths, true)) {
+                        $keptPaths[] = $normalizedPath;
+                    }
                 }
-
-                foreach ($coverPhotos as $file) {
-                    $newCoverPaths[] = $this->handleFileUpload($file, $coverFolder, $businessName . ' cover');
-                }
-
-                $finalCoverPaths = array_values(array_merge($keptPaths, $newCoverPaths));
+            } elseif (! array_key_exists('cover_photo_paths', $patch)) {
+                $keptPaths = $oldCoverPaths;
             }
 
-            $maxCoverPhotos = $this->subscriptionService->maxCoverPhotos($business);
-            if (count($finalCoverPaths) > $maxCoverPhotos) {
-                throw new \InvalidArgumentException("You can have up to {$maxCoverPhotos} gallery photos on your current plan.");
+            if (array_key_exists('cover_photo_paths', $patch)) {
+                $incoming = is_array($patch['cover_photo_paths']) ? $patch['cover_photo_paths'] : [];
+                foreach ($incoming as $path) {
+                    if (! is_string($path) || trim($path) === '') {
+                        continue;
+                    }
+                    $newCoverPaths[] = trim($path);
+                }
+                $mediaPaths->assertAllOwnedBy($business, $newCoverPaths, 'cover_photo_paths');
             }
 
-            $previousLocationId = (int) $business->location_id;
+            $finalCoverPaths = array_values(array_unique(array_merge($keptPaths, $newCoverPaths)));
+        }
+
+        $maxCoverPhotos = $this->subscriptionService->maxCoverPhotos($business);
+        if (count($finalCoverPaths) > $maxCoverPhotos) {
+            throw new \InvalidArgumentException("You can have up to {$maxCoverPhotos} gallery photos on your current plan.");
+        }
+
+        $previousLocationId = (int) $business->location_id;
 
             $subcategoryProvided = array_key_exists('subcategory', $patch);
             $subcategory = $subcategoryProvided
@@ -936,7 +908,7 @@ class BusinessInfoService
                 $services,
                 $finalLogoPath,
                 $finalCoverPaths,
-                $logo,
+                $logoUpdated,
                 $coverGalleryUpdated,
                 $majorChange,
                 $normalizedHours,
@@ -979,9 +951,9 @@ class BusinessInfoService
                 if (array_key_exists('social_accounts', $patch)) {
                     $payload['social_accounts'] = $normalizedSocialAccounts;
                 }
-                if ($logo !== null) {
-                    $payload['logo_path'] = $finalLogoPath;
-                }
+            if ($logoUpdated) {
+                $payload['logo_path'] = $finalLogoPath;
+            }
                 if ($coverGalleryUpdated) {
                     $payload['cover_photo_paths'] = $finalCoverPaths;
                 }
@@ -1018,34 +990,26 @@ class BusinessInfoService
                 return $business->refresh()->load('businessHours');
             });
 
-            if (array_key_exists('location_id', $patch) && $previousLocationId !== $locationId) {
-                $this->locationService->refreshVendorCountsAfterMove($previousLocationId, $locationId);
-            }
+        if (array_key_exists('location_id', $patch) && $previousLocationId !== $locationId) {
+            $this->locationService->refreshVendorCountsAfterMove($previousLocationId, $locationId);
+        }
 
-            if ($newLogoPath !== null && $oldLogoPath !== null && $oldLogoPath !== '') {
-                $this->fileDelete($oldLogoPath);
-            }
+        if ($logoUpdated && $oldLogoPath !== null && $oldLogoPath !== '' && $oldLogoPath !== $finalLogoPath) {
+            $this->fileDelete($oldLogoPath);
+        }
 
-            if ($coverGalleryUpdated) {
-                foreach ($oldCoverPaths as $path) {
-                    if (! is_string($path) || $path === '') {
-                        continue;
-                    }
-                    if (! in_array($path, $finalCoverPaths, true)) {
-                        $this->fileDelete($path);
-                    }
+        if ($coverGalleryUpdated) {
+            foreach ($oldCoverPaths as $path) {
+                if (! is_string($path) || $path === '') {
+                    continue;
+                }
+                if (! in_array($path, $finalCoverPaths, true)) {
+                    $this->fileDelete($path);
                 }
             }
-
-            return $business;
-        } catch (Throwable $e) {
-            $this->fileDelete($newLogoPath);
-            foreach ($newCoverPaths as $path) {
-                $this->fileDelete($path);
-            }
-
-            throw $e;
         }
+
+        return $business;
     }
 
     /*
