@@ -115,6 +115,11 @@ class BusinessInfoController extends Controller
 
         try {
             $validated = $request->validated();
+            $logo = $request->file('logo');
+            $coverPhotos = array_values(array_filter(
+                $request->file('cover_photos', []) ?: [],
+                fn ($file) => $file instanceof \Illuminate\Http\UploadedFile,
+            ));
 
             $subscriptionPlan = SubscriptionPlan::tryFrom((string) ($validated['subscription_plan'] ?? 'free'))
                 ?? SubscriptionPlan::Free;
@@ -132,6 +137,8 @@ class BusinessInfoController extends Controller
                 $validated['whatsapp'] ?? null,
                 $validated['website'] ?? null,
                 $validated['social_accounts'] ?? null,
+                $logo,
+                $coverPhotos,
                 $subscriptionPlan,
                 $validated['business_hours'] ?? null,
             );
@@ -295,6 +302,11 @@ class BusinessInfoController extends Controller
 
         try {
             $validated = $request->validated();
+            $logo = $request->file('logo');
+            $coverPhotos = array_values(array_filter(
+                $request->file('cover_photos', []) ?: [],
+                fn ($file) => $file instanceof \Illuminate\Http\UploadedFile,
+            ));
 
             $businessId = $request->integer('business_id');
             $resolvedBusinessId = $businessId > 0 ? $businessId : null;
@@ -324,8 +336,6 @@ class BusinessInfoController extends Controller
                 'latitude',
                 'longitude',
                 'google_place_id',
-                'logo_path',
-                'cover_photo_paths',
             ] as $key) {
                 if (array_key_exists($key, $validated)) {
                     $patch[$key] = $validated[$key];
@@ -343,6 +353,8 @@ class BusinessInfoController extends Controller
             $business = $this->businessInfoService->updateForUser(
                 $user,
                 $patch,
+                $logo,
+                $coverPhotos,
                 $keepCoverPaths,
                 $resolvedBusinessId,
             );

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\BusinessStatus;
 use App\Enums\SubscriptionPlan;
 use App\Enums\SubscriptionStatus;
+use App\Enums\UploadableType;
 use App\Enums\VerificationStatus;
 use App\Http\Traits\FileManagementTrait;
 use App\Models\Admin;
@@ -20,6 +21,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -587,6 +589,7 @@ class BusinessInfoService
 
     /**
      * @param  list<string>  $services
+     * @param  array<int, UploadedFile>  $coverPhotos
      * @param  array<int, array<string, mixed>>|null  $businessHours
      */
     public function createForUser(
@@ -602,6 +605,8 @@ class BusinessInfoService
         ?string $whatsapp,
         ?string $website,
         ?array $socialAccounts,
+        UploadedFile $logo,
+        array $coverPhotos,
         SubscriptionPlan $subscriptionPlan = SubscriptionPlan::Free,
         ?array $businessHours = null,
     ): BusinessInfo {
@@ -624,7 +629,7 @@ class BusinessInfoService
 
         $resolvedSubcategory = BusinessSubcategoryResolver::resolve($subcategory, $categoryId, $services);
 
-        return DB::transaction(function () use (
+        $business = DB::transaction(function () use (
             $user,
             $categoryId,
             $resolvedSubcategory,
@@ -675,8 +680,23 @@ class BusinessInfoService
                 $user->forceFill(['role' => 'vendor'])->save();
             }
 
-            return $business->load(['subscription', 'businessHours']);
+            return $business;
         });
+
+        $logoPath = $this->storeBusinessMedia($business, $logo);
+        $coverPaths = [];
+        foreach ($coverPhotos as $file) {
+            if ($file instanceof UploadedFile) {
+                $coverPaths[] = $this->storeBusinessMedia($business, $file);
+            }
+        }
+
+        $business->update([
+            'logo_path' => $logoPath,
+            'cover_photo_paths' => $coverPaths,
+        ]);
+
+        return $business->fresh()->load(['subscription', 'businessHours']);
     }
 
     public function findForUser(User $user, ?int $businessId = null): ?BusinessInfo
@@ -731,17 +751,19 @@ class BusinessInfoService
      *
      * Supported patch keys: category_id, location_id, subcategory, business_name,
      * street_address, business_description, services, phone, whatsapp, website,
-     * social_accounts, business_hours, latitude, longitude, google_place_id,
-     * logo_path, cover_photo_paths.
+     * social_accounts, business_hours, latitude, longitude, google_place_id.
      *
-     * Logo/cover files are uploaded via POST /api/v1/media, then attached here as paths.
+     * Logo/cover files are stored via MediaUploadService (media row + optimize job).
      *
      * @param  array<string, mixed>  $patch
+     * @param  list<UploadedFile>  $coverPhotos
      * @param  list<string>|null  $keepCoverPaths  null = do not touch gallery; array = replace kept set
      */
     public function updateForUser(
         User $user,
         array $patch,
+        ?UploadedFile $logo = null,
+        array $coverPhotos = [],
         ?array $keepCoverPaths = null,
         ?int $businessId = null,
     ): BusinessInfo {
@@ -781,25 +803,15 @@ class BusinessInfoService
 
         $oldLogoPath = $business->logo_path;
         $oldCoverPaths = is_array($business->cover_photo_paths) ? $business->cover_photo_paths : [];
-        $mediaPaths = app(MediaPathGuard::class);
 
         $finalLogoPath = $business->logo_path;
-        $logoUpdated = array_key_exists('logo_path', $patch);
+        $logoUpdated = $logo !== null;
         if ($logoUpdated) {
-            $rawLogo = $patch['logo_path'];
-            if ($rawLogo === null || (is_string($rawLogo) && trim($rawLogo) === '')) {
-                $finalLogoPath = null;
-            } else {
-                $normalizedLogo = trim((string) $rawLogo);
-                if ($normalizedLogo !== (string) ($business->logo_path ?? '')) {
-                    $mediaPaths->assertOwnedBy($business, $normalizedLogo, 'logo_path');
-                }
-                $finalLogoPath = $normalizedLogo;
-            }
+            $finalLogoPath = $this->storeBusinessMedia($business, $logo);
         }
 
         $finalCoverPaths = $oldCoverPaths;
-        $coverGalleryUpdated = $keepCoverPaths !== null || array_key_exists('cover_photo_paths', $patch);
+        $coverGalleryUpdated = $keepCoverPaths !== null || $coverPhotos !== [];
         $newCoverPaths = [];
 
         if ($coverGalleryUpdated) {
@@ -814,19 +826,14 @@ class BusinessInfoService
                         $keptPaths[] = $normalizedPath;
                     }
                 }
-            } elseif (! array_key_exists('cover_photo_paths', $patch)) {
+            } elseif ($coverPhotos === []) {
                 $keptPaths = $oldCoverPaths;
             }
 
-            if (array_key_exists('cover_photo_paths', $patch)) {
-                $incoming = is_array($patch['cover_photo_paths']) ? $patch['cover_photo_paths'] : [];
-                foreach ($incoming as $path) {
-                    if (! is_string($path) || trim($path) === '') {
-                        continue;
-                    }
-                    $newCoverPaths[] = trim($path);
+            foreach ($coverPhotos as $file) {
+                if ($file instanceof UploadedFile) {
+                    $newCoverPaths[] = $this->storeBusinessMedia($business, $file);
                 }
-                $mediaPaths->assertAllOwnedBy($business, $newCoverPaths, 'cover_photo_paths');
             }
 
             $finalCoverPaths = array_values(array_unique(array_merge($keptPaths, $newCoverPaths)));
@@ -1010,6 +1017,13 @@ class BusinessInfoService
         }
 
         return $business;
+    }
+
+    private function storeBusinessMedia(BusinessInfo $business, UploadedFile $file): string
+    {
+        $result = app(MediaUploadService::class)->store($file, $business, UploadableType::Business);
+
+        return $result['media']->path;
     }
 
     /*

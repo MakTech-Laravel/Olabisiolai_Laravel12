@@ -5,12 +5,14 @@ namespace App\Services;
 use App\Enums\BusinessStatus;
 use App\Enums\SubscriptionPlan;
 use App\Enums\SubscriptionStatus;
+use App\Enums\UploadableType;
 use App\Models\BusinessCatalogItem;
 use App\Models\BusinessInfo;
 use App\Models\User;
 use App\Support\CatalogPricing;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -136,16 +138,16 @@ class BusinessCatalogService
     }
 
     /**
-     * Catalog images are uploaded via POST /api/v1/media (`uploadable_type=product`)
-     * after the item exists, then attached with `image_paths` on update.
+     * Images are stored via MediaUploadService (media row + optimize job).
      *
      * @param  array<string, mixed>  $data
+     * @param  list<UploadedFile>  $images
      */
-    public function createItem(BusinessInfo $business, array $data): BusinessCatalogItem
+    public function createItem(BusinessInfo $business, array $data, array $images = []): BusinessCatalogItem
     {
         $this->assertCanManageCatalog($business);
 
-        return DB::transaction(function () use ($business, $data): BusinessCatalogItem {
+        $item = DB::transaction(function () use ($business, $data): BusinessCatalogItem {
             $currentCount = $business->catalogItems()->lockForUpdate()->count();
             if ($currentCount >= self::MAX_ITEMS_PER_BUSINESS) {
                 throw ValidationException::withMessages([
@@ -172,25 +174,42 @@ class BusinessCatalogService
                 'sort_order' => $sortOrder,
             ])->fresh();
         });
+
+        if ($images === []) {
+            return $item;
+        }
+
+        $paths = [];
+        foreach ($images as $image) {
+            if ($image instanceof UploadedFile) {
+                $paths[] = $this->storeCatalogMedia($item, $image);
+            }
+        }
+
+        if ($paths !== []) {
+            $item->update(['image_paths' => $paths]);
+        }
+
+        return $item->fresh();
     }
 
     /**
      * @param  array<string, mixed>  $data
-     * @param  list<string>  $imagePaths  New media paths from POST /api/v1/media
+     * @param  list<UploadedFile>  $images
      * @param  list<string>|null  $keepImagePaths
      */
     public function updateItem(
         BusinessInfo $business,
         BusinessCatalogItem $item,
         array $data,
-        array $imagePaths = [],
+        array $images = [],
         bool $removeImages = false,
         ?array $keepImagePaths = null,
     ): BusinessCatalogItem {
         $this->assertCanManageCatalog($business);
         $this->assertItemBelongsToBusiness($business, $item);
 
-        return DB::transaction(function () use ($item, $data, $imagePaths, $removeImages, $keepImagePaths): BusinessCatalogItem {
+        return DB::transaction(function () use ($item, $data, $images, $removeImages, $keepImagePaths): BusinessCatalogItem {
             if (array_key_exists('type', $data)) {
                 $item->type = $this->normalizeType($data['type']);
             }
@@ -224,7 +243,7 @@ class BusinessCatalogService
             }
 
             $oldPaths = $item->normalizedImagePaths();
-            $galleryTouched = $removeImages || $keepImagePaths !== null || $imagePaths !== [];
+            $galleryTouched = $removeImages || $keepImagePaths !== null || $images !== [];
 
             if ($galleryTouched) {
                 if ($removeImages) {
@@ -245,15 +264,10 @@ class BusinessCatalogService
                 }
 
                 $newPaths = [];
-                foreach ($imagePaths as $path) {
-                    if (! is_string($path) || trim($path) === '') {
-                        continue;
+                foreach ($images as $image) {
+                    if ($image instanceof UploadedFile) {
+                        $newPaths[] = $this->storeCatalogMedia($item, $image);
                     }
-                    $newPaths[] = trim($path);
-                }
-
-                if ($newPaths !== []) {
-                    app(MediaPathGuard::class)->assertAllOwnedBy($item, $newPaths, 'image_paths');
                 }
 
                 $finalPaths = array_values(array_unique(array_merge($keptPaths, $newPaths)));
@@ -270,6 +284,13 @@ class BusinessCatalogService
 
             return $item->fresh();
         });
+    }
+
+    private function storeCatalogMedia(BusinessCatalogItem $item, UploadedFile $file): string
+    {
+        $result = app(MediaUploadService::class)->store($file, $item, UploadableType::Product);
+
+        return $result['media']->path;
     }
 
     public function deleteItem(BusinessInfo $business, BusinessCatalogItem $item): void

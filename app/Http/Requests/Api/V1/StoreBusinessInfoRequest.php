@@ -6,10 +6,12 @@ use App\Http\Requests\Concerns\ValidatesBusinessHours;
 use App\Http\Requests\Concerns\ValidatesBusinessSubcategory;
 use App\Http\Requests\Concerns\ValidatesSocialAccounts;
 use App\Rules\NigerianPhoneNumber;
+use App\Services\SubscriptionService;
 use App\Support\PhoneNormalizer;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\File;
 use Illuminate\Validation\Validator;
 
 class StoreBusinessInfoRequest extends FormRequest
@@ -18,9 +20,6 @@ class StoreBusinessInfoRequest extends FormRequest
     use ValidatesBusinessSubcategory;
     use ValidatesSocialAccounts;
 
-    /**
-     * Determine if the user is authorized to make this request.
-     */
     public function authorize(): bool
     {
         return true;
@@ -42,10 +41,9 @@ class StoreBusinessInfoRequest extends FormRequest
     }
 
     /**
-     * Photos are uploaded via POST /api/v1/media after create, then attached with
-     * logo_path / cover_photo_paths on PUT/POST /vendor/business/update.
+     * Files are stored via MediaUploadService inside BusinessInfoService (media row + optimize job).
      *
-     * @return array<string, array<int, string|ValidationRule>|string>
+     * @return array<string, array<int, File|string|ValidationRule>|string>
      */
     public function rules(): array
     {
@@ -64,6 +62,9 @@ class StoreBusinessInfoRequest extends FormRequest
             'whatsapp' => ['nullable', 'string', new NigerianPhoneNumber()],
             'website' => ['nullable', 'string', 'max:2048', 'url'],
             ...$this->socialAccountsRules(),
+            'logo' => ['required', File::image()->max(10 * 1024)],
+            'cover_photos' => ['required', 'array', 'min:1'],
+            'cover_photos.*' => ['required', File::image()->max(10 * 1024)],
             'subscription_plan' => ['nullable', 'string', Rule::in(['free', 'premium'])],
         ];
     }
@@ -71,5 +72,25 @@ class StoreBusinessInfoRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $this->validateBusinessSubcategory($validator, requiredWhenAvailable: true);
+
+        $validator->after(function (Validator $validator): void {
+            $photos = $this->file('cover_photos', []);
+            if (! is_array($photos)) {
+                return;
+            }
+
+            $plan = (string) ($this->input('subscription_plan') ?? 'free');
+            $subscriptionService = app(SubscriptionService::class);
+            $maxPhotos = $plan === 'premium'
+                ? $subscriptionService->premiumPhotoLimit()
+                : $subscriptionService->freePhotoLimit();
+
+            if (count($photos) > $maxPhotos) {
+                $validator->errors()->add(
+                    'cover_photos',
+                    "You can upload up to {$maxPhotos} gallery photos for the selected plan.",
+                );
+            }
+        });
     }
 }
