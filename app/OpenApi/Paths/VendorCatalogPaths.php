@@ -17,15 +17,6 @@ class VendorCatalogPaths
             'passport' => [],
         ],
     ],
-    parameters: [
-        new OA\Parameter(
-            name: 'business_id',
-            in: 'query',
-            required: false,
-            description: 'Optional business ID owned by the authenticated vendor. Omit to use the active business.',
-            schema: new OA\Schema(type: 'integer', minimum: 1, nullable: true, example: 1),
-        ),
-    ],
     responses: [
         new OA\Response(
         response: 200,
@@ -347,13 +338,6 @@ class VendorCatalogPaths
     ),
         example: 1,
     ),
-        new OA\Parameter(
-            name: 'business_id',
-            in: 'query',
-            required: false,
-            description: 'Optional business ID owned by the authenticated vendor. Omit to use the active business.',
-            schema: new OA\Schema(type: 'integer', minimum: 1, nullable: true, example: 1),
-        ),
     ],
     responses: [
         new OA\Response(

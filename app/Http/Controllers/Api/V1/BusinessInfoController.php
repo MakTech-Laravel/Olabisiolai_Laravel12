@@ -174,6 +174,125 @@ class BusinessInfoController extends Controller
         }
     }
 
+    #[OA\Put(
+        path: '/v1/vendor/business/update',
+        summary: 'Partially update vendor business profile (JSON)',
+        description: 'Updates only the fields present in the request body. Omitted fields keep their current values; '
+            .'send null (or empty string) on nullable fields to clear them. Prefer this endpoint for text-only edits. '
+            .'Use POST /v1/vendor/business/update with multipart/form-data when uploading logo or cover photos. '
+            .'Changing business_name, category_id, subcategory, or location_id may revoke verification.',
+        tags: ['Vendors'],
+        security: [['passport' => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                ref: '#/components/schemas/VendorBusinessUpdatePatch',
+                examples: [
+                    new OA\Examples(
+                        example: 'name_only',
+                        summary: 'Change business name only',
+                        value: ['business_id' => 1, 'business_name' => 'New Business Name'],
+                    ),
+                    new OA\Examples(
+                        example: 'clear_website',
+                        summary: 'Clear website',
+                        value: ['business_id' => 1, 'website' => null],
+                    ),
+                ],
+            ),
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Business profile updated successfully',
+                content: new OA\JsonContent(ref: '#/components/schemas/ApiResponse'),
+            ),
+            new OA\Response(
+                response: 401,
+                description: 'Unauthenticated',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse'),
+            ),
+            new OA\Response(
+                response: 404,
+                description: 'No business profile found',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse'),
+            ),
+            new OA\Response(
+                response: 422,
+                description: 'Validation error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ValidationError'),
+            ),
+            new OA\Response(
+                response: 500,
+                description: 'Unexpected server error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse'),
+            ),
+        ],
+    )]
+    #[OA\Post(
+        path: '/v1/vendor/business/update',
+        summary: 'Partially update vendor business profile (multipart)',
+        description: 'Same partial-update semantics as PUT, for requests that include file uploads. '
+            .'Only sent fields are updated. Prefer PUT with JSON when not uploading files. '
+            .'Send keep_cover_paths and/or cover_photos only when changing the gallery.',
+        tags: ['Vendors'],
+        security: [['passport' => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\MediaType(
+                mediaType: 'multipart/form-data',
+                schema: new OA\Schema(
+                    type: 'object',
+                    allOf: [
+                        new OA\Schema(ref: '#/components/schemas/VendorBusinessUpdatePatch'),
+                    ],
+                    properties: [
+                        new OA\Property(
+                            property: 'logo',
+                            description: 'Optional new logo image',
+                            type: 'string',
+                            format: 'binary',
+                            nullable: true,
+                        ),
+                        new OA\Property(
+                            property: 'cover_photos',
+                            description: 'Optional new gallery images (combine with keep_cover_paths)',
+                            type: 'array',
+                            items: new OA\Items(type: 'string', format: 'binary'),
+                            nullable: true,
+                        ),
+                    ],
+                ),
+            ),
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Business profile updated successfully',
+                content: new OA\JsonContent(ref: '#/components/schemas/ApiResponse'),
+            ),
+            new OA\Response(
+                response: 401,
+                description: 'Unauthenticated',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse'),
+            ),
+            new OA\Response(
+                response: 404,
+                description: 'No business profile found',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse'),
+            ),
+            new OA\Response(
+                response: 422,
+                description: 'Validation error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ValidationError'),
+            ),
+            new OA\Response(
+                response: 500,
+                description: 'Unexpected server error',
+                content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse'),
+            ),
+        ],
+    )]
     public function update(UpdateBusinessInfoRequest $request)
     {
         $user = $request->user('api');
@@ -181,17 +300,10 @@ class BusinessInfoController extends Controller
         try {
             $validated = $request->validated();
             $logo = $request->file('logo');
-            $coverPhotos = array_values($request->file('cover_photos', []));
-            $keepCoverPaths = array_values($validated['keep_cover_paths'] ?? []);
-
-            $streetAddressProvided = array_key_exists('street_address', $validated)
-                || array_key_exists('full_address', $validated);
-
-            $subcategoryProvided = array_key_exists('subcategory', $validated);
-
-            $coordinatesProvided = array_key_exists('latitude', $validated)
-                || array_key_exists('longitude', $validated)
-                || array_key_exists('google_place_id', $validated);
+            $coverPhotos = array_values(array_filter(
+                $request->file('cover_photos', []) ?: [],
+                fn ($file) => $file instanceof \Illuminate\Http\UploadedFile,
+            ));
 
             $businessId = $request->integer('business_id');
             $resolvedBusinessId = $businessId > 0 ? $businessId : null;
@@ -204,38 +316,44 @@ class BusinessInfoController extends Controller
                 return sendResponse(false, 'No business profile found.', null, Response::HTTP_NOT_FOUND);
             }
 
-            $categoryId = array_key_exists('category_id', $validated) && $validated['category_id'] !== null
-                ? (int) $validated['category_id']
-                : (int) ($existingBusiness->category_id ?? 0);
+            $patch = [];
 
-            $locationId = array_key_exists('location_id', $validated) && $validated['location_id'] !== null
-                ? (int) $validated['location_id']
-                : (int) ($existingBusiness->location_id ?? 0);
+            foreach ([
+                'category_id',
+                'location_id',
+                'subcategory',
+                'business_name',
+                'business_description',
+                'services',
+                'phone',
+                'whatsapp',
+                'website',
+                'social_accounts',
+                'business_hours',
+                'latitude',
+                'longitude',
+                'google_place_id',
+            ] as $key) {
+                if (array_key_exists($key, $validated)) {
+                    $patch[$key] = $validated[$key];
+                }
+            }
+
+            if (array_key_exists('street_address', $validated) || array_key_exists('full_address', $validated)) {
+                $patch['street_address'] = self::resolveStreetAddress($validated);
+            }
+
+            $keepCoverPaths = $request->exists('keep_cover_paths')
+                ? array_values($validated['keep_cover_paths'] ?? [])
+                : null;
 
             $business = $this->businessInfoService->updateForUser(
                 $user,
-                $categoryId,
-                $subcategoryProvided ? trim((string) $validated['subcategory']) : null,
-                $locationId,
-                $validated['business_name'],
-                $streetAddressProvided ? self::resolveStreetAddress($validated) : null,
-                $validated['business_description'],
-                $validated['services'],
-                $validated['phone'],
-                $validated['whatsapp'] ?? null,
-                $validated['website'] ?? null,
-                array_key_exists('social_accounts', $validated) ? $validated['social_accounts'] : null,
+                $patch,
                 $logo,
                 $coverPhotos,
-                array_key_exists('business_hours', $validated) ? $validated['business_hours'] : null,
-                $streetAddressProvided,
-                $subcategoryProvided,
-                $request->has('keep_cover_paths') ? $keepCoverPaths : null,
+                $keepCoverPaths,
                 $resolvedBusinessId,
-                isset($validated['latitude']) ? (float) $validated['latitude'] : null,
-                isset($validated['longitude']) ? (float) $validated['longitude'] : null,
-                $validated['google_place_id'] ?? null,
-                $coordinatesProvided,
             );
 
             $business->load(['category:id,name,subcategories,icon,created_at,updated_at', 'businessHours']);

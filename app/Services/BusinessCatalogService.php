@@ -8,6 +8,7 @@ use App\Enums\SubscriptionStatus;
 use App\Models\BusinessCatalogItem;
 use App\Models\BusinessInfo;
 use App\Models\User;
+use App\Support\CatalogPricing;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\UploadedFile;
@@ -158,13 +159,19 @@ class BusinessCatalogService
                 $paths[] = $this->storeImage($business, $image);
             }
 
+            $pricing = $this->resolvePricingPayload($data, null);
+
             return $business->catalogItems()->create([
                 'type' => $this->normalizeType($data['type'] ?? 'service'),
                 'name' => trim((string) $data['name']),
                 'description' => isset($data['description']) ? trim((string) $data['description']) : null,
-                'price_kobo' => isset($data['price_kobo']) ? (int) $data['price_kobo'] : null,
+                'price_kobo' => $pricing['price_kobo'],
+                'original_price_kobo' => $pricing['original_price_kobo'],
                 'price_label' => isset($data['price_label']) ? trim((string) $data['price_label']) : null,
                 'price_from' => (bool) ($data['price_from'] ?? false),
+                'discount_type' => $pricing['discount_type'],
+                'discount_value' => $pricing['discount_value'],
+                'has_discount' => $pricing['has_discount'],
                 'image_paths' => $paths === [] ? null : $paths,
                 'sort_order' => $sortOrder,
             ])->fresh();
@@ -197,14 +204,24 @@ class BusinessCatalogService
             if (array_key_exists('description', $data)) {
                 $item->description = trim((string) $data['description']) ?: null;
             }
-            if (array_key_exists('price_kobo', $data)) {
-                $item->price_kobo = $data['price_kobo'] !== null ? (int) $data['price_kobo'] : null;
-            }
             if (array_key_exists('price_label', $data)) {
                 $item->price_label = trim((string) $data['price_label']) ?: null;
             }
-            if (array_key_exists('price_from', $data)) {
-                $item->price_from = (bool) $data['price_from'];
+            if (
+                array_key_exists('price_kobo', $data)
+                || array_key_exists('price_from', $data)
+                || array_key_exists('discount_type', $data)
+                || array_key_exists('discount_value', $data)
+            ) {
+                $pricing = $this->resolvePricingPayload($data, $item);
+                $item->price_kobo = $pricing['price_kobo'];
+                $item->original_price_kobo = $pricing['original_price_kobo'];
+                $item->discount_type = $pricing['discount_type'];
+                $item->discount_value = $pricing['discount_value'];
+                $item->has_discount = $pricing['has_discount'];
+                if (array_key_exists('price_from', $data)) {
+                    $item->price_from = (bool) $data['price_from'];
+                }
             }
             if (array_key_exists('sort_order', $data)) {
                 $item->sort_order = (int) $data['sort_order'];
@@ -291,6 +308,53 @@ class BusinessCatalogService
         $normalized = strtolower(trim((string) $type));
 
         return in_array($normalized, ['product', 'service'], true) ? $normalized : 'service';
+    }
+
+    /**
+     * Vendor sends `price_kobo` as the list/base amount. We store sale in `price_kobo`
+     * and list in `original_price_kobo` when a discount applies.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{
+     *     price_kobo: int|null,
+     *     original_price_kobo: int|null,
+     *     discount_type: string|null,
+     *     discount_value: int|null,
+     *     has_discount: bool,
+     * }
+     */
+    private function resolvePricingPayload(array $data, ?BusinessCatalogItem $existing): array
+    {
+        $listKobo = array_key_exists('price_kobo', $data)
+            ? ($data['price_kobo'] !== null ? (int) $data['price_kobo'] : null)
+            : (
+                $existing
+                    ? CatalogPricing::listPriceKobo(
+                        $existing->price_kobo,
+                        $existing->original_price_kobo,
+                        (bool) $existing->has_discount,
+                    )
+                    : null
+            );
+
+        $priceFrom = array_key_exists('price_from', $data)
+            ? (bool) $data['price_from']
+            : (bool) ($existing?->price_from ?? false);
+
+        $discountType = array_key_exists('discount_type', $data)
+            ? $data['discount_type']
+            : $existing?->discount_type;
+
+        $discountValue = array_key_exists('discount_value', $data)
+            ? $data['discount_value']
+            : $existing?->discount_value;
+
+        return CatalogPricing::resolveStoredPrices([
+            'price_kobo' => $listKobo,
+            'price_from' => $priceFrom,
+            'discount_type' => is_string($discountType) || $discountType === null ? $discountType : null,
+            'discount_value' => $discountValue !== null ? (int) $discountValue : null,
+        ]);
     }
 
     private function storeImage(BusinessInfo $business, UploadedFile $image): string

@@ -52,8 +52,12 @@ class BuyerCartResource extends JsonResource
                     'name' => $line->name,
                     'quantity' => (int) $line->quantity,
                     'unit_price_kobo' => $line->unit_price_kobo,
+                    'original_unit_price_kobo' => $line->original_unit_price_kobo,
                     'price_display' => $line->price_display,
                     'price_from' => (bool) $line->price_from,
+                    'has_discount' => $line->original_unit_price_kobo !== null
+                        && $line->unit_price_kobo !== null
+                        && (int) $line->original_unit_price_kobo > (int) $line->unit_price_kobo,
                     'line_total_kobo' => $lineTotal,
                     'line_total_display' => $lineTotal === null
                         ? ''

@@ -16,6 +16,7 @@ class BuyerCartItem extends Model
         'quantity',
         'name',
         'unit_price_kobo',
+        'original_unit_price_kobo',
         'price_display',
         'price_from',
         'image_url',
@@ -29,6 +30,7 @@ class BuyerCartItem extends Model
         return [
             'quantity' => 'integer',
             'unit_price_kobo' => 'integer',
+            'original_unit_price_kobo' => 'integer',
             'price_from' => 'boolean',
         ];
     }
