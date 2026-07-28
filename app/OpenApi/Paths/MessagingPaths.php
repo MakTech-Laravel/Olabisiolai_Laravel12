@@ -6,6 +6,61 @@ use OpenApi\Attributes as OA;
 
 class MessagingPaths
 {
+    #[OA\Get(
+    path: '/v1/messages/carts/{cartMessageId}',
+    summary: 'Get Carts',
+    tags: [
+        'Messaging',
+    ],
+    security: [
+        [
+            'passport' => [],
+        ],
+    ],
+    parameters: [
+        new OA\Parameter(
+        name: 'cartMessageId',
+        in: 'path',
+        required: true,
+        schema: new OA\Schema(
+        type: 'integer',
+    ),
+        example: 1,
+    ),
+    ],
+    responses: [
+        new OA\Response(
+        response: 200,
+        description: 'Get Carts successfully',
+        content: new OA\JsonContent(
+            ref: '#/components/schemas/ApiResponse',
+        ),
+    ),
+        new OA\Response(
+        response: 401,
+        description: 'Unauthenticated',
+        content: new OA\JsonContent(
+            ref: '#/components/schemas/ErrorResponse',
+        ),
+    ),
+        new OA\Response(
+        response: 404,
+        description: 'Not found',
+        content: new OA\JsonContent(
+            ref: '#/components/schemas/ErrorResponse',
+        ),
+    ),
+        new OA\Response(
+        response: 500,
+        description: 'Unexpected server error',
+        content: new OA\JsonContent(
+            ref: '#/components/schemas/ErrorResponse',
+        ),
+    ),
+    ],
+)]
+    private function opGETMessagesCartscartMessageId_420e30(): void {}
+
     #[OA\Post(
     path: '/v1/presence/ping',
     summary: 'Submit Ping',
