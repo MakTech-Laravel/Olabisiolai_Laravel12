@@ -68,7 +68,7 @@ class AdminVerificationReverificationTest extends TestCase
             'user_id' => $vendor->id,
             'business_info_id' => $business->id,
             'purpose' => PaymentPurpose::Verification,
-            'package_id' => 'individual',
+            'package_id' => 'business',
             'amount' => 2500,
             'is_consumed' => true,
         ]);
@@ -130,7 +130,7 @@ class AdminVerificationReverificationTest extends TestCase
             'user_id' => $vendor->id,
             'business_info_id' => $business->id,
             'purpose' => PaymentPurpose::Verification,
-            'package_id' => 'individual',
+            'package_id' => 'business',
             'amount' => 2500,
             'is_consumed' => true,
         ]);
@@ -159,7 +159,7 @@ class AdminVerificationReverificationTest extends TestCase
             'user_id' => $vendor->id,
             'business_info_id' => $business->id,
             'purpose' => PaymentPurpose::Verification,
-            'package_id' => 'individual',
+            'package_id' => 'business',
             'amount' => 2500,
             'status' => PaymentStatus::Pending,
         ]);
@@ -220,14 +220,14 @@ class AdminVerificationReverificationTest extends TestCase
             'user_id' => $vendor->id,
             'business_info_id' => $business->id,
             'purpose' => PaymentPurpose::Verification,
-            'package_id' => 'individual',
+            'package_id' => 'business',
             'amount' => 0,
             'is_consumed' => false,
             'metadata' => ['reverification_waiver' => true],
         ]);
 
         $response = $this->withToken($token)->postJson('/api/v1/vendor/verification/payment/init', [
-            'package_id' => 'individual',
+            'package_id' => 'business',
         ]);
 
         $response->assertStatus(422);
