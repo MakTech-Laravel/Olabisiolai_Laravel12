@@ -57,6 +57,38 @@ covering request bodies, multiple response shapes, and error responses.
 Base API info (title, server URL, security scheme) lives in `app/OpenApi/BaseInfo.php`, kept separate from
 controllers.
 
+## Image upload + lossless optimization
+
+Standalone endpoint: `POST /api/v1/media` (Passport `auth:api`, roles `user` or `vendor`).
+
+### Flow
+
+1. Client uploads an image (`jpg` / `jpeg` / `png` / `webp` / `gif`) with required `uploadable_type` (short key: `product`, `review`, `profile`, `business`) and `uploadable_id`.
+2. The API stores the original on the configured disk (`MEDIA_DISK`, default `public`) under `uploads/{year}/{month}/{uuid}.{ext}`, creates a `media` row with status `pending`, and dispatches `OptimizeImage` on the **default** database queue.
+3. The queue worker runs Spatie Image Optimizer **in place** (lossless only — no resize, no Pngquant). Status becomes `optimized` (or `failed` without deleting the original).
+
+Max size: `MAX_UPLOAD_SIZE_MB` (default `20`). Duplicate uploads of the same file hash for the same uploadable return the existing media row instead of creating another.
+
+### Queue worker
+
+Production already runs `php artisan queue:work` via supervisord (default queue only). No named queue is required:
+
+```bash
+php artisan queue:work --sleep=3 --tries=3 --timeout=300
+```
+
+### Verify optimizer binaries (Docker / Coolify)
+
+After rebuilding the API image (Dockerfile installs `jpegoptim`, `optipng`, `gifsicle`, `webp`/`cwebp`, and `svgo`):
+
+```bash
+jpegoptim --version
+optipng -v
+gifsicle --version
+cwebp -version
+svgo --version
+```
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:

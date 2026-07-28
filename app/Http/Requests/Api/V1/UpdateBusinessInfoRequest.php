@@ -135,6 +135,8 @@ class UpdateBusinessInfoRequest extends FormRequest
     }
 
     /**
+     * Logo/covers may be uploaded as multipart files; MediaUploadService stores media + queues optimize.
+     *
      * @return array<string, array<int, File|string|ValidationRule>|string>
      */
     public function rules(): array
@@ -204,7 +206,7 @@ class UpdateBusinessInfoRequest extends FormRequest
                 ? app(SubscriptionService::class)->maxCoverPhotos($business)
                 : app(SubscriptionService::class)->freePhotoLimit();
 
-            $keepCount = count($keepPaths);
+            $keepCount = count(array_filter($keepPaths, fn ($path) => is_string($path) && trim($path) !== ''));
             $newCount = $hasNew ? count($newPhotos) : 0;
             $total = ($hasKeep ? $keepCount : 0) + $newCount;
 

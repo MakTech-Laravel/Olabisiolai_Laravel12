@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\BusinessStatus;
 use App\Enums\SubscriptionPlan;
 use App\Enums\SubscriptionStatus;
+use App\Enums\UploadableType;
 use App\Models\BusinessCatalogItem;
 use App\Models\BusinessInfo;
 use App\Models\User;
@@ -137,6 +138,8 @@ class BusinessCatalogService
     }
 
     /**
+     * Images are stored via MediaUploadService (media row + optimize job).
+     *
      * @param  array<string, mixed>  $data
      * @param  list<UploadedFile>  $images
      */
@@ -144,7 +147,7 @@ class BusinessCatalogService
     {
         $this->assertCanManageCatalog($business);
 
-        return DB::transaction(function () use ($business, $data, $images): BusinessCatalogItem {
+        $item = DB::transaction(function () use ($business, $data): BusinessCatalogItem {
             $currentCount = $business->catalogItems()->lockForUpdate()->count();
             if ($currentCount >= self::MAX_ITEMS_PER_BUSINESS) {
                 throw ValidationException::withMessages([
@@ -153,11 +156,6 @@ class BusinessCatalogService
             }
 
             $sortOrder = (int) ($data['sort_order'] ?? ($business->catalogItems()->max('sort_order') + 1));
-
-            $paths = [];
-            foreach ($images as $image) {
-                $paths[] = $this->storeImage($business, $image);
-            }
 
             $pricing = $this->resolvePricingPayload($data, null);
 
@@ -172,10 +170,27 @@ class BusinessCatalogService
                 'discount_type' => $pricing['discount_type'],
                 'discount_value' => $pricing['discount_value'],
                 'has_discount' => $pricing['has_discount'],
-                'image_paths' => $paths === [] ? null : $paths,
+                'image_paths' => null,
                 'sort_order' => $sortOrder,
             ])->fresh();
         });
+
+        if ($images === []) {
+            return $item;
+        }
+
+        $paths = [];
+        foreach ($images as $image) {
+            if ($image instanceof UploadedFile) {
+                $paths[] = $this->storeCatalogMedia($item, $image);
+            }
+        }
+
+        if ($paths !== []) {
+            $item->update(['image_paths' => $paths]);
+        }
+
+        return $item->fresh();
     }
 
     /**
@@ -194,7 +209,7 @@ class BusinessCatalogService
         $this->assertCanManageCatalog($business);
         $this->assertItemBelongsToBusiness($business, $item);
 
-        return DB::transaction(function () use ($business, $item, $data, $images, $removeImages, $keepImagePaths): BusinessCatalogItem {
+        return DB::transaction(function () use ($item, $data, $images, $removeImages, $keepImagePaths): BusinessCatalogItem {
             if (array_key_exists('type', $data)) {
                 $item->type = $this->normalizeType($data['type']);
             }
@@ -250,10 +265,12 @@ class BusinessCatalogService
 
                 $newPaths = [];
                 foreach ($images as $image) {
-                    $newPaths[] = $this->storeImage($business, $image);
+                    if ($image instanceof UploadedFile) {
+                        $newPaths[] = $this->storeCatalogMedia($item, $image);
+                    }
                 }
 
-                $finalPaths = array_values(array_merge($keptPaths, $newPaths));
+                $finalPaths = array_values(array_unique(array_merge($keptPaths, $newPaths)));
 
                 $removed = array_diff($oldPaths, $finalPaths);
                 foreach ($removed as $path) {
@@ -267,6 +284,13 @@ class BusinessCatalogService
 
             return $item->fresh();
         });
+    }
+
+    private function storeCatalogMedia(BusinessCatalogItem $item, UploadedFile $file): string
+    {
+        $result = app(MediaUploadService::class)->store($file, $item, UploadableType::Product);
+
+        return $result['media']->path;
     }
 
     public function deleteItem(BusinessInfo $business, BusinessCatalogItem $item): void
@@ -355,10 +379,5 @@ class BusinessCatalogService
             'discount_type' => is_string($discountType) || $discountType === null ? $discountType : null,
             'discount_value' => $discountValue !== null ? (int) $discountValue : null,
         ]);
-    }
-
-    private function storeImage(BusinessInfo $business, UploadedFile $image): string
-    {
-        return $image->store("businesses/{$business->id}/catalog", 'public');
     }
 }
