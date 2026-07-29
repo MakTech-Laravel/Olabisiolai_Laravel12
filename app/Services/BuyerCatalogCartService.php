@@ -35,6 +35,7 @@ final class BuyerCatalogCartService
             ->with(['items.catalogItem', 'businessInfo.user'])
             ->where('user_id', $user->id)
             ->where('status', BuyerCart::STATUS_OPEN)
+            ->whereHas('items')
             ->orderByDesc('updated_at')
             ->get();
 
@@ -144,8 +145,16 @@ final class BuyerCatalogCartService
             }
 
             $cart->touch();
+            $fresh = $cart->fresh(['items', 'businessInfo.user']);
 
-            return $cart->fresh(['items', 'businessInfo.user']);
+            // Drop empty open carts so zero-item businesses disappear from the cart hub.
+            if ($fresh && $fresh->items->isEmpty()) {
+                $fresh->delete();
+
+                return $fresh;
+            }
+
+            return $fresh;
         });
     }
 
@@ -442,6 +451,12 @@ final class BuyerCatalogCartService
             'item_count' => $itemCount,
             'items' => $cart->items->map(static function (BuyerCartItem $line): array {
                 $lineTotal = $line->lineTotalKobo();
+                $hasDiscount = $line->original_unit_price_kobo !== null
+                    && $line->unit_price_kobo !== null
+                    && (int) $line->original_unit_price_kobo > (int) $line->unit_price_kobo;
+                $originalLineTotal = $hasDiscount
+                    ? (int) $line->original_unit_price_kobo * (int) $line->quantity
+                    : null;
 
                 return [
                     'id' => (int) $line->catalog_item_id,
@@ -452,14 +467,16 @@ final class BuyerCatalogCartService
                     'original_unit_price_kobo' => $line->original_unit_price_kobo,
                     'price_display' => $line->price_display,
                     'price_from' => (bool) $line->price_from,
-                    'has_discount' => $line->original_unit_price_kobo !== null
-                        && $line->unit_price_kobo !== null
-                        && (int) $line->original_unit_price_kobo > (int) $line->unit_price_kobo,
+                    'has_discount' => $hasDiscount,
                     'line_total_kobo' => $lineTotal,
                     // From / estimate lines omit an amount — business confirms the total.
                     'line_total_display' => $lineTotal === null
                         ? ''
                         : '₦'.number_format($lineTotal / 100, 0),
+                    // Sale + strikethrough original (same layout as the cart UI).
+                    'original_line_total_display' => $originalLineTotal === null
+                        ? null
+                        : '₦'.number_format($originalLineTotal / 100, 0),
                     'image_url' => $line->image_url,
                 ];
             })->values()->all(),
