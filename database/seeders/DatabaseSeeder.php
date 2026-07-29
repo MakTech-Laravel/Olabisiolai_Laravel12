@@ -34,6 +34,7 @@ class DatabaseSeeder extends Seeder
         //     FeaturedBusinessSeeder::class,
         //     BusinessSocialAccountsSeeder::class,
         //     BusinessHoursSeeder::class,
+        //     BusinessCatalogSeeder::class,
         // ]);
 
         // --- Local messaging / presence demos ---

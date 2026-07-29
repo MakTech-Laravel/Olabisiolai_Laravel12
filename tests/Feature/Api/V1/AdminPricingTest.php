@@ -38,22 +38,13 @@ class AdminPricingTest extends TestCase
         $response = $this->postJson('/api/v1/admin/pricing/verification/update', [
             'packages' => [
                 [
-                    'package_key' => 'individual',
-                    'title' => 'Individual',
-                    'amount' => 3000,
-                    'description' => 'Updated individual tier',
-                    'perks' => ['Trusted badge'],
-                    'is_active' => true,
-                    'sort_order' => 1,
-                ],
-                [
                     'package_key' => 'business',
                     'title' => 'Business Name',
                     'amount' => 5500,
                     'description' => 'Updated business tier',
                     'perks' => ['Vendor priority'],
                     'is_active' => true,
-                    'sort_order' => 2,
+                    'sort_order' => 1,
                 ],
                 [
                     'package_key' => 'ltd',
@@ -62,15 +53,15 @@ class AdminPricingTest extends TestCase
                     'description' => 'Updated LTD tier',
                     'perks' => ['Enterprise blue badge'],
                     'is_active' => true,
-                    'sort_order' => 3,
+                    'sort_order' => 2,
                 ],
             ],
         ]);
 
         $response->assertOk();
 
-        $this->assertSame(3000, PricingPackage::query()
-            ->where('package_key', 'individual')
+        $this->assertSame(5500, PricingPackage::query()
+            ->where('package_key', 'business')
             ->value('amount'));
     }
 }

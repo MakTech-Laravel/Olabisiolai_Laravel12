@@ -66,11 +66,10 @@ class VendorVerificationPaths
                 new OA\Property(
                     property: 'package_id',
                     enum: [
-                        'individual',
                         'business',
                         'ltd',
                     ],
-                    example: 'individual',
+                    example: 'business',
                     type: 'string',
                 ),
                 new OA\Property(

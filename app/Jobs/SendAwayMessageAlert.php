@@ -31,7 +31,12 @@ final class SendAwayMessageAlert implements ShouldQueue
         VendorAwayMessageNotifier $notifier,
     ): void {
         $message = Message::query()
-            ->with(['sender', 'conversation.participantRows.user.messagingPresence', 'conversation.participantRows.user.businessInfo', 'conversation.businessInfo'])
+            ->with([
+                'sender.businessInfo:id,user_id,business_name,logo_path,verified_at',
+                'conversation.participantRows.user.messagingPresence',
+                'conversation.participantRows.user.businessInfo:id,user_id,business_name,logo_path,verified_at',
+                'conversation.businessInfo:id,user_id,business_name,logo_path',
+            ])
             ->find($this->messageId);
 
         if ($message === null) {
@@ -48,10 +53,6 @@ final class SendAwayMessageAlert implements ShouldQueue
         $adminMessagingUserIds = AdminMessagingUserResolver::messagingUserIds();
         $fromPlatformAdmin = in_array((int) $sender->id, $adminMessagingUserIds, true);
 
-        $senderName = $fromPlatformAdmin
-            ? (string) config('messaging.platform_admin_display_name', 'Olabisiolai Admin')
-            : MessagingHelper::userPersonalName($sender);
-
         foreach ($conversation->participantRows as $row) {
             if ((int) $row->user_id === (int) $sender->id) {
                 continue;
@@ -63,7 +64,7 @@ final class SendAwayMessageAlert implements ShouldQueue
 
             $user = $row->user;
 
-            if ($user === null || ! $user->isVendor()) {
+            if ($user === null || (! $user->isVendor() && ! $user->isUser())) {
                 continue;
             }
 
@@ -81,6 +82,10 @@ final class SendAwayMessageAlert implements ShouldQueue
             if (! Cache::add($cacheKey, true, now()->addMinutes($debounceMinutes))) {
                 continue;
             }
+
+            $senderName = $fromPlatformAdmin
+                ? (string) config('messaging.platform_admin_display_name', 'Olabisiolai Admin')
+                : MessagingHelper::messageSenderDisplayName($sender, $conversation, $user);
 
             $actionUrl = $this->resolveActionUrl(
                 user: $user,

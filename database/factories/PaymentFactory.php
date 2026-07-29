@@ -24,7 +24,7 @@ class PaymentFactory extends Factory
             'user_id' => User::factory(),
             'business_info_id' => BusinessInfo::factory(),
             'purpose' => PaymentPurpose::Verification,
-            'package_id' => 'individual',
+            'package_id' => 'business',
             'amount' => 2500,
             'currency' => 'NGN',
             'tx_ref' => 'verification_' . Str::lower(Str::random(16)),

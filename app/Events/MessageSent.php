@@ -21,8 +21,9 @@ final class MessageSent implements ShouldBroadcastNow
         public Message $message,
     ) {
         $this->message->loadMissing([
-            'sender.businessInfo:id,user_id,logo_path,verified_at',
-            'parent.sender.businessInfo:id,user_id,logo_path,verified_at',
+            'conversation.businessInfo:id,user_id,business_name,logo_path',
+            'sender.businessInfo:id,user_id,business_name,logo_path,verified_at',
+            'parent.sender.businessInfo:id,user_id,business_name,logo_path,verified_at',
             'parent.attachments',
             'attachments',
         ]);
@@ -48,6 +49,7 @@ final class MessageSent implements ShouldBroadcastNow
     {
         $sender = $this->message->sender;
         $parent = $this->message->parent;
+        $conversation = $this->message->conversation;
 
         return [
             'message' => [
@@ -67,7 +69,10 @@ final class MessageSent implements ShouldBroadcastNow
                     'created_at' => $parent->created_at?->toIso8601String(),
                     'sender' => [
                         'id' => $parent->sender?->id,
-                        'name' => $parent->sender?->name,
+                        'name' => MessagingHelper::messageSenderDisplayName(
+                            $parent->sender,
+                            $conversation,
+                        ),
                         'avatar_url' => MessagingHelper::userAvatarUrl($parent->sender),
                     ],
                     'attachments' => $parent->relationLoaded('attachments')
@@ -81,7 +86,7 @@ final class MessageSent implements ShouldBroadcastNow
             ],
             'sender' => [
                 'id' => $sender?->id,
-                'name' => $sender?->name,
+                'name' => MessagingHelper::messageSenderDisplayName($sender, $conversation),
                 'avatar_url' => MessagingHelper::userAvatarUrl($sender),
             ],
             'conversation_id' => $this->message->conversation_id,

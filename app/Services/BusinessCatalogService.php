@@ -5,9 +5,11 @@ namespace App\Services;
 use App\Enums\BusinessStatus;
 use App\Enums\SubscriptionPlan;
 use App\Enums\SubscriptionStatus;
+use App\Enums\UploadableType;
 use App\Models\BusinessCatalogItem;
 use App\Models\BusinessInfo;
 use App\Models\User;
+use App\Support\CatalogPricing;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\UploadedFile;
@@ -18,6 +20,8 @@ use Illuminate\Validation\ValidationException;
 
 class BusinessCatalogService
 {
+    public const MAX_ITEMS_PER_BUSINESS = 50;
+
     public function __construct(
         private readonly SubscriptionService $subscriptionService,
     ) {}
@@ -34,19 +38,8 @@ class BusinessCatalogService
     }
 
     /**
-     * Small curated homepage strip: premium-vendor catalog items only.
-     *
-     * @return Collection<int, BusinessCatalogItem>
-     */
-    public function curatedPremiumHomeItems(int $limit = 6): Collection
-    {
-        return $this->discoveryBaseQuery()
-            ->limit(max(1, min($limit, 12)))
-            ->get();
-    }
-
-    /**
      * Full Catalog-tab discovery feed (premium vendors, with optional filters).
+     * Homepage strips use the same endpoint with a smaller `per_page`.
      *
      * @param  array{category_id?: int|null, city?: string|null, type?: string|null, search?: string|null}  $filters
      */
@@ -88,6 +81,13 @@ class BusinessCatalogService
         return $query->paginate(max(1, min($perPage, 50)));
     }
 
+    public function findDiscoverableItem(int $catalogItemId): ?BusinessCatalogItem
+    {
+        return $this->discoveryBaseQuery()
+            ->whereKey($catalogItemId)
+            ->first();
+    }
+
     /**
      * Premium + active businesses, ranked for discovery.
      *
@@ -95,9 +95,12 @@ class BusinessCatalogService
      */
     private function discoveryBaseQuery(): Builder
     {
+        $viewerId = auth('api')->id();
+
         return BusinessCatalogItem::query()
-            ->whereHas('businessInfo', function (Builder $business): void {
+            ->whereHas('businessInfo', function (Builder $business) use ($viewerId): void {
                 $business->where('business_status', BusinessStatus::Active->value)
+                    ->when($viewerId, fn (Builder $q) => $q->where('user_id', '!=', $viewerId))
                     ->whereHas('subscription', function (Builder $subscription): void {
                         $subscription->where('plan', SubscriptionPlan::Premium->value)
                             ->where('status', SubscriptionStatus::Active->value)
@@ -135,6 +138,8 @@ class BusinessCatalogService
     }
 
     /**
+     * Images are stored via MediaUploadService (media row + optimize job).
+     *
      * @param  array<string, mixed>  $data
      * @param  list<UploadedFile>  $images
      */
@@ -142,25 +147,50 @@ class BusinessCatalogService
     {
         $this->assertCanManageCatalog($business);
 
-        return DB::transaction(function () use ($business, $data, $images): BusinessCatalogItem {
+        $item = DB::transaction(function () use ($business, $data): BusinessCatalogItem {
+            $currentCount = $business->catalogItems()->lockForUpdate()->count();
+            if ($currentCount >= self::MAX_ITEMS_PER_BUSINESS) {
+                throw ValidationException::withMessages([
+                    'catalog' => 'You can add up to '.self::MAX_ITEMS_PER_BUSINESS.' catalog items.',
+                ]);
+            }
+
             $sortOrder = (int) ($data['sort_order'] ?? ($business->catalogItems()->max('sort_order') + 1));
 
-            $paths = [];
-            foreach ($images as $image) {
-                $paths[] = $this->storeImage($business, $image);
-            }
+            $pricing = $this->resolvePricingPayload($data, null);
 
             return $business->catalogItems()->create([
                 'type' => $this->normalizeType($data['type'] ?? 'service'),
                 'name' => trim((string) $data['name']),
                 'description' => isset($data['description']) ? trim((string) $data['description']) : null,
-                'price_kobo' => isset($data['price_kobo']) ? (int) $data['price_kobo'] : null,
+                'price_kobo' => $pricing['price_kobo'],
+                'original_price_kobo' => $pricing['original_price_kobo'],
                 'price_label' => isset($data['price_label']) ? trim((string) $data['price_label']) : null,
                 'price_from' => (bool) ($data['price_from'] ?? false),
-                'image_paths' => $paths === [] ? null : $paths,
+                'discount_type' => $pricing['discount_type'],
+                'discount_value' => $pricing['discount_value'],
+                'has_discount' => $pricing['has_discount'],
+                'image_paths' => null,
                 'sort_order' => $sortOrder,
             ])->fresh();
         });
+
+        if ($images === []) {
+            return $item;
+        }
+
+        $paths = [];
+        foreach ($images as $image) {
+            if ($image instanceof UploadedFile) {
+                $paths[] = $this->storeCatalogMedia($item, $image);
+            }
+        }
+
+        if ($paths !== []) {
+            $item->update(['image_paths' => $paths]);
+        }
+
+        return $item->fresh();
     }
 
     /**
@@ -179,7 +209,7 @@ class BusinessCatalogService
         $this->assertCanManageCatalog($business);
         $this->assertItemBelongsToBusiness($business, $item);
 
-        return DB::transaction(function () use ($business, $item, $data, $images, $removeImages, $keepImagePaths): BusinessCatalogItem {
+        return DB::transaction(function () use ($item, $data, $images, $removeImages, $keepImagePaths): BusinessCatalogItem {
             if (array_key_exists('type', $data)) {
                 $item->type = $this->normalizeType($data['type']);
             }
@@ -189,14 +219,24 @@ class BusinessCatalogService
             if (array_key_exists('description', $data)) {
                 $item->description = trim((string) $data['description']) ?: null;
             }
-            if (array_key_exists('price_kobo', $data)) {
-                $item->price_kobo = $data['price_kobo'] !== null ? (int) $data['price_kobo'] : null;
-            }
             if (array_key_exists('price_label', $data)) {
                 $item->price_label = trim((string) $data['price_label']) ?: null;
             }
-            if (array_key_exists('price_from', $data)) {
-                $item->price_from = (bool) $data['price_from'];
+            if (
+                array_key_exists('price_kobo', $data)
+                || array_key_exists('price_from', $data)
+                || array_key_exists('discount_type', $data)
+                || array_key_exists('discount_value', $data)
+            ) {
+                $pricing = $this->resolvePricingPayload($data, $item);
+                $item->price_kobo = $pricing['price_kobo'];
+                $item->original_price_kobo = $pricing['original_price_kobo'];
+                $item->discount_type = $pricing['discount_type'];
+                $item->discount_value = $pricing['discount_value'];
+                $item->has_discount = $pricing['has_discount'];
+                if (array_key_exists('price_from', $data)) {
+                    $item->price_from = (bool) $data['price_from'];
+                }
             }
             if (array_key_exists('sort_order', $data)) {
                 $item->sort_order = (int) $data['sort_order'];
@@ -225,10 +265,12 @@ class BusinessCatalogService
 
                 $newPaths = [];
                 foreach ($images as $image) {
-                    $newPaths[] = $this->storeImage($business, $image);
+                    if ($image instanceof UploadedFile) {
+                        $newPaths[] = $this->storeCatalogMedia($item, $image);
+                    }
                 }
 
-                $finalPaths = array_values(array_merge($keptPaths, $newPaths));
+                $finalPaths = array_values(array_unique(array_merge($keptPaths, $newPaths)));
 
                 $removed = array_diff($oldPaths, $finalPaths);
                 foreach ($removed as $path) {
@@ -242,6 +284,13 @@ class BusinessCatalogService
 
             return $item->fresh();
         });
+    }
+
+    private function storeCatalogMedia(BusinessCatalogItem $item, UploadedFile $file): string
+    {
+        $result = app(MediaUploadService::class)->store($file, $item, UploadableType::Product);
+
+        return $result['media']->path;
     }
 
     public function deleteItem(BusinessInfo $business, BusinessCatalogItem $item): void
@@ -285,8 +334,50 @@ class BusinessCatalogService
         return in_array($normalized, ['product', 'service'], true) ? $normalized : 'service';
     }
 
-    private function storeImage(BusinessInfo $business, UploadedFile $image): string
+    /**
+     * Vendor sends `price_kobo` as the list/base amount. We store sale in `price_kobo`
+     * and list in `original_price_kobo` when a discount applies.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{
+     *     price_kobo: int|null,
+     *     original_price_kobo: int|null,
+     *     discount_type: string|null,
+     *     discount_value: int|null,
+     *     has_discount: bool,
+     * }
+     */
+    private function resolvePricingPayload(array $data, ?BusinessCatalogItem $existing): array
     {
-        return $image->store("businesses/{$business->id}/catalog", 'public');
+        $listKobo = array_key_exists('price_kobo', $data)
+            ? ($data['price_kobo'] !== null ? (int) $data['price_kobo'] : null)
+            : (
+                $existing
+                    ? CatalogPricing::listPriceKobo(
+                        $existing->price_kobo,
+                        $existing->original_price_kobo,
+                        (bool) $existing->has_discount,
+                    )
+                    : null
+            );
+
+        $priceFrom = array_key_exists('price_from', $data)
+            ? (bool) $data['price_from']
+            : (bool) ($existing?->price_from ?? false);
+
+        $discountType = array_key_exists('discount_type', $data)
+            ? $data['discount_type']
+            : $existing?->discount_type;
+
+        $discountValue = array_key_exists('discount_value', $data)
+            ? $data['discount_value']
+            : $existing?->discount_value;
+
+        return CatalogPricing::resolveStoredPrices([
+            'price_kobo' => $listKobo,
+            'price_from' => $priceFrom,
+            'discount_type' => is_string($discountType) || $discountType === null ? $discountType : null,
+            'discount_value' => $discountValue !== null ? (int) $discountValue : null,
+        ]);
     }
 }

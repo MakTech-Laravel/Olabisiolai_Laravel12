@@ -15,7 +15,6 @@ use App\Models\Location;
 use App\Models\Payment;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Passport\ClientRepository;
 use Tests\TestCase;
@@ -54,8 +53,6 @@ class VendorSubscriptionTest extends TestCase
             'services' => ['Consulting'],
             'phone' => '+2348012345678',
             'subscription_plan' => 'premium',
-            'logo' => UploadedFile::fake()->image('logo.png'),
-            'cover_photos' => [UploadedFile::fake()->image('cover.png')],
         ]);
 
         $createResponse->assertCreated();

@@ -62,6 +62,42 @@ final class MessagingHelper
     }
 
     /**
+     * Name shown for a message sender to a specific viewer.
+     *
+     * In business-tagged conversations, the business owner appears as the business name
+     * to customers (not their personal name). The business owner still sees senders'
+     * personal names in their business inbox.
+     */
+    public static function messageSenderDisplayName(
+        ?User $sender,
+        ?Conversation $conversation = null,
+        ?User $viewer = null,
+    ): string {
+        if ($sender === null) {
+            return 'Unknown';
+        }
+
+        if ($conversation !== null
+            && $conversation->business_info_id !== null
+            && $conversation->relationLoaded('businessInfo')
+            && $conversation->businessInfo !== null
+        ) {
+            $businessOwnerId = (int) $conversation->businessInfo->user_id;
+            $businessName = trim((string) ($conversation->businessInfo->business_name ?? ''));
+
+            if ($viewer !== null && $businessOwnerId > 0 && (int) $viewer->id === $businessOwnerId) {
+                return self::userPersonalName($sender);
+            }
+
+            if ($businessOwnerId > 0 && (int) $sender->id === $businessOwnerId && $businessName !== '') {
+                return $businessName;
+            }
+        }
+
+        return self::participantDisplayName($sender);
+    }
+
+    /**
      * Secondary line shown when picking a message recipient (email, category, etc.).
      */
     public static function recipientSearchSubtitle(?User $user): string

@@ -51,6 +51,7 @@ final class MessageController extends Controller
         $paginator = $this->messages->getMessages((string) $conversation->uuid, $user, is_string($cursor) ? $cursor : null);
 
         $conversation->loadMissing([
+            'businessInfo:id,user_id,business_name,logo_path,verified_at',
             'participantRows.user.messagingPresence',
             'participantRows.user.businessInfo:id,user_id,business_name,logo_path,verified_at',
         ]);

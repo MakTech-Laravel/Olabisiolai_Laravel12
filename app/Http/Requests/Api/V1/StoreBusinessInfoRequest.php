@@ -6,7 +6,6 @@ use App\Http\Requests\Concerns\ValidatesBusinessHours;
 use App\Http\Requests\Concerns\ValidatesBusinessSubcategory;
 use App\Http\Requests\Concerns\ValidatesSocialAccounts;
 use App\Rules\NigerianPhoneNumber;
-use App\Services\LocationCatalogService;
 use App\Services\SubscriptionService;
 use App\Support\PhoneNormalizer;
 use Illuminate\Contracts\Validation\ValidationRule;
@@ -21,9 +20,6 @@ class StoreBusinessInfoRequest extends FormRequest
     use ValidatesBusinessSubcategory;
     use ValidatesSocialAccounts;
 
-    /**
-     * Determine if the user is authorized to make this request.
-     */
     public function authorize(): bool
     {
         return true;
@@ -45,12 +41,12 @@ class StoreBusinessInfoRequest extends FormRequest
     }
 
     /**
+     * Files are stored via MediaUploadService inside BusinessInfoService (media row + optimize job).
+     *
      * @return array<string, array<int, File|string|ValidationRule>|string>
      */
     public function rules(): array
     {
-        $locationCatalog = app(LocationCatalogService::class);
-
         return [
             ...$this->businessHoursRules(required: false),
             'location_id' => ['required', 'integer', 'exists:locations,id'],

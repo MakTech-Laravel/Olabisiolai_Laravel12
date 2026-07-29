@@ -25,18 +25,26 @@ final class MessageResource extends JsonResource
         $status = MessagingHelper::messageStatusForViewer($this->resource, $viewer);
         $isOwn = $viewer !== null && (int) $this->sender_id === (int) $viewer->id;
 
+        $this->resource->loadMissing([
+            'conversation.businessInfo:id,user_id,business_name,logo_path',
+            'sender.businessInfo:id,user_id,business_name,logo_path,verified_at',
+            'parent.sender.businessInfo:id,user_id,business_name,logo_path,verified_at',
+        ]);
+
+        $conversation = $this->relationLoaded('conversation') ? $this->conversation : null;
+
         return [
             'uuid' => $this->uuid,
             'conversation_id' => $this->conversation_id,
             'sender' => $this->whenLoaded('sender', fn() => [
                 'id' => $this->sender?->id,
-                'name' => $this->sender?->name,
+                'name' => MessagingHelper::messageSenderDisplayName($this->sender, $conversation, $viewer),
                 'avatar_url' => MessagingHelper::userAvatarUrl($this->sender),
             ]),
             'parent_uuid' => $this->parent_id !== null
                 ? ($this->relationLoaded('parent') ? $this->parent?->uuid : null)
                 : null,
-            'parent' => $this->whenLoaded('parent', function () {
+            'parent' => $this->whenLoaded('parent', function () use ($conversation, $viewer) {
                 if ($this->parent === null) {
                     return null;
                 }
@@ -49,7 +57,11 @@ final class MessageResource extends JsonResource
                     'created_at' => $this->parent->created_at?->toIso8601String(),
                     'sender' => $this->parent->relationLoaded('sender') ? [
                         'id' => $this->parent->sender?->id,
-                        'name' => $this->parent->sender?->name,
+                        'name' => MessagingHelper::messageSenderDisplayName(
+                            $this->parent->sender,
+                            $conversation,
+                            $viewer,
+                        ),
                         'avatar_url' => MessagingHelper::userAvatarUrl($this->parent->sender),
                     ] : null,
                     'attachments' => $this->parent->relationLoaded('attachments')

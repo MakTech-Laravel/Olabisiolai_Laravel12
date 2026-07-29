@@ -184,6 +184,19 @@ class VerificationService
             throw new RuntimeException('At least one document is required.');
         }
 
+        $submittedTypes = array_values(array_unique(array_map(
+            fn (array $item): string => (string) $item['document_type'],
+            $documents,
+        )));
+        $missingRequired = array_values(array_diff($this->requiredVerificationDocumentTypes(), $submittedTypes));
+        if ($missingRequired !== []) {
+            throw new RuntimeException(
+                'Upload all required documents: '
+                .implode(', ', array_map(fn (string $type): string => str_replace('_', ' ', $type), $missingRequired))
+                .'.',
+            );
+        }
+
         $folderPath = 'businesses/'.$business->id.'/verification';
         $uploadedPaths = [];
 
@@ -392,7 +405,7 @@ class VerificationService
     public function allLatestDocumentsApproved(BusinessInfo $business): bool
     {
         $latest = $this->latestDocumentsByType((int) $business->id);
-        $requiredTypes = ['business_registration', 'identity_proof', 'address_proof'];
+        $requiredTypes = $this->requiredVerificationDocumentTypes();
 
         foreach ($requiredTypes as $type) {
             if (! $latest->has($type)) {
@@ -717,11 +730,7 @@ class VerificationService
      */
     public function assertCanApproveVerification(BusinessInfo $business): void
     {
-        $requiredTypes = [
-            'business_registration',
-            'identity_proof',
-            'address_proof',
-        ];
+        $requiredTypes = $this->requiredVerificationDocumentTypes();
 
         $latestByType = $this->latestDocumentsByType((int) $business->id);
 
@@ -742,12 +751,14 @@ class VerificationService
             );
         }
 
-        $rejectedLatest = $latestByType->filter(
-            fn (VerificationDocument $document): bool => $document->status === VerificationDocumentStatus::Rejected,
-        );
+        $rejectedRequired = $latestByType
+            ->only($requiredTypes)
+            ->filter(
+                fn (VerificationDocument $document): bool => $document->status === VerificationDocumentStatus::Rejected,
+            );
 
-        if ($rejectedLatest->isNotEmpty()) {
-            $labels = $rejectedLatest
+        if ($rejectedRequired->isNotEmpty()) {
+            $labels = $rejectedRequired
                 ->map(fn (VerificationDocument $document): string => str_replace('_', ' ', (string) $document->document_type))
                 ->values()
                 ->all();
@@ -757,12 +768,14 @@ class VerificationService
             );
         }
 
-        $blockingLatest = $latestByType->filter(
-            fn (VerificationDocument $document): bool => $document->status !== VerificationDocumentStatus::Approved
-                && $document->status !== VerificationDocumentStatus::Pending,
-        );
+        $blockingRequired = $latestByType
+            ->only($requiredTypes)
+            ->filter(
+                fn (VerificationDocument $document): bool => $document->status !== VerificationDocumentStatus::Approved
+                    && $document->status !== VerificationDocumentStatus::Pending,
+            );
 
-        if ($blockingLatest->isNotEmpty()) {
+        if ($blockingRequired->isNotEmpty()) {
             throw new RuntimeException('Cannot approve verification until every required document is approved or pending review.');
         }
 
@@ -788,6 +801,19 @@ class VerificationService
     }
 
     /**
+     * Identity and address proof are required. CAC / business registration is optional.
+     *
+     * @return list<string>
+     */
+    public function requiredVerificationDocumentTypes(): array
+    {
+        return [
+            'identity_proof',
+            'address_proof',
+        ];
+    }
+
+    /**
      * @return Collection<string, VerificationDocument>
      */
     public function latestDocumentsByType(int $businessInfoId): Collection
@@ -797,7 +823,9 @@ class VerificationService
             ->orderByDesc('id')
             ->get()
             ->groupBy('document_type')
-            ->map(fn (Collection $group): VerificationDocument => $group->first());
+            ->map(fn (Collection $group): VerificationDocument => $group->first())
+            // Support Collection: Eloquent Collection::only() matches primary keys, not type keys.
+            ->toBase();
     }
 
     public function approveAllPendingDocuments(BusinessInfo $business, Authenticatable $admin, ?string $note): BusinessInfo
@@ -891,7 +919,9 @@ class VerificationService
      */
     private function assertAllLatestDocumentsApproved(int $businessInfoId): void
     {
+        $requiredTypes = $this->requiredVerificationDocumentTypes();
         $notApproved = $this->latestDocumentsByType($businessInfoId)
+            ->only($requiredTypes)
             ->filter(fn (VerificationDocument $document): bool => $document->status !== VerificationDocumentStatus::Approved);
 
         if ($notApproved->isNotEmpty()) {
@@ -1048,7 +1078,7 @@ class VerificationService
             throw new RuntimeException('Business has no owner account.');
         }
 
-        $packageId = $this->resolveLastVerificationPackageId($business) ?? 'individual';
+        $packageId = $this->resolveLastVerificationPackageId($business) ?? 'business';
         $package = $this->paymentService->findPackage(PaymentPurpose::Verification, $packageId);
         $packageTitle = (string) ($package['title'] ?? $packageId);
 
