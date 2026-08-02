@@ -300,12 +300,21 @@ class VendorVerificationController extends Controller
     public function status(Request $request)
     {
         try {
-            $vendor = $request->user('api');
-            $business = $this->businessInfoService->resolveBusinessFromRequest($request);
+            $request->validate([
+                'business_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            ]);
 
+            $business = $this->businessInfoService->resolveBusinessFromRequest($request);
             $statusData = $this->verificationService->getVendorVerificationStatus($business);
 
             return sendResponse(true, 'Verification status retrieved successfully.', $statusData);
+        } catch (ValidationException $exception) {
+            return sendResponse(
+                false,
+                $exception->validator->errors()->first(),
+                ['errors' => $exception->errors()],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
         } catch (Throwable $throwable) {
             report($throwable);
 
