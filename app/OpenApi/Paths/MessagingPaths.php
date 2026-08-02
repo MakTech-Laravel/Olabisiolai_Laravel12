@@ -212,6 +212,9 @@ class MessagingPaths
     #[OA\Get(
     path: '/v1/conversations',
     summary: 'List Conversations',
+    description: 'Single endpoint for both personal and business inboxes. '
+        .'Use `inbox=personal` for the buyer personal inbox, or `business_info_id` for a vendor business inbox. '
+        .'Omit both to return all conversations where the user is a participant.',
     tags: [
         'Messaging',
     ],
@@ -219,6 +222,70 @@ class MessagingPaths
         [
             'passport' => [],
         ],
+    ],
+    parameters: [
+        new OA\Parameter(
+            name: 'inbox',
+            in: 'query',
+            required: false,
+            description: 'Personal inbox filter. Use `personal` for conversations where the user is messaging a business they do not own.',
+            schema: new OA\Schema(
+                type: 'string',
+                enum: ['personal'],
+            ),
+            example: 'personal',
+        ),
+        new OA\Parameter(
+            name: 'business_info_id',
+            in: 'query',
+            required: false,
+            description: 'Business inbox filter. Returns conversations for the given business owned by the authenticated vendor.',
+            schema: new OA\Schema(
+                type: 'integer',
+            ),
+            example: 12,
+        ),
+        new OA\Parameter(
+            name: 'type',
+            in: 'query',
+            required: false,
+            description: 'Filter by conversation type.',
+            schema: new OA\Schema(
+                type: 'string',
+                enum: ['direct', 'group'],
+            ),
+            example: 'direct',
+        ),
+        new OA\Parameter(
+            name: 'archived',
+            in: 'query',
+            required: false,
+            description: 'When true, only archived conversations.',
+            schema: new OA\Schema(
+                type: 'boolean',
+            ),
+            example: false,
+        ),
+        new OA\Parameter(
+            name: 'unread',
+            in: 'query',
+            required: false,
+            description: 'When true, only conversations with unread messages.',
+            schema: new OA\Schema(
+                type: 'boolean',
+            ),
+            example: true,
+        ),
+        new OA\Parameter(
+            name: 'verified_only',
+            in: 'query',
+            required: false,
+            description: 'When true, only conversations with a verified business peer.',
+            schema: new OA\Schema(
+                type: 'boolean',
+            ),
+            example: false,
+        ),
     ],
     responses: [
         new OA\Response(
