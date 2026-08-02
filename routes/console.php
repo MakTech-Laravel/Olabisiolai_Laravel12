@@ -9,3 +9,4 @@ Artisan::command('inspire', function () {
 });
 
 Schedule::command('subscriptions:expire')->hourly();
+Schedule::command('sitemap:generate')->daily();
