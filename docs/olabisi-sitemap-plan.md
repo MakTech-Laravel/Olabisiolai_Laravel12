@@ -264,3 +264,7 @@ Phase 2 shipped as commit `9852f16`. Live parent-vs-HEAD verification (local wor
 ## 8. Admin SEO phase (jon_faithful parity for split API + SPA)
 
 Shipped: seeded `seo_pages` keyed by SPA path, admin meta CRUD + Generate Sitemap (`Cache::lock`), public `GET /api/v1/seo-pages/by-path?path=…`, React `/admin/seo` + public `DocumentHead`. Static sitemap `lastmod` prefers `SeoPage.updated_at` when a row exists. Inventory remains config/seeded (no free-form path creation). Named SEO permissions and public meta caching are deferred.
+
+## 9. SEO crawlability (CSR gap) — next
+
+Phase 1 audit confirmed CSR-only SPA: raw HTML is a generic shell. **v1 fix (shipped in code):** Laravel server-side meta injection + SPA nginx proxy for HTML documents (not full SSR). Plans: [`seo-crawlability-phase2.md`](seo-crawlability-phase2.md), [`seo-crawlability-complete.md`](seo-crawlability-complete.md). **Decision #0:** code-complete for `<head>`; SEO-ready after API+SPA deploy.

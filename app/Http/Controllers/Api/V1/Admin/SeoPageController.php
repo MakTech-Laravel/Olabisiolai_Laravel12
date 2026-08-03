@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\Admin\UpdateSeoPageRequest;
 use App\Http\Resources\Api\V1\SeoPageResource;
 use App\Models\SeoPage;
+use App\Services\SeoPageService;
 use App\Services\SitemapService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -15,7 +16,10 @@ use Throwable;
 
 class SeoPageController extends Controller
 {
-    public function __construct(private readonly SitemapService $sitemapService) {}
+    public function __construct(
+        private readonly SitemapService $sitemapService,
+        private readonly SeoPageService $seoPageService,
+    ) {}
 
     public function index(Request $request)
     {
@@ -113,6 +117,8 @@ class SeoPageController extends Controller
                 'meta_description' => $validated['meta_description'] ?? null,
                 'meta_keywords' => $validated['meta_keywords'] ?? null,
             ]);
+
+            $this->seoPageService->forgetShellCacheForPath($page->path);
 
             return sendResponse(true, 'SEO page updated successfully.', [
                 'page' => new SeoPageResource($page->fresh()),

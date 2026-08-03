@@ -3,20 +3,20 @@
 namespace App\Http\Controllers\Api\V1\Public;
 
 use App\Http\Controllers\Controller;
-use App\Models\SeoPage;
+use App\Services\SeoPageService;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
 class PublicSeoPageController extends Controller
 {
+    public function __construct(private readonly SeoPageService $seoPages) {}
+
     public function byPath(Request $request)
     {
         try {
             $raw = $request->query('path');
-            $path = SeoPage::normalizePath(is_string($raw) ? $raw : null);
-
-            $page = SeoPage::query()->where('path', $path)->first();
+            $page = $this->seoPages->findByPath(is_string($raw) ? $raw : null);
 
             if ($page === null) {
                 return sendResponse(false, 'SEO page not found for this path.', null, Response::HTTP_NOT_FOUND);
