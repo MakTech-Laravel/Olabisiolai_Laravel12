@@ -17,6 +17,9 @@ class SeoPage extends Model
         'meta_title',
         'meta_description',
         'meta_keywords',
+        'canonical_url',
+        'noindex',
+        'og_image',
         'changefreq',
         'priority',
     ];
@@ -28,6 +31,7 @@ class SeoPage extends Model
     {
         return [
             'priority' => 'float',
+            'noindex' => 'boolean',
         ];
     }
 

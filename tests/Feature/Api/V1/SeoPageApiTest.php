@@ -63,13 +63,20 @@ class SeoPageApiTest extends TestCase
             'meta_title' => 'About Gidira',
             'meta_description' => 'Learn about Gidira marketplace.',
             'meta_keywords' => 'gidira, about',
+            'canonical_url' => 'https://www.frontend.test/about-us',
+            'noindex' => true,
+            'og_image' => 'https://cdn.test/about.jpg',
         ]);
 
         $update->assertOk();
         $update->assertJsonPath('data.page.meta_title', 'About Gidira');
+        $update->assertJsonPath('data.page.noindex', true);
+        $update->assertJsonPath('data.page.canonical_url', 'https://www.frontend.test/about-us');
+        $update->assertJsonPath('data.page.og_image', 'https://cdn.test/about.jpg');
         $this->assertDatabaseHas('seo_pages', [
             'id' => $about->id,
             'meta_title' => 'About Gidira',
+            'noindex' => 1,
         ]);
     }
 

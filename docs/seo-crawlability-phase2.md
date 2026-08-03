@@ -1,11 +1,11 @@
 # Phase 2 — SEO Crawlability (meta injection)
 
-**Status:** Phase 2 **code-complete** for Decision #0 (meta injection). Prod still needs deploy.  
+**Status:** Phase 2 + ZBC-pattern resolve/robots/noindex **code-complete**. Prod still needs deploy.  
 **Complete plan:** [`seo-crawlability-complete.md`](seo-crawlability-complete.md)  
 **Appendix to:** Admin SEO management plan  
 **Date:** 2026-08-03  
 
-**Shipped:** C (robots) → A (`GET /spa-shell`) → B (SPA nginx proxy) → completion pack (template sync, business/catalog meta, og/twitter). Decision #0 is **code-complete**; call product SEO-ready for `<head>` only after API+SPA deploy + ops checklist.
+**Shipped:** C→A→B shell injection; then ZBC-parity (`/seo-pages/resolve`, dynamic `/robots.txt`, noindex/canonical/og_image, www nginx proxy for robots+sitemap). **No** `/news-sitemap.xml`. Decision #0 code-complete for `<head>`; full SSR remains out of scope.
 
 ---
 

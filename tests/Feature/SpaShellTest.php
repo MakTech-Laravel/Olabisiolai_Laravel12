@@ -60,6 +60,7 @@ class SpaShellTest extends TestCase
         $response->assertSee('property="og:title" content="About Gidira"', false);
         $response->assertSee('property="og:description" content="Learn about Gidira."', false);
         $response->assertSee('property="og:site_name" content="Gidira"', false);
+        $response->assertSee('name="robots" content="index,follow"', false);
         $response->assertSee('name="twitter:card" content="summary"', false);
         $response->assertSee('https://www.frontend.test/about', false);
     }
@@ -68,8 +69,8 @@ class SpaShellTest extends TestCase
     {
         $response = $this->get('/spa-shell?path=/no-such-page');
         $response->assertOk();
-        $response->assertSee('<title>Gidira</title>', false);
         $response->assertDontSee('gidira-seo-start', false);
+        $response->assertSee('<title>', false);
     }
 
     public function test_admin_seo_update_invalidates_shell_cache(): void
@@ -131,7 +132,6 @@ class SpaShellTest extends TestCase
         $response = $this->get('/spa-shell?path='.$path);
 
         $response->assertOk();
-        $response->assertSee('<title>Gidira</title>', false);
         $response->assertDontSee('Hidden Biz', false);
         $response->assertDontSee('gidira-seo-start', false);
     }

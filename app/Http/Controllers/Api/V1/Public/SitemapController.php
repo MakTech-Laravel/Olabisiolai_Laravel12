@@ -10,14 +10,17 @@ class SitemapController extends Controller
 {
     public function __invoke(SitemapService $sitemapService): Response
     {
-        $path = $sitemapService->path();
-
-        $xml = is_file($path)
-            ? (string) file_get_contents($path)
-            : $sitemapService->emptyUrlsetXml();
-
-        return response($xml, 200, [
+        return response($sitemapService->cachedXml(), 200, [
             'Content-Type' => 'application/xml; charset=UTF-8',
+            'Cache-Control' => 'public, max-age=300',
+        ]);
+    }
+
+    public function robots(SitemapService $sitemapService): Response
+    {
+        return response($sitemapService->robotsTxt(), 200, [
+            'Content-Type' => 'text/plain; charset=UTF-8',
+            'Cache-Control' => 'public, max-age=300',
         ]);
     }
 }

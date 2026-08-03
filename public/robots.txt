@@ -1,4 +1,0 @@
-User-agent: *
-Disallow:
-
-Sitemap: https://api.gidira.tech/sitemap.xml

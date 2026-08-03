@@ -267,4 +267,4 @@ Shipped: seeded `seo_pages` keyed by SPA path, admin meta CRUD + Generate Sitema
 
 ## 9. SEO crawlability (CSR gap) — next
 
-Phase 1 audit confirmed CSR-only SPA: raw HTML is a generic shell. **v1 fix (shipped in code):** Laravel server-side meta injection + SPA nginx proxy for HTML documents (not full SSR). Plans: [`seo-crawlability-phase2.md`](seo-crawlability-phase2.md), [`seo-crawlability-complete.md`](seo-crawlability-complete.md). **Decision #0:** code-complete for `<head>`; SEO-ready after API+SPA deploy.
+Phase 1 audit confirmed CSR-only SPA. **v1 + ZBC-pattern (shipped in code):** Laravel `SeoResolverService` + spa-shell + dynamic `/robots.txt` + sitemap (no Google News sitemap) + www nginx proxy for robots/sitemap/HTML. Plans: [`seo-crawlability-phase2.md`](seo-crawlability-phase2.md), [`seo-crawlability-complete.md`](seo-crawlability-complete.md).

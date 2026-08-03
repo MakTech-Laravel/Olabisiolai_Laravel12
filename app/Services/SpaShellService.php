@@ -3,20 +3,19 @@
 namespace App\Services;
 
 use App\Models\SeoPage;
-use App\Support\FrontendUrl;
-use App\Support\SpaShellMeta;
+use App\Support\ResolvedSeo;
 use Illuminate\Support\Facades\Cache;
 
 class SpaShellService
 {
     public function __construct(
         private readonly SeoPageService $seoPages,
-        private readonly SpaShellMetaResolver $metaResolver,
+        private readonly SeoResolverService $resolver,
         private readonly SpaShellTemplateService $templates,
     ) {}
 
     /**
-     * Return the SPA index.html with per-path SEO meta injected when available.
+     * Return the SPA index.html with per-path SEO meta injected when a match exists.
      */
     public function render(?string $path): string
     {
@@ -26,22 +25,19 @@ class SpaShellService
 
         return Cache::remember($cacheKey, $ttl, function () use ($normalized): string {
             $html = $this->templates->load();
-            $meta = $this->metaResolver->resolve($normalized);
+            $seo = $this->resolver->resolve($normalized);
 
-            if ($meta === null) {
+            if (! $seo->hasMatch()) {
                 return $html;
             }
 
-            return $this->injectMeta($html, $meta, $normalized);
+            return $this->inject($html, $seo);
         });
     }
 
-    private function injectMeta(string $html, SpaShellMeta $meta, string $normalizedPath): string
+    private function inject(string $html, ResolvedSeo $seo): string
     {
-        $title = $meta->title !== '' ? $meta->title : 'Gidira';
-        $description = $meta->description;
-        $keywords = $meta->keywords;
-        $canonical = FrontendUrl::to($normalizedPath);
+        $title = $seo->title !== '' ? $seo->title : 'Gidira';
 
         $html = preg_replace(
             '/<title>[^<]*<\/title>/i',
@@ -51,30 +47,40 @@ class SpaShellService
         ) ?? $html;
 
         $tags = [];
-        if ($description !== null && $description !== '') {
-            $tags[] = '<meta name="description" content="'.$this->escape($description).'" />';
+        if ($seo->description !== null && $seo->description !== '') {
+            $tags[] = '<meta name="description" content="'.$this->escape($seo->description).'" />';
         }
-        if ($keywords !== null && $keywords !== '') {
-            $tags[] = '<meta name="keywords" content="'.$this->escape($keywords).'" />';
+        if ($seo->keywords !== null && $seo->keywords !== '') {
+            $tags[] = '<meta name="keywords" content="'.$this->escape($seo->keywords).'" />';
         }
-        $tags[] = '<meta property="og:type" content="website" />';
-        $tags[] = '<meta property="og:site_name" content="Gidira" />';
-        $tags[] = '<meta property="og:title" content="'.$this->escape($title).'" />';
-        if ($description !== null && $description !== '') {
-            $tags[] = '<meta property="og:description" content="'.$this->escape($description).'" />';
+        $tags[] = '<meta name="robots" content="'.$this->escape($seo->robots).'" />';
+
+        foreach ($seo->og as $property => $content) {
+            if (! is_string($content) || $content === '') {
+                continue;
+            }
+            $tags[] = '<meta property="og:'.$this->escape((string) $property).'" content="'.$this->escape($content).'" />';
         }
-        $tags[] = '<meta property="og:url" content="'.$this->escape($canonical).'" />';
-        $tags[] = '<meta name="twitter:card" content="summary" />';
-        $tags[] = '<meta name="twitter:title" content="'.$this->escape($title).'" />';
-        if ($description !== null && $description !== '') {
-            $tags[] = '<meta name="twitter:description" content="'.$this->escape($description).'" />';
+
+        foreach ($seo->twitter as $name => $content) {
+            if (! is_string($content) || $content === '') {
+                continue;
+            }
+            $tags[] = '<meta name="twitter:'.$this->escape((string) $name).'" content="'.$this->escape($content).'" />';
         }
-        $tags[] = '<link rel="canonical" href="'.$this->escape($canonical).'" />';
+
+        $tags[] = '<link rel="canonical" href="'.$this->escape($seo->canonical).'" />';
+
+        foreach ($seo->jsonLd as $block) {
+            $json = json_encode($block, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            if (! is_string($json)) {
+                continue;
+            }
+            $tags[] = '<script type="application/ld+json">'.$json.'</script>';
+        }
 
         $injection = "\n    ".implode("\n    ", $tags)."\n";
-
         $html = preg_replace('/\s*<!--gidira-seo-start-->.*?<!--gidira-seo-end-->\s*/s', "\n", $html) ?? $html;
-
         $block = "<!--gidira-seo-start-->{$injection}<!--gidira-seo-end-->";
 
         if (stripos($html, '</head>') !== false) {

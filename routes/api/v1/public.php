@@ -73,6 +73,9 @@ Route::get('/about', [PublicCmsPageController::class, 'show'])->defaults('slug',
 Route::get('/privacy-policy', [PublicCmsPageController::class, 'show'])->defaults('slug', 'privacy-policy')->name('privacy-policy');
 Route::get('/terms', [PublicCmsPageController::class, 'show'])->defaults('slug', 'terms')->name('terms');
 Route::get('/seo-pages/by-path', [PublicSeoPageController::class, 'byPath'])->name('seo-pages.by-path');
+Route::get('/seo-pages/resolve', [PublicSeoPageController::class, 'resolve'])
+    ->middleware('throttle:120,1')
+    ->name('seo-pages.resolve');
 
 // Public realtime diagnostics (used by the frontend /ws-test console).
 Route::controller(RealtimeController::class)->prefix('realtime')->group(function () {

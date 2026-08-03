@@ -116,9 +116,13 @@ class SeoPageController extends Controller
                 'meta_title' => $validated['meta_title'] ?? null,
                 'meta_description' => $validated['meta_description'] ?? null,
                 'meta_keywords' => $validated['meta_keywords'] ?? null,
+                'canonical_url' => $validated['canonical_url'] ?? null,
+                'noindex' => (bool) ($validated['noindex'] ?? false),
+                'og_image' => $validated['og_image'] ?? null,
             ]);
 
             $this->seoPageService->forgetShellCacheForPath($page->path);
+            $this->sitemapService->forgetResponseCache();
 
             return sendResponse(true, 'SEO page updated successfully.', [
                 'page' => new SeoPageResource($page->fresh()),

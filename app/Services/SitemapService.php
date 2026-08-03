@@ -7,6 +7,7 @@ use App\Models\SeoPage;
 use App\Support\EncryptId;
 use App\Support\FrontendUrl;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Spatie\Sitemap\Sitemap;
 use Spatie\Sitemap\Tags\Url;
@@ -52,8 +53,6 @@ class SitemapService
         $this->addBusinesses($sitemap);
         $this->addCatalogItems($sitemap);
 
-        // Future: if tag count > CHUNK_HINT, split into static / businesses / catalog
-        // named chunks and return a sitemap-index writer instead.
         return ['sitemap' => $sitemap];
     }
 
@@ -73,6 +72,7 @@ class SitemapService
         if (count($chunks) === 1) {
             $sitemap = reset($chunks);
             $sitemap->writeToFile($primaryPath);
+            $this->forgetResponseCache();
 
             return [
                 'path' => $primaryPath,
@@ -81,16 +81,73 @@ class SitemapService
             ];
         }
 
-        // Future sitemap-index path: write each chunk file + index as sitemap.xml
         foreach ($chunks as $name => $sitemap) {
             $sitemap->writeToFile($this->path($name.'.xml'));
         }
+
+        $this->forgetResponseCache();
 
         return [
             'path' => $primaryPath,
             'urls' => 0,
             'chunks' => count($chunks),
         ];
+    }
+
+    /**
+     * Cached XML for HTTP responses (file generate remains source of truth when warm).
+     */
+    public function cachedXml(): string
+    {
+        $ttl = max(60, (int) config('seo.sitemap_response_cache_ttl', 3600));
+        $key = (string) config('seo.sitemap_response_cache_key', 'sitemap:general');
+
+        return Cache::remember($key, $ttl, function (): string {
+            $path = $this->path();
+            if (is_file($path)) {
+                return (string) file_get_contents($path);
+            }
+
+            return $this->emptyUrlsetXml();
+        });
+    }
+
+    public function forgetResponseCache(): void
+    {
+        Cache::forget((string) config('seo.sitemap_response_cache_key', 'sitemap:general'));
+    }
+
+    /**
+     * Flush response cache and regenerate the on-disk sitemap.
+     *
+     * @return array{path: string, urls: int, chunks: int}
+     */
+    public function refresh(): array
+    {
+        $this->forgetResponseCache();
+
+        return $this->generate();
+    }
+
+    public function robotsTxt(): string
+    {
+        $lines = [
+            'User-agent: *',
+            'Allow: /',
+        ];
+
+        foreach (config('seo.robots_disallow', []) as $path) {
+            $path = trim((string) $path);
+            if ($path !== '') {
+                $lines[] = 'Disallow: '.$path;
+            }
+        }
+
+        $lines[] = '';
+        $lines[] = 'Sitemap: '.FrontendUrl::to('/sitemap.xml');
+        $lines[] = '';
+
+        return implode("\n", $lines);
     }
 
     public function emptyUrlsetXml(): string
@@ -114,7 +171,7 @@ class SitemapService
 
         /** @var \Illuminate\Support\Collection<string, SeoPage> $seoByPath */
         $seoByPath = SeoPage::query()
-            ->get(['path', 'updated_at', 'changefreq', 'priority'])
+            ->get(['path', 'updated_at', 'changefreq', 'priority', 'noindex'])
             ->keyBy('path');
 
         foreach (config('sitemap-urls', []) as $entry) {
@@ -124,6 +181,11 @@ class SitemapService
             }
 
             $normalizedPath = SeoPage::normalizePath($path);
+            $seoPage = $seoByPath->get($normalizedPath);
+            if ($seoPage instanceof SeoPage && $seoPage->noindex) {
+                continue;
+            }
+
             $changefreq = (string) ($entry['changefreq'] ?? Url::CHANGE_FREQUENCY_WEEKLY);
             $priority = (float) ($entry['priority'] ?? 0.7);
             $cmsType = $entry['cms_type'] ?? null;
@@ -133,7 +195,6 @@ class SitemapService
                 $lastmod = Carbon::parse($cmsLastmods[$cmsType]);
             }
 
-            $seoPage = $seoByPath->get($normalizedPath);
             if ($seoPage instanceof SeoPage) {
                 $lastmod = Carbon::parse($seoPage->updated_at);
                 if (is_string($seoPage->changefreq) && $seoPage->changefreq !== '') {

@@ -8,6 +8,7 @@ use App\Enums\SubscriptionPlan;
 use App\Models\BusinessCatalogItem;
 use App\Models\BusinessInfo;
 use App\Models\CmsPage;
+use App\Models\SeoPage;
 use App\Services\SitemapService;
 use App\Support\EncryptId;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -170,6 +171,7 @@ class SitemapGenerateTest extends TestCase
     public function test_sitemap_http_empty_fallback_when_file_missing(): void
     {
         File::deleteDirectory(storage_path('app/sitemap'));
+        app(SitemapService::class)->forgetResponseCache();
 
         $response = $this->get('/sitemap.xml');
         $response->assertOk();
@@ -191,6 +193,25 @@ class SitemapGenerateTest extends TestCase
         $this->assertNotFalse($pos);
         $snippet = substr($xml, $pos, 400);
         $this->assertStringContainsString('<lastmod>'.$updatedAt->toAtomString().'</lastmod>', $snippet);
+    }
+
+    public function test_noindex_seo_page_excluded_from_sitemap_and_resolve_robots(): void
+    {
+        SeoPage::factory()->create([
+            'path' => '/about',
+            'page_name' => 'About',
+            'meta_title' => 'Hidden About',
+            'noindex' => true,
+        ]);
+
+        Artisan::call('sitemap:generate');
+        $xml = $this->generatedXml();
+        $this->assertStringNotContainsString($this->frontendBase.'/about</loc>', $xml);
+
+        $resolve = $this->getJson('/api/v1/seo-pages/resolve?path=/about');
+        $resolve->assertOk();
+        $resolve->assertJsonPath('data.robots', 'noindex,nofollow');
+        $resolve->assertJsonPath('data.title', 'Hidden About');
     }
 
     private function generatedXml(): string

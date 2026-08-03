@@ -30,4 +30,26 @@ return [
 
     'spa_shell_template_fetch_timeout' => (int) env('SPA_SHELL_TEMPLATE_FETCH_TIMEOUT', 5),
 
+    'og_default_image' => env('OG_DEFAULT_IMAGE'),
+
+    'sitemap_response_cache_ttl' => (int) env('SITEMAP_RESPONSE_CACHE_TTL', 3600),
+
+    'sitemap_response_cache_key' => 'sitemap:general',
+
+    'robots_disallow' => [
+        '/admin',
+        '/admin/',
+        '/vendor',
+        '/vendor/',
+        '/login',
+        '/register',
+        '/forgot-password',
+        '/reset-password',
+        '/auth',
+        '/auth/',
+        '/cart',
+        '/messages',
+        '/ws-test',
+    ],
+
 ];
