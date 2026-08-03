@@ -1,22 +1,21 @@
 <?php
 
-namespace Tests\Feature;
+namespace Tests\Feature\Seo;
 
 use App\Enums\BusinessStatus;
-use App\Enums\CmsPageType;
 use App\Enums\SubscriptionPlan;
 use App\Models\BusinessCatalogItem;
 use App\Models\BusinessInfo;
-use App\Models\CmsPage;
 use App\Models\SeoPage;
 use App\Services\SitemapService;
 use App\Support\EncryptId;
+use Database\Seeders\SeoPageSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
-class SitemapGenerateTest extends TestCase
+class SitemapTest extends TestCase
 {
     use RefreshDatabase;
 
@@ -33,7 +32,7 @@ class SitemapGenerateTest extends TestCase
             'app.url' => $this->apiBase,
         ]);
 
-        File::deleteDirectory(storage_path('app/sitemap'));
+        Cache::flush();
     }
 
     public function test_active_non_flagged_business_appears_with_encrypted_loc_and_lastmod(): void
@@ -44,12 +43,10 @@ class SitemapGenerateTest extends TestCase
             'updated_at' => now()->subDay(),
         ]);
 
-        Artisan::call('sitemap:generate');
-
-        $xml = $this->generatedXml();
+        $xml = $this->generalXml();
         $loc = $this->frontendBase.'/businesses/'.EncryptId::encrypt($business->id);
 
-        $this->assertStringContainsString('<loc>'. htmlspecialchars($loc, ENT_XML1).'</loc>', $xml);
+        $this->assertStringContainsString('<loc>'.htmlspecialchars($loc, ENT_XML1).'</loc>', $xml);
         $this->assertStringContainsString(
             '<lastmod>'.$business->fresh()->updated_at->toAtomString().'</lastmod>',
             $xml,
@@ -68,8 +65,7 @@ class SitemapGenerateTest extends TestCase
             'is_flagged' => false,
         ]);
 
-        Artisan::call('sitemap:generate');
-        $xml = $this->generatedXml();
+        $xml = $this->generalXml();
 
         $this->assertStringNotContainsString(
             '/businesses/'.EncryptId::encrypt($flagged->id),
@@ -110,8 +106,7 @@ class SitemapGenerateTest extends TestCase
             'sort_order' => 0,
         ]);
 
-        Artisan::call('sitemap:generate');
-        $xml = $this->generatedXml();
+        $xml = $this->generalXml();
 
         $this->assertStringContainsString(
             '<loc>'.$this->frontendBase.'/catalog/items/'.$included->id.'</loc>',
@@ -123,28 +118,34 @@ class SitemapGenerateTest extends TestCase
         );
     }
 
-    public function test_all_static_config_paths_present_with_frontend_url(): void
+    public function test_static_urls_come_from_seo_pages_not_config_alone(): void
     {
-        Artisan::call('sitemap:generate');
-        $xml = $this->generatedXml();
+        $this->seed(SeoPageSeeder::class);
 
-        foreach (config('sitemap-urls') as $entry) {
-            $path = $entry['path'];
+        $xml = $this->generalXml();
+
+        foreach (SeoPage::query()->where('noindex', false)->pluck('path') as $path) {
             $expected = $path === '/'
                 ? $this->frontendBase.'/'
                 : $this->frontendBase.$path;
 
-            $this->assertStringContainsString('<loc>'.$expected.'</loc>', $xml, "Missing static path {$path}");
+            $this->assertStringContainsString('<loc>'.$expected.'</loc>', $xml, "Missing seo_pages path {$path}");
         }
 
         $this->assertStringNotContainsString($this->apiBase.'/', $xml);
         $this->assertStringNotContainsString('http://api.test', $xml);
     }
 
-    public function test_empty_state_still_produces_valid_xml_with_static_urls(): void
+    public function test_empty_marketplace_still_produces_valid_xml_from_seo_pages(): void
     {
-        Artisan::call('sitemap:generate');
-        $xml = $this->generatedXml();
+        SeoPage::factory()->create([
+            'path' => '/',
+            'page_name' => 'Home',
+            'meta_title' => 'Home',
+            'noindex' => false,
+        ]);
+
+        $xml = $this->generalXml();
 
         $this->assertStringContainsString('<urlset', $xml);
         $this->assertStringContainsString('<loc>'.$this->frontendBase.'/</loc>', $xml);
@@ -152,47 +153,42 @@ class SitemapGenerateTest extends TestCase
         $this->assertDoesNotMatchRegularExpression('#/catalog/items/#', $xml);
     }
 
-    public function test_sitemap_http_serves_generated_file(): void
+    public function test_sitemap_http_builds_on_demand_without_disk_file(): void
     {
+        SeoPage::factory()->create([
+            'path' => '/',
+            'page_name' => 'Home',
+            'noindex' => false,
+        ]);
         BusinessInfo::factory()->create([
             'business_status' => BusinessStatus::Active,
             'is_flagged' => false,
         ]);
-
-        Artisan::call('sitemap:generate');
 
         $response = $this->get('/sitemap.xml');
         $response->assertOk();
         $response->assertHeader('content-type', 'application/xml; charset=UTF-8');
         $response->assertSee('<urlset', false);
         $response->assertSee($this->frontendBase.'/', false);
+        $this->assertTrue(Cache::has('sitemap:general:xml'));
     }
 
-    public function test_sitemap_http_empty_fallback_when_file_missing(): void
+    public function test_seo_page_updated_at_used_as_static_lastmod(): void
     {
-        File::deleteDirectory(storage_path('app/sitemap'));
-        app(SitemapService::class)->forgetResponseCache();
-
-        $response = $this->get('/sitemap.xml');
-        $response->assertOk();
-        $response->assertSee(app(SitemapService::class)->emptyUrlsetXml(), false);
-    }
-
-    public function test_cms_page_lastmod_used_for_mapped_static_paths(): void
-    {
-        $updatedAt = now()->subDays(3)->startOfSecond();
-        CmsPage::factory()->type(CmsPageType::AboutUs)->create([
-            'updated_at' => $updatedAt,
+        $stamp = now()->subDays(5)->startOfSecond();
+        SeoPage::factory()->create([
+            'path' => '/about',
+            'page_name' => 'About',
+            'noindex' => false,
+            'updated_at' => $stamp,
         ]);
 
-        Artisan::call('sitemap:generate');
-        $xml = $this->generatedXml();
-
-        $aboutLoc = '<loc>'.$this->frontendBase.'/about</loc>';
-        $pos = strpos($xml, $aboutLoc);
+        $xml = $this->generalXml();
+        $loc = '<loc>'.$this->frontendBase.'/about</loc>';
+        $pos = strpos($xml, $loc);
         $this->assertNotFalse($pos);
         $snippet = substr($xml, $pos, 400);
-        $this->assertStringContainsString('<lastmod>'.$updatedAt->toAtomString().'</lastmod>', $snippet);
+        $this->assertStringContainsString('<lastmod>'.$stamp->toAtomString().'</lastmod>', $snippet);
     }
 
     public function test_noindex_seo_page_excluded_from_sitemap_and_resolve_robots(): void
@@ -204,8 +200,7 @@ class SitemapGenerateTest extends TestCase
             'noindex' => true,
         ]);
 
-        Artisan::call('sitemap:generate');
-        $xml = $this->generatedXml();
+        $xml = $this->generalXml();
         $this->assertStringNotContainsString($this->frontendBase.'/about</loc>', $xml);
 
         $resolve = $this->getJson('/api/v1/seo-pages/resolve?path=/about');
@@ -214,11 +209,24 @@ class SitemapGenerateTest extends TestCase
         $resolve->assertJsonPath('data.title', 'Hidden About');
     }
 
-    private function generatedXml(): string
+    public function test_sitemap_refresh_warms_cache(): void
     {
-        $path = app(SitemapService::class)->path();
-        $this->assertFileExists($path);
+        SeoPage::factory()->create([
+            'path' => '/',
+            'page_name' => 'Home',
+            'noindex' => false,
+        ]);
 
-        return (string) file_get_contents($path);
+        Artisan::call('sitemap:refresh');
+
+        $this->assertTrue(Cache::has('sitemap:general:xml'));
+        $this->assertGreaterThan(0, app(SitemapService::class)->urlCount());
+    }
+
+    private function generalXml(): string
+    {
+        Cache::flush();
+
+        return $this->get('/sitemap.xml')->assertOk()->getContent();
     }
 }

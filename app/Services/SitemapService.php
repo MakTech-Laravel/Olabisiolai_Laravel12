@@ -2,131 +2,56 @@
 
 namespace App\Services;
 
-use App\Models\CmsPage;
 use App\Models\SeoPage;
 use App\Support\EncryptId;
 use App\Support\FrontendUrl;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\File;
 use Spatie\Sitemap\Sitemap;
 use Spatie\Sitemap\Tags\Url;
 
+/**
+ * Builds the general marketplace sitemap (ZBC-pattern: in-memory Spatie + Cache::remember).
+ *
+ * Static URLs come from seo_pages (config/sitemap-urls.php is seeder-only).
+ * Dynamic URLs: marketplace-visible businesses + discoverable catalog items.
+ * noindex seo_pages rows are omitted — same rule as SeoResolverService robots.
+ */
 class SitemapService
 {
-    public const DISK_DIRECTORY = 'sitemap';
+    private const CACHE_GENERAL = 'sitemap:general:xml';
 
-    public const PRIMARY_FILENAME = 'sitemap.xml';
-
-    /**
-     * Soft chunk size for a future sitemap-index split. v1 writes a single file
-     * regardless; exceeding this only logs intent via chunk keys in buildChunks().
-     */
-    public const CHUNK_HINT = 45000;
+    private const TTL_GENERAL = 3600;
 
     public function __construct(
         private readonly BusinessInfoService $businessInfoService,
         private readonly BusinessCatalogService $businessCatalogService,
     ) {}
 
-    /**
-     * Absolute path to the primary generated sitemap on local disk.
-     */
-    public function path(?string $filename = null): string
+    public function generalXml(): string
     {
-        $filename ??= self::PRIMARY_FILENAME;
+        return Cache::remember(self::CACHE_GENERAL, self::TTL_GENERAL, fn () => $this->buildGeneral()->render());
+    }
 
-        return storage_path('app/'.self::DISK_DIRECTORY.'/'.$filename);
+    public function flushCache(): void
+    {
+        Cache::forget(self::CACHE_GENERAL);
     }
 
     /**
-     * Build URL sets (chunking hook). v1 returns a single "sitemap" entry.
-     *
-     * @return array<string, Sitemap>
+     * Flush and rebuild the general sitemap cache (command + admin share this).
      */
-    public function buildChunks(): array
+    public function refresh(): void
     {
-        $generatedAt = Carbon::now();
-        $sitemap = Sitemap::create();
-
-        $this->addStaticPaths($sitemap, $generatedAt);
-        $this->addBusinesses($sitemap);
-        $this->addCatalogItems($sitemap);
-
-        return ['sitemap' => $sitemap];
+        $this->flushCache();
+        $this->generalXml();
     }
 
-    /**
-     * Generate and write sitemap chunk(s) under storage/app/sitemap/.
-     *
-     * @return array{path: string, urls: int, chunks: int}
-     */
-    public function generate(): array
+    public function urlCount(?string $xml = null): int
     {
-        $directory = storage_path('app/'.self::DISK_DIRECTORY);
-        File::ensureDirectoryExists($directory);
+        $xml ??= $this->generalXml();
 
-        $chunks = $this->buildChunks();
-        $primaryPath = $this->path(self::PRIMARY_FILENAME);
-
-        if (count($chunks) === 1) {
-            $sitemap = reset($chunks);
-            $sitemap->writeToFile($primaryPath);
-            $this->forgetResponseCache();
-
-            return [
-                'path' => $primaryPath,
-                'urls' => $this->countUrlsInFile($primaryPath),
-                'chunks' => 1,
-            ];
-        }
-
-        foreach ($chunks as $name => $sitemap) {
-            $sitemap->writeToFile($this->path($name.'.xml'));
-        }
-
-        $this->forgetResponseCache();
-
-        return [
-            'path' => $primaryPath,
-            'urls' => 0,
-            'chunks' => count($chunks),
-        ];
-    }
-
-    /**
-     * Cached XML for HTTP responses (file generate remains source of truth when warm).
-     */
-    public function cachedXml(): string
-    {
-        $ttl = max(60, (int) config('seo.sitemap_response_cache_ttl', 3600));
-        $key = (string) config('seo.sitemap_response_cache_key', 'sitemap:general');
-
-        return Cache::remember($key, $ttl, function (): string {
-            $path = $this->path();
-            if (is_file($path)) {
-                return (string) file_get_contents($path);
-            }
-
-            return $this->emptyUrlsetXml();
-        });
-    }
-
-    public function forgetResponseCache(): void
-    {
-        Cache::forget((string) config('seo.sitemap_response_cache_key', 'sitemap:general'));
-    }
-
-    /**
-     * Flush response cache and regenerate the on-disk sitemap.
-     *
-     * @return array{path: string, urls: int, chunks: int}
-     */
-    public function refresh(): array
-    {
-        $this->forgetResponseCache();
-
-        return $this->generate();
+        return substr_count($xml, '<url>');
     }
 
     public function robotsTxt(): string
@@ -150,68 +75,29 @@ class SitemapService
         return implode("\n", $lines);
     }
 
-    public function emptyUrlsetXml(): string
+    private function buildGeneral(): Sitemap
     {
-        return '<?xml version="1.0" encoding="UTF-8"?>'
-            ."\n"
-            .'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
-            ."\n"
-            .'</urlset>';
+        $sitemap = Sitemap::create();
+
+        $this->addStaticSeoPages($sitemap);
+        $this->addBusinesses($sitemap);
+        $this->addCatalogItems($sitemap);
+
+        return $sitemap;
     }
 
-    private function addStaticPaths(Sitemap $sitemap, Carbon $generatedAt): void
+    private function addStaticSeoPages(Sitemap $sitemap): void
     {
-        /** @var array<string, Carbon> $cmsLastmods */
-        $cmsLastmods = CmsPage::query()
-            ->get(['type', 'updated_at'])
-            ->mapWithKeys(fn (CmsPage $page) => [
-                $page->type instanceof \BackedEnum ? $page->type->value : (string) $page->type => $page->updated_at,
-            ])
-            ->all();
-
-        /** @var \Illuminate\Support\Collection<string, SeoPage> $seoByPath */
-        $seoByPath = SeoPage::query()
-            ->get(['path', 'updated_at', 'changefreq', 'priority', 'noindex'])
-            ->keyBy('path');
-
-        foreach (config('sitemap-urls', []) as $entry) {
-            $path = (string) ($entry['path'] ?? '');
-            if ($path === '') {
-                continue;
-            }
-
-            $normalizedPath = SeoPage::normalizePath($path);
-            $seoPage = $seoByPath->get($normalizedPath);
-            if ($seoPage instanceof SeoPage && $seoPage->noindex) {
-                continue;
-            }
-
-            $changefreq = (string) ($entry['changefreq'] ?? Url::CHANGE_FREQUENCY_WEEKLY);
-            $priority = (float) ($entry['priority'] ?? 0.7);
-            $cmsType = $entry['cms_type'] ?? null;
-            $lastmod = $generatedAt;
-
-            if (is_string($cmsType) && isset($cmsLastmods[$cmsType])) {
-                $lastmod = Carbon::parse($cmsLastmods[$cmsType]);
-            }
-
-            if ($seoPage instanceof SeoPage) {
-                $lastmod = Carbon::parse($seoPage->updated_at);
-                if (is_string($seoPage->changefreq) && $seoPage->changefreq !== '') {
-                    $changefreq = $seoPage->changefreq;
-                }
-                if ($seoPage->priority !== null) {
-                    $priority = (float) $seoPage->priority;
-                }
-            }
-
-            $sitemap->add(
-                Url::create(FrontendUrl::to($path))
-                    ->setLastModificationDate($lastmod)
-                    ->setChangeFrequency($changefreq)
-                    ->setPriority($priority)
-            );
-        }
+        SeoPage::query()
+            ->where('noindex', false)
+            ->orderBy('path')
+            ->get(['path', 'updated_at'])
+            ->each(function (SeoPage $page) use ($sitemap): void {
+                $sitemap->add(
+                    Url::create(FrontendUrl::to($page->path))
+                        ->setLastModificationDate(Carbon::parse($page->updated_at))
+                );
+            });
     }
 
     private function addBusinesses(Sitemap $sitemap): void
@@ -225,8 +111,6 @@ class SitemapService
                     $sitemap->add(
                         Url::create(FrontendUrl::to('/businesses/'.EncryptId::encrypt($business->id)))
                             ->setLastModificationDate(Carbon::parse($business->updated_at))
-                            ->setChangeFrequency(Url::CHANGE_FREQUENCY_DAILY)
-                            ->setPriority(0.9)
                     );
                 }
             });
@@ -245,21 +129,8 @@ class SitemapService
                     $sitemap->add(
                         Url::create(FrontendUrl::to('/catalog/items/'.$item->id))
                             ->setLastModificationDate(Carbon::parse($item->updated_at))
-                            ->setChangeFrequency(Url::CHANGE_FREQUENCY_DAILY)
-                            ->setPriority(0.8)
                     );
                 }
             }, 'business_catalog_items.id', 'id');
-    }
-
-    private function countUrlsInFile(string $path): int
-    {
-        if (! is_file($path)) {
-            return 0;
-        }
-
-        $contents = (string) file_get_contents($path);
-
-        return substr_count($contents, '<url>');
     }
 }

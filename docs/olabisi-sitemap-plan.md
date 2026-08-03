@@ -1,9 +1,9 @@
 # Olabisi (Gidira) — Dynamic Sitemap Plan (Phase 1)
 
-**Status:** Analysis / scoping only — **do not implement until approved.**  
-**Date:** 2026-08-02  
+**Status:** Implemented — ZBC-pattern on-demand `Cache::remember` (no disk file). See [`seo-crawlability-complete.md`](seo-crawlability-complete.md).  
+**Date:** 2026-08-02 (updated 2026-08-03)  
 **Scope:** Laravel API (`Olabisiolai_Laravel12`) + React SPA (`olabisiolai_frontend_react`)  
-**Reference:** `jon_faithful` (Laravel + Inertia)
+**Reference:** `jon_faithful` (Laravel + Inertia); sitemap generation aligned to ZBC News `SitemapService`
 
 > **Content-model note:** This marketplace is **businesses / catalog items / CMS / marketing pages**. There are no `shows` / `comics` / `games` content kinds in Olabisi. Sitemap scope maps to Gidira’s public marketplace URLs below.
 

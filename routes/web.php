@@ -11,7 +11,7 @@ Route::get('/', function () {
 
 Route::get('/robots.txt', [SitemapController::class, 'robots'])->name('robots');
 
-Route::get('/sitemap.xml', SitemapController::class)->name('sitemap');
+Route::get('/sitemap.xml', [SitemapController::class, 'general'])->name('sitemap');
 
 Route::get('/spa-shell', SpaShellController::class)
     ->middleware('throttle:120,1')

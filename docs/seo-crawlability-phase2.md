@@ -83,7 +83,7 @@ Independent of injection. Both read `seo_pages`. No shared write race. Sitemap s
 
 - Ship API `public/robots.txt` Sitemap line to prod (already in repo: `Sitemap: https://api.gidira.tech/sitemap.xml`).
 - Add SPA `public/robots.txt` → same Sitemap URL (Vite copies `public/` into `dist/` on build).
-- After API deploy: run `php artisan sitemap:generate` (or admin Generate) so `GET /sitemap.xml` is not 404.
+- After API deploy: run `php artisan sitemap:refresh` (or admin Generate) so `GET /sitemap.xml` is warm.
 - Investigate Coolify `www` 503 separately (service availability) — not a code change.
 
 ---

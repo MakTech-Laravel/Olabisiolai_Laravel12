@@ -9,17 +9,15 @@ class RefreshSitemapCommand extends Command
 {
     protected $signature = 'sitemap:refresh';
 
-    protected $description = 'Flush sitemap HTTP cache and regenerate storage/app/sitemap/sitemap.xml';
+    protected $description = 'Rebuild and warm the general sitemap cache';
 
     public function handle(SitemapService $sitemapService): int
     {
-        $result = $sitemapService->refresh();
+        $sitemapService->refresh();
 
         $this->info(sprintf(
-            'Sitemap refreshed at %s (%d urls, %d chunk(s)).',
-            $result['path'],
-            $result['urls'],
-            $result['chunks'],
+            'Sitemap cache refreshed (%d urls).',
+            $sitemapService->urlCount(),
         ));
 
         return self::SUCCESS;

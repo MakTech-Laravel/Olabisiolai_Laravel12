@@ -122,7 +122,7 @@ class SeoPageController extends Controller
             ]);
 
             $this->seoPageService->forgetShellCacheForPath($page->path);
-            $this->sitemapService->forgetResponseCache();
+            $this->sitemapService->flushCache();
 
             return sendResponse(true, 'SEO page updated successfully.', [
                 'page' => new SeoPageResource($page->fresh()),
@@ -148,7 +148,7 @@ class SeoPageController extends Controller
                 return sendResponse(false, 'Admin access required.', null, Response::HTTP_UNAUTHORIZED);
             }
 
-            $lock = Cache::lock('sitemap:generate', 120);
+            $lock = Cache::lock('sitemap:refresh', 120);
 
             if (! $lock->get()) {
                 return sendResponse(
@@ -160,15 +160,14 @@ class SeoPageController extends Controller
             }
 
             try {
-                $result = $this->sitemapService->generate();
+                $this->sitemapService->refresh();
             } finally {
                 $lock->release();
             }
 
             return sendResponse(true, 'Sitemap generated successfully.', [
-                'path' => $result['path'],
-                'urls' => $result['urls'],
-                'chunks' => $result['chunks'],
+                'urls' => $this->sitemapService->urlCount(),
+                'chunks' => 1,
             ]);
         } catch (Throwable $throwable) {
             report($throwable);

@@ -9,7 +9,6 @@ use Database\Seeders\RolePermissionSeeder;
 use Database\Seeders\SeoPageSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\File;
 use Laravel\Passport\ClientRepository;
 use Laravel\Passport\Passport;
 use Tests\TestCase;
@@ -35,7 +34,7 @@ class SeoPageApiTest extends TestCase
         );
 
         $this->seed(RolePermissionSeeder::class);
-        File::deleteDirectory(storage_path('app/sitemap'));
+        Cache::flush();
     }
 
     private function actingAsAdmin(): Admin
@@ -86,7 +85,7 @@ class SeoPageApiTest extends TestCase
         $this->postJson('/api/v1/admin/seo-pages/generate-sitemap')->assertUnauthorized();
     }
 
-    public function test_admin_generate_sitemap_writes_file(): void
+    public function test_admin_generate_sitemap_warms_cache(): void
     {
         $this->actingAsAdmin();
         $this->seed(SeoPageSeeder::class);
@@ -95,14 +94,14 @@ class SeoPageApiTest extends TestCase
         $response->assertOk();
         $response->assertJsonPath('success', true);
         $this->assertGreaterThan(0, (int) $response->json('data.urls'));
-        $this->assertFileExists(app(SitemapService::class)->path());
+        $this->assertTrue(Cache::has('sitemap:general:xml'));
     }
 
     public function test_generate_sitemap_returns_429_when_lock_held(): void
     {
         $this->actingAsAdmin();
 
-        $lock = Cache::lock('sitemap:generate', 30);
+        $lock = Cache::lock('sitemap:refresh', 30);
         $this->assertTrue($lock->get());
 
         try {
@@ -146,7 +145,7 @@ class SeoPageApiTest extends TestCase
 
         $this->postJson('/api/v1/admin/seo-pages/generate-sitemap')->assertOk();
 
-        $xml = (string) file_get_contents(app(SitemapService::class)->path());
+        $xml = app(SitemapService::class)->generalXml();
         $loc = '<loc>'.$this->frontendBase.'/about</loc>';
         $pos = strpos($xml, $loc);
         $this->assertNotFalse($pos);

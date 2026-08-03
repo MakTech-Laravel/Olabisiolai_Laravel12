@@ -32,10 +32,6 @@ return [
 
     'og_default_image' => env('OG_DEFAULT_IMAGE'),
 
-    'sitemap_response_cache_ttl' => (int) env('SITEMAP_RESPONSE_CACHE_TTL', 3600),
-
-    'sitemap_response_cache_key' => 'sitemap:general',
-
     'robots_disallow' => [
         '/admin',
         '/admin/',

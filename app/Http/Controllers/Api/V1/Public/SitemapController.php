@@ -8,17 +8,21 @@ use Illuminate\Http\Response;
 
 class SitemapController extends Controller
 {
-    public function __invoke(SitemapService $sitemapService): Response
+    public function __construct(
+        private readonly SitemapService $sitemapService,
+    ) {}
+
+    public function general(): Response
     {
-        return response($sitemapService->cachedXml(), 200, [
+        return response($this->sitemapService->generalXml(), 200, [
             'Content-Type' => 'application/xml; charset=UTF-8',
             'Cache-Control' => 'public, max-age=300',
         ]);
     }
 
-    public function robots(SitemapService $sitemapService): Response
+    public function robots(): Response
     {
-        return response($sitemapService->robotsTxt(), 200, [
+        return response($this->sitemapService->robotsTxt(), 200, [
             'Content-Type' => 'text/plain; charset=UTF-8',
             'Cache-Control' => 'public, max-age=300',
         ]);
