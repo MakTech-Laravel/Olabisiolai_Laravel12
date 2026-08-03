@@ -254,3 +254,13 @@ flowchart TB
 ---
 
 **Stop here.** No implementation until this plan is approved (with answers to §6 if preferences differ).
+
+---
+
+## 7. Post-implementation test baseline
+
+Phase 2 shipped as commit `9852f16`. Live parent-vs-HEAD verification (local worktree, no remote ops) confirmed the suite’s durable failures are **pre-existing**, not introduced by sitemap shared-file hooks. Full names and evidence: **[`docs/test-baseline.md`](test-baseline.md)** (60 solid + 1 pre-existing flake ≈ **61** when the flake fails).
+
+## 8. Admin SEO phase (jon_faithful parity for split API + SPA)
+
+Shipped: seeded `seo_pages` keyed by SPA path, admin meta CRUD + Generate Sitemap (`Cache::lock`), public `GET /api/v1/seo-pages/by-path?path=…`, React `/admin/seo` + public `DocumentHead`. Static sitemap `lastmod` prefers `SeoPage.updated_at` when a row exists. Inventory remains config/seeded (no free-form path creation). Named SEO permissions and public meta caching are deferred.

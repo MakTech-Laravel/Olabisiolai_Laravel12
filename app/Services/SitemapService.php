@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\CmsPage;
+use App\Models\SeoPage;
 use App\Support\EncryptId;
 use App\Support\FrontendUrl;
 use Carbon\Carbon;
@@ -111,12 +112,18 @@ class SitemapService
             ])
             ->all();
 
+        /** @var \Illuminate\Support\Collection<string, SeoPage> $seoByPath */
+        $seoByPath = SeoPage::query()
+            ->get(['path', 'updated_at', 'changefreq', 'priority'])
+            ->keyBy('path');
+
         foreach (config('sitemap-urls', []) as $entry) {
             $path = (string) ($entry['path'] ?? '');
             if ($path === '') {
                 continue;
             }
 
+            $normalizedPath = SeoPage::normalizePath($path);
             $changefreq = (string) ($entry['changefreq'] ?? Url::CHANGE_FREQUENCY_WEEKLY);
             $priority = (float) ($entry['priority'] ?? 0.7);
             $cmsType = $entry['cms_type'] ?? null;
@@ -124,6 +131,17 @@ class SitemapService
 
             if (is_string($cmsType) && isset($cmsLastmods[$cmsType])) {
                 $lastmod = Carbon::parse($cmsLastmods[$cmsType]);
+            }
+
+            $seoPage = $seoByPath->get($normalizedPath);
+            if ($seoPage instanceof SeoPage) {
+                $lastmod = Carbon::parse($seoPage->updated_at);
+                if (is_string($seoPage->changefreq) && $seoPage->changefreq !== '') {
+                    $changefreq = $seoPage->changefreq;
+                }
+                if ($seoPage->priority !== null) {
+                    $priority = (float) $seoPage->priority;
+                }
             }
 
             $sitemap->add(
