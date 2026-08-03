@@ -6,11 +6,14 @@ use App\Enums\PaymentPurpose;
 use App\Enums\PaymentStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Payment;
+use App\Models\User;
+use App\Services\BusinessInfoService;
 use App\Services\PaymentService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use OpenApi\Attributes as OA;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -22,6 +25,7 @@ class VendorPaymentsController extends Controller
 
     public function __construct(
         private readonly PaymentService $paymentService,
+        private readonly BusinessInfoService $businessInfoService,
     ) {}
 
     #[OA\Get(
@@ -33,6 +37,7 @@ class VendorPaymentsController extends Controller
             new OA\Parameter(name: 'per_page', in: 'query', required: false, schema: new OA\Schema(type: 'integer', minimum: 1, maximum: 100, default: 15)),
             new OA\Parameter(name: 'purpose', in: 'query', required: false, schema: new OA\Schema(type: 'string', enum: ['verification', 'boosting', 'subscription', 'wallet_topup'])),
             new OA\Parameter(name: 'month', in: 'query', required: false, description: 'Calendar month filter, format YYYY-MM.', schema: new OA\Schema(type: 'string', example: '2026-07')),
+            new OA\Parameter(name: 'business_id', in: 'query', required: false, description: 'Limit to payments for a specific business owned by the vendor.', schema: new OA\Schema(type: 'integer', minimum: 1)),
         ],
         responses: [
             new OA\Response(
@@ -65,6 +70,7 @@ class VendorPaymentsController extends Controller
     public function index(Request $request)
     {
         try {
+            /** @var User $vendor */
             $vendor = $request->user('api');
 
             $validated = $request->validate([
@@ -72,17 +78,19 @@ class VendorPaymentsController extends Controller
                 'purpose' => ['sometimes', 'string', 'in:'.implode(',', PaymentPurpose::values())],
                 /** Calendar month filter `YYYY-MM` (uses paid_at when set, otherwise created_at). */
                 'month' => ['sometimes', 'string', 'regex:/^\d{4}-\d{2}$/'],
+                'business_id' => ['sometimes', 'integer', 'min:1'],
             ]);
 
             $perPage = (int) ($validated['per_page'] ?? 15);
+            $businessId = $this->resolveOwnedBusinessId($vendor, $validated);
 
-            $subscriptionMonthRange = $this->subscriptionFilterMonthRange((int) $vendor->id);
+            $subscriptionMonthRange = $this->subscriptionFilterMonthRange((int) $vendor->id, $businessId);
 
             if ($reject = $this->rejectMonthOutsideSubscriptionRange($validated['month'] ?? null, $subscriptionMonthRange)) {
                 return $reject;
             }
 
-            $query = $this->basePaymentsQuery((int) $vendor->id);
+            $query = $this->basePaymentsQuery((int) $vendor->id, $businessId);
             $this->applyOptionalPaymentFilters($query, $validated);
 
             $paginator = $query->paginate($perPage);
@@ -101,6 +109,13 @@ class VendorPaymentsController extends Controller
                 ],
                 'subscription_month_range' => $subscriptionMonthRange,
             ]);
+        } catch (ValidationException $exception) {
+            return sendResponse(
+                false,
+                $exception->getMessage(),
+                ['errors' => $exception->errors()],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
         } catch (Throwable $throwable) {
             report($throwable);
 
@@ -117,6 +132,7 @@ class VendorPaymentsController extends Controller
         parameters: [
             new OA\Parameter(name: 'purpose', in: 'query', required: false, schema: new OA\Schema(type: 'string', enum: ['verification', 'boosting', 'subscription', 'wallet_topup'])),
             new OA\Parameter(name: 'month', in: 'query', required: false, description: 'Calendar month filter, format YYYY-MM.', schema: new OA\Schema(type: 'string', example: '2026-07')),
+            new OA\Parameter(name: 'business_id', in: 'query', required: false, description: 'Limit to payments for a specific business owned by the vendor.', schema: new OA\Schema(type: 'integer', minimum: 1)),
         ],
         responses: [
             new OA\Response(
@@ -132,20 +148,23 @@ class VendorPaymentsController extends Controller
     public function export(Request $request): JsonResponse|StreamedResponse
     {
         try {
+            /** @var User $vendor */
             $vendor = $request->user('api');
 
             $validated = $request->validate([
                 'purpose' => ['sometimes', 'string', 'in:'.implode(',', PaymentPurpose::values())],
                 'month' => ['sometimes', 'string', 'regex:/^\d{4}-\d{2}$/'],
+                'business_id' => ['sometimes', 'integer', 'min:1'],
             ]);
 
-            $subscriptionMonthRange = $this->subscriptionFilterMonthRange((int) $vendor->id);
+            $businessId = $this->resolveOwnedBusinessId($vendor, $validated);
+            $subscriptionMonthRange = $this->subscriptionFilterMonthRange((int) $vendor->id, $businessId);
 
             if ($reject = $this->rejectMonthOutsideSubscriptionRange($validated['month'] ?? null, $subscriptionMonthRange)) {
                 return $reject;
             }
 
-            $query = $this->basePaymentsQuery((int) $vendor->id);
+            $query = $this->basePaymentsQuery((int) $vendor->id, $businessId);
             $this->applyOptionalPaymentFilters($query, $validated);
 
             $count = (clone $query)->count();
@@ -178,6 +197,13 @@ class VendorPaymentsController extends Controller
             }, $filename, [
                 'Content-Type' => 'text/csv; charset=UTF-8',
             ]);
+        } catch (ValidationException $exception) {
+            return sendResponse(
+                false,
+                $exception->getMessage(),
+                ['errors' => $exception->errors()],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
         } catch (Throwable $throwable) {
             report($throwable);
 
@@ -185,11 +211,32 @@ class VendorPaymentsController extends Controller
         }
     }
 
-    private function basePaymentsQuery(int $userId): Builder
+    /**
+     * @param  array{business_id?: int}  $validated
+     */
+    private function resolveOwnedBusinessId(User $vendor, array $validated): ?int
     {
-        return Payment::query()
+        if (! isset($validated['business_id'])) {
+            return null;
+        }
+
+        $businessId = (int) $validated['business_id'];
+        $this->businessInfoService->assertUserOwnsBusiness($vendor, $businessId);
+
+        return $businessId;
+    }
+
+    private function basePaymentsQuery(int $userId, ?int $businessId = null): Builder
+    {
+        $query = Payment::query()
             ->where('user_id', $userId)
             ->orderByDesc('id');
+
+        if ($businessId !== null) {
+            $query->where('business_info_id', $businessId);
+        }
+
+        return $query;
     }
 
     /**
@@ -231,16 +278,22 @@ class VendorPaymentsController extends Controller
      *
      * @return array{start_month: string, end_month: string, has_subscription_history: bool}
      */
-    private function subscriptionFilterMonthRange(int $userId): array
+    private function subscriptionFilterMonthRange(int $userId, ?int $businessId = null): array
     {
         $nowMonth = Carbon::now()->startOfMonth();
         $endMonth = $nowMonth->format('Y-m');
 
-        $firstPaidAt = Payment::query()
+        $firstPaidAtQuery = Payment::query()
             ->where('user_id', $userId)
             ->where('purpose', PaymentPurpose::Subscription)
             ->where('status', PaymentStatus::Completed)
-            ->whereNotNull('paid_at')
+            ->whereNotNull('paid_at');
+
+        if ($businessId !== null) {
+            $firstPaidAtQuery->where('business_info_id', $businessId);
+        }
+
+        $firstPaidAt = $firstPaidAtQuery
             ->orderBy('paid_at')
             ->value('paid_at');
 
