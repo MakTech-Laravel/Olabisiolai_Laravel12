@@ -7,7 +7,6 @@ namespace App\Repositories\Contracts;
 use App\Models\Conversation;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
-use Illuminate\Database\Eloquent\Collection;
 
 interface ConversationRepositoryInterface
 {
@@ -17,8 +16,6 @@ interface ConversationRepositoryInterface
      * @param  array<string, mixed>  $filters
      */
     public function paginateForUser(User $user, int $perPage, array $filters = []): LengthAwarePaginator;
-
-    public function searchForUser(User $user, string $query): Collection;
 
     public function unreadMessagesCountForUser(User $user): int;
 

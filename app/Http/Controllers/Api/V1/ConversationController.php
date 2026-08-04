@@ -40,13 +40,22 @@ final class ConversationController extends Controller
             'verified_only' => $request->boolean('verified_only') ? true : null,
             'business_info_id' => $request->query('business_info_id'),
             'inbox' => $request->query('inbox'),
+            'q' => is_string($request->query('q')) ? trim((string) $request->query('q')) : null,
         ], static fn(mixed $value): bool => $value !== null && $value !== '');
+
+        if (isset($filters['q'])) {
+            $request->validate([
+                'q' => ['string', 'min:1', 'max:255'],
+            ]);
+        }
 
         $paginator = $this->conversations->getConversationsForUser($user, $filters, 30);
 
         return $this->successResponse(
             ConversationResource::collection($paginator),
-            'Conversations retrieved successfully.',
+            isset($filters['q'])
+                ? 'Search completed successfully.'
+                : 'Conversations retrieved successfully.',
         );
     }
 
@@ -130,23 +139,6 @@ final class ConversationController extends Controller
         return $this->successResponse(
             null,
             'Conversation deleted successfully.',
-        );
-    }
-
-    public function search(Request $request): JsonResponse
-    {
-        /** @var User $user */
-        $user = $request->user('api');
-
-        $validated = $request->validate([
-            'q' => ['required', 'string', 'min:1', 'max:255'],
-        ]);
-
-        $results = $this->conversations->searchConversations($user, $validated['q']);
-
-        return $this->successResponse(
-            ConversationResource::collection($results),
-            'Search completed successfully.',
         );
     }
 

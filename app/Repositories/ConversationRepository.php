@@ -10,7 +10,6 @@ use App\Models\User;
 use App\Repositories\Contracts\ConversationRepositoryInterface;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Collection;
 
 final class ConversationRepository implements ConversationRepositoryInterface
 {
@@ -95,25 +94,17 @@ final class ConversationRepository implements ConversationRepositoryInterface
                 });
         }
 
-        return $query->paginate($perPage);
-    }
-
-    public function searchForUser(User $user, string $query): Collection
-    {
-        $like = '%'.str_replace(['%', '_'], ['\\%', '\\_'], $query).'%';
-
-        return Conversation::query()
-            ->forUser($user)
-            ->where(function (Builder $q) use ($like): void {
+        if (! empty($filters['q']) && is_string($filters['q'])) {
+            $like = '%'.str_replace(['%', '_'], ['\\%', '\\_'], $filters['q']).'%';
+            $query->where(function (Builder $q) use ($like): void {
                 $q->where('name', 'like', $like)
                     ->orWhereHas('messages', function (Builder $mq) use ($like): void {
                         $mq->where('body', 'like', $like);
                     });
-            })
-            ->with(self::listRelations())
-            ->recent()
-            ->limit(50)
-            ->get();
+            });
+        }
+
+        return $query->paginate($perPage);
     }
 
     /**
