@@ -106,11 +106,6 @@ final class ConversationService
         return $conversation;
     }
 
-    public function searchConversations(User $user, string $query): Collection
-    {
-        return $this->conversations->searchForUser($user, $query);
-    }
-
     /**
      * Find active users the viewer can start a direct message with.
      */

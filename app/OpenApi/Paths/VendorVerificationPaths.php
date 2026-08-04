@@ -413,7 +413,10 @@ class VendorVerificationPaths
 
     #[OA\Get(
     path: '/v1/vendor/verification/status',
-    summary: 'Get Status',
+    summary: 'Get verification status',
+    description: 'Returns verification status for the authenticated vendor\'s business. '
+        .'Pass `business_id` to target a specific owned business; '
+        .'omit it to use the active/default business profile.',
     tags: [
         'Vendors',
         'Billing',
@@ -422,6 +425,18 @@ class VendorVerificationPaths
         [
             'passport' => [],
         ],
+    ],
+    parameters: [
+        new OA\Parameter(
+            name: 'business_id',
+            in: 'query',
+            required: false,
+            description: 'Owned business profile id. Prefer this when the vendor has multiple businesses.',
+            schema: new OA\Schema(
+                type: 'integer',
+            ),
+            example: 12,
+        ),
     ],
     responses: [
         new OA\Response(
@@ -434,6 +449,13 @@ class VendorVerificationPaths
         new OA\Response(
         response: 401,
         description: 'Unauthenticated',
+        content: new OA\JsonContent(
+            ref: '#/components/schemas/ErrorResponse',
+        ),
+    ),
+        new OA\Response(
+        response: 422,
+        description: 'Validation error / business not found for this account',
         content: new OA\JsonContent(
             ref: '#/components/schemas/ErrorResponse',
         ),
