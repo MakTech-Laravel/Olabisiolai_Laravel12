@@ -44,7 +44,7 @@ final class ConversationTest extends MessagingTestCase
         $show->assertOk();
         $show->assertJsonPath('data.uuid', $uuid);
 
-        $search = $this->getJson('/api/v1/conversations/search?q=direct');
+        $search = $this->getJson('/api/v1/conversations?q=direct');
         $search->assertOk();
 
         $delete = $this->deleteJson('/api/v1/conversations/'.$uuid);
