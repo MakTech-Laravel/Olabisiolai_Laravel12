@@ -14,6 +14,7 @@ use App\Models\Location;
 use App\Services\BusinessInfoService;
 use App\Services\LocationCatalogService;
 use App\Services\SubscriptionService;
+use App\Support\ApiExceptionMessage;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
@@ -162,18 +163,18 @@ class BusinessInfoController extends Controller
         } catch (ValidationException $exception) {
             return sendResponse(
                 false,
-                $exception->getMessage(),
+                ApiExceptionMessage::for($exception),
                 ['errors' => $exception->errors()],
                 Response::HTTP_UNPROCESSABLE_ENTITY,
             );
         } catch (InvalidArgumentException $exception) {
-            return sendResponse(false, $exception->getMessage(), null, Response::HTTP_UNPROCESSABLE_ENTITY);
+            return sendResponse(false, ApiExceptionMessage::for($exception), null, Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (RuntimeException $exception) {
-            return sendResponse(false, $exception->getMessage(), null, Response::HTTP_UNPROCESSABLE_ENTITY);
+            return sendResponse(false, ApiExceptionMessage::for($exception), null, Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (Throwable $throwable) {
             report($throwable);
 
-            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+            return sendResponse(false, ApiExceptionMessage::for($throwable), null, Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
 
@@ -367,18 +368,18 @@ class BusinessInfoController extends Controller
         } catch (ValidationException $exception) {
             return sendResponse(
                 false,
-                $exception->getMessage(),
+                ApiExceptionMessage::for($exception),
                 ['errors' => $exception->errors()],
                 Response::HTTP_UNPROCESSABLE_ENTITY,
             );
         } catch (InvalidArgumentException $exception) {
-            return sendResponse(false, $exception->getMessage(), null, Response::HTTP_UNPROCESSABLE_ENTITY);
+            return sendResponse(false, ApiExceptionMessage::for($exception), null, Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (RuntimeException $exception) {
-            return sendResponse(false, $exception->getMessage(), null, Response::HTTP_NOT_FOUND);
+            return sendResponse(false, ApiExceptionMessage::for($exception), null, Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (Throwable $throwable) {
             report($throwable);
 
-            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+            return sendResponse(false, ApiExceptionMessage::for($throwable), null, Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
 
@@ -407,13 +408,13 @@ class BusinessInfoController extends Controller
                 ],
             ]);
         } catch (InvalidArgumentException $exception) {
-            return sendResponse(false, $exception->getMessage(), null, Response::HTTP_UNPROCESSABLE_ENTITY);
+            return sendResponse(false, ApiExceptionMessage::for($exception), null, Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (RuntimeException $exception) {
-            return sendResponse(false, $exception->getMessage(), null, Response::HTTP_NOT_FOUND);
+            return sendResponse(false, ApiExceptionMessage::for($exception), null, Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (Throwable $throwable) {
             report($throwable);
 
-            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+            return sendResponse(false, ApiExceptionMessage::for($throwable), null, Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
 

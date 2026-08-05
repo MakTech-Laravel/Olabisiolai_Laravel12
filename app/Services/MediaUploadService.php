@@ -24,10 +24,28 @@ final class MediaUploadService
      */
     public function store(UploadedFile $file, Model $uploadable, UploadableType $type): array
     {
-        $realPath = $file->getRealPath();
-        if ($realPath === false) {
+        if (! $file->isValid()) {
             throw ValidationException::withMessages([
-                'file' => ['Unable to read the uploaded file.'],
+                'file' => [$file->getErrorMessage() ?: 'The uploaded file is invalid. Please try again.'],
+            ]);
+        }
+
+        $realPath = $file->getRealPath();
+        if ($realPath === false || ! is_file($realPath)) {
+            throw ValidationException::withMessages([
+                'file' => ['Unable to read the uploaded file. Please try again.'],
+            ]);
+        }
+
+        $clientMime = strtolower((string) ($file->getClientMimeType() ?: $file->getMimeType() ?: ''));
+        $extension = strtolower((string) $file->getClientOriginalExtension());
+        if (
+            str_contains($clientMime, 'heic')
+            || str_contains($clientMime, 'heif')
+            || in_array($extension, ['heic', 'heif'], true)
+        ) {
+            throw ValidationException::withMessages([
+                'file' => ['Apple HEIC/HEIF photos are not supported. Please upload JPG, PNG, or WebP.'],
             ]);
         }
 
@@ -35,7 +53,7 @@ final class MediaUploadService
             Image::decodePath($realPath);
         } catch (Throwable) {
             throw ValidationException::withMessages([
-                'file' => ['The file is not a readable image.'],
+                'file' => ['This file is not a readable JPG, PNG, or WebP image. It may be corrupt or an unsupported format.'],
             ]);
         }
 

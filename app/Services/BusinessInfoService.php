@@ -16,6 +16,7 @@ use App\Models\Category;
 use App\Models\Location;
 use App\Models\User;
 use App\Support\BusinessSubcategoryResolver;
+use App\Support\MediaPathGuard;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -802,9 +803,15 @@ class BusinessInfoService
             : (is_array($business->services_offered) ? $business->services_offered : []);
 
         $oldLogoPath = $business->logo_path;
-        $oldCoverPaths = is_array($business->cover_photo_paths) ? $business->cover_photo_paths : [];
+        $oldCoverPaths = MediaPathGuard::existingPaths(
+            is_array($business->cover_photo_paths) ? $business->cover_photo_paths : [],
+        );
 
         $finalLogoPath = $business->logo_path;
+        if (is_string($finalLogoPath) && $finalLogoPath !== '' && ! MediaPathGuard::exists($finalLogoPath)) {
+            $finalLogoPath = null;
+        }
+
         $logoUpdated = $logo !== null;
         if ($logoUpdated) {
             $finalLogoPath = $this->storeBusinessMedia($business, $logo);
@@ -822,8 +829,13 @@ class BusinessInfoService
                         continue;
                     }
                     $normalizedPath = trim($path);
-                    if (in_array($normalizedPath, $oldCoverPaths, true)) {
-                        $keptPaths[] = $normalizedPath;
+                    if (
+                        in_array($normalizedPath, $oldCoverPaths, true)
+                        || in_array($normalizedPath, is_array($business->cover_photo_paths) ? $business->cover_photo_paths : [], true)
+                    ) {
+                        if (MediaPathGuard::exists($normalizedPath)) {
+                            $keptPaths[] = $normalizedPath;
+                        }
                     }
                 }
             } elseif ($coverPhotos === []) {
@@ -837,6 +849,15 @@ class BusinessInfoService
             }
 
             $finalCoverPaths = array_values(array_unique(array_merge($keptPaths, $newCoverPaths)));
+        } else {
+            // Quietly drop stale DB paths whose files no longer exist on disk.
+            $finalCoverPaths = $oldCoverPaths;
+            if ($finalCoverPaths !== (is_array($business->cover_photo_paths) ? $business->cover_photo_paths : [])) {
+                $coverGalleryUpdated = true;
+            }
+            if ($finalLogoPath !== $business->logo_path && ! $logoUpdated) {
+                $logoUpdated = true;
+            }
         }
 
         $maxCoverPhotos = $this->subscriptionService->maxCoverPhotos($business);

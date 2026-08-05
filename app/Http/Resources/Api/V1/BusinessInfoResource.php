@@ -10,6 +10,7 @@ use App\Services\SubscriptionService;
 use App\Services\VendorAnalyticsService;
 use App\Services\VerificationService;
 use App\Support\PhoneNormalizer;
+use App\Support\MediaPathGuard;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -21,6 +22,7 @@ class BusinessInfoResource extends JsonResource
     public function toArray(Request $request): array
     {
         $coverPaths = is_array($this->cover_photo_paths) ? $this->cover_photo_paths : [];
+        $coverPhotos = MediaPathGuard::describePaths($coverPaths);
         $subscriptionService = app(SubscriptionService::class);
         $verificationService = app(VerificationService::class);
         $businessHoursService = app(BusinessHoursService::class);
@@ -77,17 +79,19 @@ class BusinessInfoResource extends JsonResource
             'whatsapp_formatted' => PhoneNormalizer::formatInternational($this->whatsapp) ?? $this->whatsapp,
             'website' => $this->website,
             'social_accounts' => is_array($this->social_accounts) ? $this->social_accounts : [],
-            'logo_url' => public_media_url($this->logo_path),
-            'cover_photo_urls' => collect($coverPaths)
-                ->filter(fn($path) => is_string($path) && $path !== '')
-                ->map(fn(string $path) => public_media_url($path, null))
-                ->filter()
+            'logo_url' => MediaPathGuard::exists($this->logo_path) ? public_media_url($this->logo_path) : null,
+            'logo_missing' => is_string($this->logo_path) && trim((string) $this->logo_path) !== '' && ! MediaPathGuard::exists($this->logo_path),
+            'cover_photos' => $coverPhotos,
+            'cover_photo_urls' => collect($coverPhotos)
+                ->pluck('url')
+                ->filter(fn ($url) => is_string($url) && $url !== '')
                 ->values()
                 ->all(),
-            'cover_photo_paths' => collect($coverPaths)
-                ->filter(fn($path) => is_string($path) && $path !== '')
+            'cover_photo_paths' => collect($coverPhotos)
+                ->pluck('path')
                 ->values()
                 ->all(),
+            'cover_photos_missing_count' => collect($coverPhotos)->where('missing', true)->count(),
             'verification_status' => $this->verification_status->value,
             'is_flagged' => (bool) $this->is_flagged,
             'is_approved' => $this->verification_status->value === 'approved',

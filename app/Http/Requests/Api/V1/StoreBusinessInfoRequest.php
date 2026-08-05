@@ -62,10 +62,21 @@ class StoreBusinessInfoRequest extends FormRequest
             'whatsapp' => ['nullable', 'string', new NigerianPhoneNumber()],
             'website' => ['nullable', 'string', 'max:2048', 'url'],
             ...$this->socialAccountsRules(),
-            'logo' => ['required', File::image()->max(10 * 1024)],
+            'logo' => ['required', File::types(['jpg', 'jpeg', 'png', 'webp'])->max(10 * 1024)],
             'cover_photos' => ['required', 'array', 'min:1'],
-            'cover_photos.*' => ['required', File::image()->max(10 * 1024)],
+            'cover_photos.*' => ['required', File::types(['jpg', 'jpeg', 'png', 'webp'])->max(10 * 1024)],
             'subscription_plan' => ['nullable', 'string', Rule::in(['free', 'premium'])],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'logo' => 'Logo must be a JPG, PNG, or WebP image (max 10MB). Apple HEIC is not supported.',
+            'cover_photos.*.*' => 'Each cover photo must be a JPG, PNG, or WebP image (max 10MB). Apple HEIC is not supported.',
         ];
     }
 
