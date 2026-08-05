@@ -50,27 +50,32 @@ final class MediaOptimizeService
         $webpQuality = (int) config('media.optimize.webp_quality', 82);
 
         $image = Image::decodePath($absolutePath);
+        $encoded = null;
 
-        if ($maxEdge > 0 && (max($image->width(), $image->height()) > $maxEdge)) {
-            $image->scaleDown(width: $maxEdge, height: $maxEdge);
-        }
+        try {
+            if ($maxEdge > 0 && (max($image->width(), $image->height()) > $maxEdge)) {
+                $image->scaleDown(width: $maxEdge, height: $maxEdge);
+            }
 
-        $mime = strtolower((string) ($mimeType ?: mime_content_type($absolutePath) ?: ''));
+            $mime = strtolower((string) ($mimeType ?: mime_content_type($absolutePath) ?: ''));
 
-        $encoded = match (true) {
-            str_contains($mime, 'png') => $image->encode(new PngEncoder()),
-            str_contains($mime, 'webp') => $image->encode(new WebpEncoder(quality: $webpQuality)),
-            str_contains($mime, 'gif') => null,
-            default => $image->encode(new JpegEncoder(quality: $jpegQuality)),
-        };
+            $encoded = match (true) {
+                str_contains($mime, 'png') => $image->encode(new PngEncoder()),
+                str_contains($mime, 'webp') => $image->encode(new WebpEncoder(quality: $webpQuality)),
+                str_contains($mime, 'gif') => null,
+                default => $image->encode(new JpegEncoder(quality: $jpegQuality)),
+            };
 
-        // GIFs: leave binary optimization / skip Intervention re-encode (animation).
-        if ($encoded === null) {
-            return;
-        }
+            // GIFs: leave binary optimization / skip Intervention re-encode (animation).
+            if ($encoded === null) {
+                return;
+            }
 
-        if (file_put_contents($absolutePath, (string) $encoded) === false) {
-            throw new \RuntimeException("Failed to write optimized image: {$absolutePath}");
+            if (file_put_contents($absolutePath, (string) $encoded) === false) {
+                throw new \RuntimeException("Failed to write optimized image: {$absolutePath}");
+            }
+        } finally {
+            unset($image, $encoded);
         }
     }
 

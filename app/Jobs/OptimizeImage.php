@@ -45,6 +45,11 @@ final class OptimizeImage implements ShouldQueue
         $media->save();
 
         $absolutePath = Storage::disk($media->disk)->path($media->path);
+        $previousLimit = ini_get('memory_limit');
+        $boost = (string) config('media.optimize.memory_limit', '512M');
+        if ($boost !== '') {
+            ini_set('memory_limit', $boost);
+        }
 
         try {
             $sizeAfter = $optimizer->optimizePath($absolutePath, $media->mime_type);
@@ -63,6 +68,10 @@ final class OptimizeImage implements ShouldQueue
             $media->save();
 
             throw $e;
+        } finally {
+            if (is_string($previousLimit) && $previousLimit !== '') {
+                ini_set('memory_limit', $previousLimit);
+            }
         }
     }
 }
