@@ -67,6 +67,44 @@ class VendorPaymentsApiTest extends TestCase
         $missing->assertNotFound();
     }
 
+    public function test_vendor_can_filter_payments_by_business_id(): void
+    {
+        $user = User::factory()->create([
+            'role' => 'vendor',
+            'email_verified_at' => now(),
+        ]);
+        $token = $user->createToken('test')->accessToken;
+
+        $businessA = BusinessInfo::factory()->create(['user_id' => $user->id]);
+        $businessB = BusinessInfo::factory()->create(['user_id' => $user->id]);
+
+        $paymentA = Payment::factory()->completed()->create([
+            'user_id' => $user->id,
+            'business_info_id' => $businessA->id,
+            'purpose' => PaymentPurpose::Subscription,
+            'paid_at' => now(),
+        ]);
+
+        Payment::factory()->completed()->create([
+            'user_id' => $user->id,
+            'business_info_id' => $businessB->id,
+            'purpose' => PaymentPurpose::Verification,
+            'paid_at' => now(),
+        ]);
+
+        $byBusiness = $this->withToken($token)->getJson('/api/v1/vendor/payments?business_id=' . $businessA->id);
+        $byBusiness->assertOk();
+        $byBusiness->assertJsonPath('data.pagination.total', 1);
+        $byBusiness->assertJsonPath('data.items.0.id', $paymentA->id);
+
+        $otherVendor = User::factory()->create(['role' => 'vendor', 'email_verified_at' => now()]);
+        $otherBusiness = BusinessInfo::factory()->create(['user_id' => $otherVendor->id]);
+
+        $this->withToken($token)
+            ->getJson('/api/v1/vendor/payments?business_id=' . $otherBusiness->id)
+            ->assertUnprocessable();
+    }
+
     public function test_vendor_can_filter_payments_by_month_and_purpose(): void
     {
         $user = User::factory()->create([
