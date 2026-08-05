@@ -160,11 +160,35 @@ class UpdateBusinessInfoRequest extends FormRequest
             'whatsapp' => ['sometimes', 'nullable', 'string', 'max:30'],
             'website' => ['sometimes', 'nullable', 'string', 'max:2048', 'url'],
             ...$this->socialAccountsRules(),
-            'logo' => ['sometimes', 'nullable', File::image()->max(10 * 1024)],
+            'logo' => ['sometimes', 'nullable', File::types(['jpg', 'jpeg', 'png', 'webp'])->max(10 * 1024)],
             'keep_cover_paths' => ['sometimes', 'nullable', 'array'],
             'keep_cover_paths.*' => ['nullable', 'string', 'max:500'],
             'cover_photos' => ['sometimes', 'nullable', 'array'],
-            'cover_photos.*' => ['nullable', File::image()->max(10 * 1024)],
+            'cover_photos.*' => ['nullable', File::types(['jpg', 'jpeg', 'png', 'webp'])->max(10 * 1024)],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'cover_photos.*.mimes' => 'Gallery photos must be JPG, PNG, or WebP files (max 10MB).',
+            'cover_photos.*.extensions' => 'Gallery photos must be JPG, PNG, or WebP files (max 10MB).',
+            'logo.mimes' => 'Logo must be a JPG, PNG, or WebP file (max 10MB).',
+            'logo.extensions' => 'Logo must be a JPG, PNG, or WebP file (max 10MB).',
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function attributes(): array
+    {
+        return [
+            'cover_photos' => 'gallery photos',
+            'cover_photos.*' => 'gallery photo',
         ];
     }
 
