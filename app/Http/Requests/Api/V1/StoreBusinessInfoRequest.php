@@ -62,10 +62,34 @@ class StoreBusinessInfoRequest extends FormRequest
             'whatsapp' => ['nullable', 'string', new NigerianPhoneNumber()],
             'website' => ['nullable', 'string', 'max:2048', 'url'],
             ...$this->socialAccountsRules(),
-            'logo' => ['required', File::image()->max(10 * 1024)],
+            'logo' => ['required', File::types(['jpg', 'jpeg', 'png', 'webp'])->max(10 * 1024)],
             'cover_photos' => ['required', 'array', 'min:1'],
-            'cover_photos.*' => ['required', File::image()->max(10 * 1024)],
+            'cover_photos.*' => ['required', File::types(['jpg', 'jpeg', 'png', 'webp'])->max(10 * 1024)],
             'subscription_plan' => ['nullable', 'string', Rule::in(['free', 'premium'])],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'cover_photos.*.mimes' => 'Gallery photos must be JPG, PNG, or WebP files (max 10MB).',
+            'cover_photos.*.extensions' => 'Gallery photos must be JPG, PNG, or WebP files (max 10MB).',
+            'logo.mimes' => 'Logo must be a JPG, PNG, or WebP file (max 10MB).',
+            'logo.extensions' => 'Logo must be a JPG, PNG, or WebP file (max 10MB).',
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function attributes(): array
+    {
+        return [
+            'cover_photos' => 'gallery photos',
+            'cover_photos.*' => 'gallery photo',
         ];
     }
 
