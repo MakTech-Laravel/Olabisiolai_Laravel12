@@ -24,6 +24,7 @@ class DatabaseSeeder extends Seeder
             PricingPackageSeeder::class,
             CategorySeeder::class,
             CmsPageSeeder::class,
+            SeoPageSeeder::class,
             SearchSynonymSeeder::class,
         ]);
 

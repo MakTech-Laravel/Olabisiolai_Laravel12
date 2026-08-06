@@ -89,6 +89,17 @@ class BusinessCatalogService
     }
 
     /**
+     * Public discoverable catalog query (active parent + active Premium).
+     * Used by discovery feeds and sitemap generation — do not duplicate visibility rules.
+     *
+     * @return Builder<BusinessCatalogItem>
+     */
+    public function discoverableItemsQuery(): Builder
+    {
+        return $this->discoveryBaseQuery();
+    }
+
+    /**
      * Premium + active businesses, ranked for discovery.
      *
      * @return Builder<BusinessCatalogItem>
