@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\V1\Admin\ReviewController;
 use App\Http\Controllers\Api\V1\Admin\ReviewReportController;
 use App\Http\Controllers\Api\V1\Admin\RoleController;
 use App\Http\Controllers\Api\V1\Admin\SearchSynonymController;
+use App\Http\Controllers\Api\V1\Admin\SeoPageController;
 use App\Http\Controllers\Api\V1\Admin\VerificationController;
 use App\Http\Controllers\Api\V1\UserController;
 use Illuminate\Support\Facades\Route;
@@ -60,6 +61,13 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('/view', [CmsPageController::class, 'view'])->name('view');
         Route::post('/upsert', [CmsPageController::class, 'upsert'])->name('upsert');
         Route::post('/upload-image', [CmsPageController::class, 'uploadImage'])->name('upload-image');
+    });
+
+    Route::prefix('seo-pages')->name('seo-pages.')->group(function () {
+        Route::post('/', [SeoPageController::class, 'index'])->name('index');
+        Route::post('/view', [SeoPageController::class, 'view'])->name('view');
+        Route::post('/update', [SeoPageController::class, 'update'])->name('update');
+        Route::post('/generate-sitemap', [SeoPageController::class, 'generateSitemap'])->name('generate-sitemap');
     });
 
     Route::prefix('categories')->name('categories.')->group(function () {

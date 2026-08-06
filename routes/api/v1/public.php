@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\Public\PublicCatalogDiscoveryController;
 use App\Http\Controllers\Api\V1\Public\PublicCategoryCatalogController;
 use App\Http\Controllers\Api\V1\Public\PublicCmsPageController;
 use App\Http\Controllers\Api\V1\Public\PublicLocationCatalogController;
+use App\Http\Controllers\Api\V1\Public\PublicSeoPageController;
 use App\Http\Controllers\Api\V1\Public\PublicSubscriptionPlanController;
 use App\Http\Controllers\Api\V1\Public\ReviewController;
 use App\Http\Controllers\Api\V1\RealtimeController;
@@ -71,6 +72,10 @@ Route::prefix('reviews')->name('reviews.')->group(function () {
 Route::get('/about', [PublicCmsPageController::class, 'show'])->defaults('slug', 'about')->name('about');
 Route::get('/privacy-policy', [PublicCmsPageController::class, 'show'])->defaults('slug', 'privacy-policy')->name('privacy-policy');
 Route::get('/terms', [PublicCmsPageController::class, 'show'])->defaults('slug', 'terms')->name('terms');
+Route::get('/seo-pages/by-path', [PublicSeoPageController::class, 'byPath'])->name('seo-pages.by-path');
+Route::get('/seo-pages/resolve', [PublicSeoPageController::class, 'resolve'])
+    ->middleware('throttle:120,1')
+    ->name('seo-pages.resolve');
 
 // Public realtime diagnostics (used by the frontend /ws-test console).
 Route::controller(RealtimeController::class)->prefix('realtime')->group(function () {

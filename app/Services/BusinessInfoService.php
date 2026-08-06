@@ -274,6 +274,20 @@ class BusinessInfoService
 
     /**
      * Public marketplace listings: active businesses only (verified badge is separate).
+     * Used by marketplace feeds and sitemap — do not duplicate these filters elsewhere.
+     *
+     * @return Builder<BusinessInfo>
+     */
+    public function publicMarketplaceBusinessesQuery(): Builder
+    {
+        $query = BusinessInfo::query();
+        $this->applyPublicMarketplaceVisibility($query);
+
+        return $query;
+    }
+
+    /**
+     * Public marketplace listings: active businesses only (verified badge is separate).
      */
     private function applyPublicMarketplaceVisibility(Builder $query): void
     {
