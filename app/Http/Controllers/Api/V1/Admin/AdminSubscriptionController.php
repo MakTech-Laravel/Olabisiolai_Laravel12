@@ -340,6 +340,7 @@ class AdminSubscriptionController extends Controller
                 PaymentPurpose::Subscription => 'Payment applied and premium activated.',
                 PaymentPurpose::Verification => 'Verification payment applied successfully.',
                 PaymentPurpose::Boost => 'Boost payment applied and queued for admin approval.',
+                PaymentPurpose::WalletTopUp => 'Wallet top-up applied and balance credited.',
                 default => 'Payment applied successfully.',
             };
 
@@ -350,6 +351,7 @@ class AdminSubscriptionController extends Controller
                     : null,
                 'verification' => $result['verification'] ?? null,
                 'boost_request' => $result['boost_request'] ?? null,
+                'wallet' => $result['wallet'] ?? null,
                 'business' => $business instanceof BusinessInfo ? new BusinessInfoResource($business) : null,
             ]);
         } catch (RuntimeException $exception) {
@@ -379,9 +381,14 @@ class AdminSubscriptionController extends Controller
             }
 
             $business = $model->businessInfo;
-            if ($business === null) {
-                return sendResponse(false, 'Payment is not linked to a business profile.', null, Response::HTTP_UNPROCESSABLE_ENTITY);
-            }
+
+            $requireBusiness = static function () use ($business): BusinessInfo {
+                if ($business === null) {
+                    throw new RuntimeException('Payment is not linked to a business profile.');
+                }
+
+                return $business;
+            };
 
             $adminId = $request->user('admin_api')?->id;
             $reason = trim((string) $validated['reason']);
@@ -391,22 +398,28 @@ class AdminSubscriptionController extends Controller
 
             $result = match ($model->purpose) {
                 PaymentPurpose::Verification => $this->paymentReconciliation->grantVerificationManually(
-                    $business,
+                    $requireBusiness(),
                     $reason,
                     $adminId,
                     $paystackReference !== '' ? $paystackReference : null,
                     $model->id,
                 ),
                 PaymentPurpose::Boost => $this->paymentReconciliation->grantBoostManually(
-                    $business,
+                    $requireBusiness(),
                     $reason,
                     $adminId,
                     $paystackReference !== '' ? $paystackReference : null,
                     $model->id,
                 ),
-                PaymentPurpose::Subscription => (function () use ($business, $reason, $adminId, $paystackReference): array {
+                PaymentPurpose::WalletTopUp => $this->paymentReconciliation->grantWalletTopUpManually(
+                    $model,
+                    $reason,
+                    $adminId,
+                    $paystackReference !== '' ? $paystackReference : null,
+                ),
+                PaymentPurpose::Subscription => (function () use ($requireBusiness, $reason, $adminId, $paystackReference): array {
                     $grant = $this->paymentReconciliation->grantPremiumManually(
-                        $business,
+                        $requireBusiness(),
                         $reason,
                         $adminId,
                         null,
@@ -430,6 +443,7 @@ class AdminSubscriptionController extends Controller
                 PaymentPurpose::Subscription => 'Premium granted successfully.',
                 PaymentPurpose::Verification => 'Verification payment granted successfully.',
                 PaymentPurpose::Boost => 'Boost payment granted and queued for admin approval.',
+                PaymentPurpose::WalletTopUp => 'Wallet top-up approved and balance credited.',
                 default => 'Payment granted successfully.',
             };
 
@@ -440,6 +454,7 @@ class AdminSubscriptionController extends Controller
                     : null,
                 'verification' => $result['verification'] ?? null,
                 'boost_request' => $result['boost_request'] ?? null,
+                'wallet' => $result['wallet'] ?? null,
                 'business' => $business instanceof BusinessInfo ? new BusinessInfoResource($business) : null,
             ]);
         } catch (RuntimeException $exception) {
