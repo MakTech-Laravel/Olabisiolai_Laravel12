@@ -11,6 +11,19 @@
 
 This app ships with **nginx + Reverb** in one image (`Dockerfile`, `docker/nginx.conf`). WebSockets use **`wss://` on the same public host/port as the API (443)**; Reverb’s **8089** is internal only. See **[docs/COOLIFY_REVERB.md](docs/COOLIFY_REVERB.md)** and `.env.production.example` before deploying.
 
+## Public sitemap & SEO
+
+The marketplace sitemap is generated **on demand** (ZBC pattern: Spatie + `Cache::remember`, no disk file). `<loc>` values use **`FRONTEND_URL`**.
+
+- **Refresh / warm:** `php artisan sitemap:refresh` (hourly), or **Admin → SEO → Generate sitemap**
+- **Serve:** `GET /sitemap.xml` and `GET /robots.txt` on the API; **www nginx proxies** both to the content origin
+- **Inventory:** indexable `seo_pages` rows + marketplace businesses + discoverable catalog items (`config/sitemap-urls.php` is seeder-only)
+- **robots.txt:** dynamic route; `Sitemap: {FRONTEND_URL}/sitemap.xml`. Disallows admin/vendor/auth utility paths
+- **Resolve:** `GET /api/v1/seo-pages/resolve?path=` — spa-shell + SPA `DocumentHead`
+- **Admin SEO:** meta + `noindex` / `canonical_url` / `og_image`; noindex pages omitted from sitemap
+- **No** Google News `/news-sitemap.xml`
+- **spa-shell:** `GET /spa-shell?path=` injects the same resolved head
+
 ## API Documentation (Swagger / OpenAPI)
 
 The API is documented with [darkaonline/l5-swagger](https://github.com/DarkaOnLine/L5-Swagger) using PHP 8 attributes

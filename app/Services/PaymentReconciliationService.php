@@ -175,7 +175,7 @@ class PaymentReconciliationService
     }
 
     /**
-     * Admin applies a gateway transaction to a pending payment (subscription, verification, or boost).
+     * Admin applies a gateway transaction to a pending payment (subscription, verification, boost, or wallet top-up).
      *
      * @return array<string, mixed>
      */
@@ -232,6 +232,13 @@ class PaymentReconciliationService
                 $adminId,
             ),
             PaymentPurpose::Boost => $this->adminApplyBoostPayment(
+                $payment,
+                $gateway,
+                $gatewayTransactionId,
+                $reason,
+                $adminId,
+            ),
+            PaymentPurpose::WalletTopUp => $this->adminApplyWalletTopUpPayment(
                 $payment,
                 $gateway,
                 $gatewayTransactionId,
@@ -385,6 +392,59 @@ class PaymentReconciliationService
                 'id' => $boostRequest->id,
                 'status' => $boostRequest->status->value,
             ],
+            'purpose' => $payment->purpose->value,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function adminApplyWalletTopUpPayment(
+        Payment $payment,
+        PaymentGateway $gateway,
+        string $gatewayTransactionId,
+        string $reason,
+        ?int $adminId,
+    ): array {
+        $user = $payment->user;
+        if ($user === null) {
+            throw new RuntimeException('Payment is missing the payer account.');
+        }
+
+        $creditPending = $payment->status === PaymentStatus::Pending || ! $payment->is_consumed;
+
+        $wallet = $this->walletService->confirmTopUp($payment, $gatewayTransactionId, $gateway);
+        $payment = $payment->fresh();
+
+        if ($creditPending) {
+            $payment->update([
+                'metadata' => array_merge(is_array($payment->metadata) ? $payment->metadata : [], [
+                    'admin_apply_reason' => $reason,
+                    'applied_by_admin_id' => $adminId,
+                    'applied_at' => now()->toIso8601String(),
+                    'manual_gateway_apply' => true,
+                ]),
+            ]);
+            $payment = $payment->fresh();
+        } elseif ($payment->gateway_transaction_id === null) {
+            $payment->update([
+                'gateway' => $gateway,
+                'gateway_transaction_id' => $gatewayTransactionId,
+            ]);
+            $payment = $payment->fresh();
+        }
+
+        Log::info('wallet.topup.applied_by_admin', [
+            'payment_id' => $payment->id,
+            'user_id' => $user->id,
+            'admin_id' => $adminId,
+            'wallet_balance' => (float) $wallet->balance,
+        ]);
+
+        return [
+            'payment' => $payment,
+            'business' => null,
+            'wallet' => $this->walletService->walletPayload($user),
             'purpose' => $payment->purpose->value,
         ];
     }
@@ -720,6 +780,40 @@ class PaymentReconciliationService
         );
     }
 
+    /**
+     * Admin manual wallet top-up approval (pending checkout or Paystack reference).
+     *
+     * @return array{payment: Payment, business: null, wallet: array<string, mixed>, purpose: string}
+     */
+    public function grantWalletTopUpManually(
+        Payment $payment,
+        string $reason,
+        ?int $grantedByAdminId = null,
+        ?string $paystackReference = null,
+    ): array {
+        $reason = trim($reason);
+        if ($reason === '') {
+            throw new RuntimeException('A reason is required for a manual wallet top-up approval.');
+        }
+
+        if ($payment->purpose !== PaymentPurpose::WalletTopUp) {
+            throw new RuntimeException('Only wallet top-up payments can be credited manually.');
+        }
+
+        if ($paystackReference !== null && trim($paystackReference) !== '') {
+            return $this->adminApplyGatewayPayment(
+                $payment,
+                PaymentGateway::Paystack,
+                trim($paystackReference),
+                $reason,
+                $grantedByAdminId,
+                true,
+            );
+        }
+
+        return $this->completeAdminVerifiedPendingWalletTopUpPayment($payment, $reason, $grantedByAdminId);
+    }
+
     private function resolveVerificationPaymentForManualGrant(BusinessInfo $business, ?int $paymentId): Payment
     {
         if ($paymentId !== null) {
@@ -889,6 +983,76 @@ class PaymentReconciliationService
                 ],
             ];
         });
+    }
+
+    /**
+     * @return array{payment: Payment, business: null, wallet: array<string, mixed>, purpose: string}
+     */
+    private function completeAdminVerifiedPendingWalletTopUpPayment(
+        Payment $payment,
+        string $reason,
+        ?int $grantedByAdminId,
+    ): array {
+        $user = $payment->user;
+        if ($user === null) {
+            throw new RuntimeException('Payment is missing the payer account.');
+        }
+
+        if ($payment->status === PaymentStatus::Failed) {
+            throw new RuntimeException('This wallet top-up has failed and cannot be credited manually.');
+        }
+
+        $payment = DB::transaction(function () use ($payment, $user, $reason, $grantedByAdminId): Payment {
+            if ($payment->status === PaymentStatus::Pending) {
+                $payment->update([
+                    'status' => PaymentStatus::Completed,
+                    'gateway' => PaymentGateway::Paystack,
+                    'gateway_transaction_id' => $payment->gateway_transaction_id ?: ('admin_verified_' . now()->timestamp),
+                    'paid_at' => now(),
+                ]);
+                $payment = $payment->fresh();
+            }
+
+            $payment->update([
+                'metadata' => array_merge(is_array($payment->metadata) ? $payment->metadata : [], [
+                    'manual_grant' => true,
+                    'grant_reason' => $reason,
+                    'granted_by_admin_id' => $grantedByAdminId,
+                    'granted_at' => now()->toIso8601String(),
+                ]),
+            ]);
+            $payment = $payment->fresh();
+
+            if (! $payment->is_consumed) {
+                $payment->update(['is_consumed' => true]);
+
+                $this->walletService->credit(
+                    $user,
+                    (float) $payment->amount,
+                    'Wallet top-up',
+                    $payment->tx_ref,
+                    ['payment_id' => $payment->id, 'manual_grant' => true],
+                );
+
+                $payment = $payment->fresh();
+            }
+
+            Log::info('wallet.topup.granted_manually', [
+                'payment_id' => $payment->id,
+                'user_id' => $user->id,
+                'granted_by_admin_id' => $grantedByAdminId,
+                'reason' => $reason,
+            ]);
+
+            return $payment;
+        });
+
+        return [
+            'payment' => $payment,
+            'business' => null,
+            'wallet' => $this->walletService->walletPayload($user),
+            'purpose' => $payment->purpose->value,
+        ];
     }
 
     private function verifyPaystackForSubscriptionPayment(Payment $payment, string $reference): void
