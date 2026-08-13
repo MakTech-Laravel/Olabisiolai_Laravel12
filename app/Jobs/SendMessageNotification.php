@@ -58,9 +58,9 @@ final class SendMessageNotification implements ShouldQueue
 
             $unread = $conversationRepository->unreadMessagesCountInConversation($user, $message->conversation);
 
-            $preview = $message->body ?? '';
+            $preview = MessagingHelper::messagePreview($message) ?? '';
 
-            if ($preview === '' && $message->attachments()->exists()) {
+            if ($preview === '') {
                 $preview = '[Attachment]';
             }
 
