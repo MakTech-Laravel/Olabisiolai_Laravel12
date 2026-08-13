@@ -265,7 +265,7 @@ final class MessagingHelper
         }
 
         if (filled($message->body)) {
-            return (string) $message->body;
+            return self::humanizeStructuredMessageBody((string) $message->body);
         }
 
         if (
@@ -295,6 +295,93 @@ final class MessagingHelper
         }
 
         return 'Message';
+    }
+
+    /**
+     * Convert structured chat payloads (cart / catalog enquiry markers) into a short human preview.
+     */
+    public static function humanizeStructuredMessageBody(string $body): string
+    {
+        $body = trim($body);
+        if ($body === '') {
+            return '';
+        }
+
+        if (str_contains($body, '[GIDIRA_CART]')) {
+            return self::previewFromMarkedPayload(
+                $body,
+                '[GIDIRA_CART]',
+                '[/GIDIRA_CART]',
+                static function (array $payload, string $userText): string {
+                    $itemCount = (int) ($payload['item_count'] ?? $payload['itemCount'] ?? 0);
+                    if ($itemCount <= 0 && isset($payload['items']) && is_array($payload['items'])) {
+                        $itemCount = array_sum(array_map(
+                            static fn ($item): int => (int) (is_array($item) ? ($item['qty'] ?? $item['quantity'] ?? 1) : 1),
+                            $payload['items'],
+                        ));
+                    }
+                    if ($itemCount <= 0) {
+                        $itemCount = 1;
+                    }
+
+                    $prefix = sprintf('Cart: %d item%s', $itemCount, $itemCount === 1 ? '' : 's');
+
+                    return $userText !== '' ? $prefix.' — '.$userText : $prefix;
+                },
+            );
+        }
+
+        if (str_contains($body, '[GIDIRA_CATALOG]')) {
+            return self::previewFromMarkedPayload(
+                $body,
+                '[GIDIRA_CATALOG]',
+                '[/GIDIRA_CATALOG]',
+                static function (array $payload, string $userText): string {
+                    $itemName = '';
+                    if (isset($payload['item']) && is_array($payload['item'])) {
+                        $itemName = trim((string) ($payload['item']['name'] ?? ''));
+                    }
+                    if ($itemName === '') {
+                        $itemName = 'item';
+                    }
+
+                    $prefix = 'Catalog: '.$itemName;
+
+                    return $userText !== '' ? $prefix.' — '.$userText : $prefix;
+                },
+            );
+        }
+
+        return $body;
+    }
+
+    /**
+     * @param  callable(array<string, mixed>, string): string  $formatter
+     */
+    private static function previewFromMarkedPayload(
+        string $body,
+        string $open,
+        string $close,
+        callable $formatter,
+    ): string {
+        $start = strpos($body, $open);
+        $end = $start === false ? false : strpos($body, $close, $start);
+        if ($start === false || $end === false) {
+            return 'New message';
+        }
+
+        $jsonRaw = substr($body, $start + strlen($open), $end - $start - strlen($open));
+        $decoded = json_decode($jsonRaw, true);
+        if (! is_array($decoded)) {
+            return 'New message';
+        }
+
+        $after = trim(substr($body, $end + strlen($close)));
+        if (str_starts_with($after, "\n\n")) {
+            $after = trim(substr($after, 2));
+        }
+
+        return $formatter($decoded, $after);
     }
 
     public static function messageStatusForViewer(Message $message, ?User $viewer): string
