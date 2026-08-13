@@ -508,8 +508,14 @@ class BusinessInfoService
             ]);
         }
 
-        $businessId = $request->input('business_id');
+        $businessId = $request->input('business_id', $request->query('business_id'));
         if ($businessId !== null && $businessId !== '') {
+            if (! is_numeric($businessId) || (int) $businessId < 1) {
+                throw ValidationException::withMessages([
+                    'business_id' => ['A valid business_id is required.'],
+                ]);
+            }
+
             return $this->assertUserOwnsBusiness($user, (int) $businessId);
         }
 

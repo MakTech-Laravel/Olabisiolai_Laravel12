@@ -8,7 +8,10 @@ class VendorBoostPaths
 {
     #[OA\Get(
     path: '/v1/vendor/boost/catalog',
-    summary: 'Get Catalog',
+    summary: 'Get boost catalog',
+    description: 'Returns Dynamic Boost options and admin-enabled target LGAs (`boost_locations`). '
+        .'Pass `business_id` to target a specific owned business; omit it to use the active/default business. '
+        .'Business location may be null — vendors can still pick a target LGA from `boost_locations`.',
     tags: [
         'Vendors',
         'Billing',
@@ -17,6 +20,19 @@ class VendorBoostPaths
         [
             'passport' => [],
         ],
+    ],
+    parameters: [
+        new OA\Parameter(
+            name: 'business_id',
+            in: 'query',
+            required: false,
+            description: 'Owned business profile id. Prefer this when the vendor has multiple businesses.',
+            schema: new OA\Schema(
+                type: 'integer',
+                minimum: 1,
+            ),
+            example: 12,
+        ),
     ],
     responses: [
         new OA\Response(
@@ -29,6 +45,13 @@ class VendorBoostPaths
         new OA\Response(
         response: 401,
         description: 'Unauthenticated',
+        content: new OA\JsonContent(
+            ref: '#/components/schemas/ErrorResponse',
+        ),
+    ),
+        new OA\Response(
+        response: 422,
+        description: 'Validation error / business not found for this account',
         content: new OA\JsonContent(
             ref: '#/components/schemas/ErrorResponse',
         ),
@@ -123,6 +146,13 @@ class VendorBoostPaths
                     property: 'apply_wallet',
                     type: 'boolean',
                     example: true,
+                ),
+                new OA\Property(
+                    property: 'business_id',
+                    type: 'integer',
+                    example: 12,
+                    nullable: true,
+                    description: 'Owned business profile id. Omit to use the active/default business.',
                 ),
             ],
         ),
@@ -240,6 +270,13 @@ class VendorBoostPaths
                     type: 'boolean',
                     example: true,
                 ),
+                new OA\Property(
+                    property: 'business_id',
+                    type: 'integer',
+                    example: 12,
+                    nullable: true,
+                    description: 'Owned business profile id. Omit to use the active/default business.',
+                ),
             ],
         ),
     ),
@@ -310,6 +347,13 @@ class VendorBoostPaths
                     example: 'flutterwave',
                     type: 'string',
                     nullable: true,
+                ),
+                new OA\Property(
+                    property: 'business_id',
+                    type: 'integer',
+                    example: 12,
+                    nullable: true,
+                    description: 'Owned business profile id. Omit to use the active/default business.',
                 ),
             ],
         ),
@@ -388,6 +432,13 @@ class VendorBoostPaths
                     ],
                     example: 'flutterwave',
                     type: 'string',
+                ),
+                new OA\Property(
+                    property: 'business_id',
+                    type: 'integer',
+                    example: 12,
+                    nullable: true,
+                    description: 'Owned business profile id. Omit to use the active/default business.',
                 ),
             ],
         ),

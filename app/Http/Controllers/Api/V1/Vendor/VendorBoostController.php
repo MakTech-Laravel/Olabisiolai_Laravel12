@@ -36,15 +36,11 @@ class VendorBoostController extends Controller
     public function catalog(Request $request)
     {
         try {
-            $vendor = $request->user('api');
             $business = $this->businessInfoService->resolveBusinessFromRequest($request);
-
             $business->load(['location.lgaBoost']);
 
-            if ($business->location === null) {
-                return sendResponse(false, 'Set your business location before viewing boost plans.', null, Response::HTTP_UNPROCESSABLE_ENTITY);
-            }
-
+            // Dynamic Boost lets vendors pick a target LGA first; business location may be
+            // unset until checkout syncs it via syncLocationFromBoostTarget().
             $campaigns = $this->boostPurchaseService->listForVendor($business);
 
             $boostLocations = Location::query()
@@ -57,7 +53,9 @@ class VendorBoostController extends Controller
                 ->get();
 
             return sendResponse(true, 'Boost catalog retrieved successfully.', [
-                'location' => new LocationResource($business->location),
+                'location' => $business->location !== null
+                    ? new LocationResource($business->location)
+                    : null,
                 'boost_locations' => LocationResource::collection($boostLocations)->resolve(),
                 'pending_request' => $this->boostPurchaseService->latestOpenRequestForBusiness($business),
                 'is_premium_active' => $this->subscriptionService->hasActivePremium($business),
@@ -73,6 +71,8 @@ class VendorBoostController extends Controller
                 ],
                 'campaigns' => BoostPurchaseRequestResource::collection($campaigns)->resolve(),
             ]);
+        } catch (ValidationException $exception) {
+            throw $exception;
         } catch (Throwable $throwable) {
             report($throwable);
 
