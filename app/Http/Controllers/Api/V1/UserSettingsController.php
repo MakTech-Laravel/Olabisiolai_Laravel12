@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\ChangeUserPasswordRequest;
+use App\Http\Requests\Api\V1\DeleteUserAccountRequest;
 use App\Http\Requests\Api\V1\UpdateUserEmailRequest;
 use App\Http\Requests\Api\V1\UpdateUserProfileRequest;
 use App\Http\Requests\Api\V1\UpdateUserSettingsRequest;
@@ -13,7 +14,9 @@ use App\Models\User;
 use App\Services\AuthService;
 use App\Services\BusinessInfoService;
 use App\Services\UserFollowService;
+use App\Services\UserService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 use JsonException;
@@ -29,6 +32,7 @@ class UserSettingsController extends Controller
         private readonly AuthService $authService,
         private readonly UserFollowService $userFollowService,
         private readonly BusinessInfoService $businessInfoService,
+        private readonly UserService $userService,
     ) {}
 
     #[OA\Get(
@@ -198,6 +202,74 @@ class UserSettingsController extends Controller
             $user->save();
 
             return sendResponse(true, 'Password updated successfully.', null);
+        } catch (ValidationException $exception) {
+            return sendResponse(
+                false,
+                $exception->validator->errors()->first(),
+                [
+                    'errors' => $exception->validator->errors()->toArray(),
+                ],
+                Response::HTTP_UNPROCESSABLE_ENTITY
+            );
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    #[OA\Delete(
+        path: '/v1/user/account',
+        summary: 'Permanently delete the authenticated user or vendor account',
+        description: 'Requires the current password and confirmation string DELETE. Revokes all OAuth tokens, then hard-deletes the account.',
+        tags: ['Users'],
+        security: [['passport' => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['password', 'confirmation'],
+                properties: [
+                    new OA\Property(property: 'password', type: 'string', format: 'password'),
+                    new OA\Property(property: 'confirmation', type: 'string', example: 'DELETE'),
+                ],
+                example: [
+                    'password' => 'Passw0rd123',
+                    'confirmation' => 'DELETE',
+                ],
+            ),
+        ),
+        responses: [
+            new OA\Response(response: 200, description: 'Account deleted', content: new OA\JsonContent(ref: '#/components/schemas/ApiResponse')),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 403, description: 'Access denied', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 422, description: 'Incorrect password or confirmation is not DELETE', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 500, description: 'Unexpected server error', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ],
+    )]
+    public function destroyAccount(DeleteUserAccountRequest $request): Response
+    {
+        /** @var User $user */
+        $user = $request->user('api');
+
+        if (! $this->canAccessAccountSettings($user)) {
+            return sendResponse(false, 'Access denied.', null, Response::HTTP_FORBIDDEN);
+        }
+
+        try {
+            $validated = $request->validated();
+
+            if (! filled($user->password) || ! Hash::check($validated['password'], $user->password)) {
+                throw ValidationException::withMessages([
+                    'password' => ['The password is incorrect.'],
+                ]);
+            }
+
+            DB::transaction(function () use ($user): void {
+                $this->userService->revokeAllTokens($user);
+                $this->userService->deleteUser($user);
+            });
+
+            return sendResponse(true, 'Your account has been deleted.', null);
         } catch (ValidationException $exception) {
             return sendResponse(
                 false,

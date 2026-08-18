@@ -28,6 +28,7 @@ Route::prefix('user')->name('user.')->group(function () {
     // POST required for multipart image uploads (PHP/nginx do not parse files on PATCH in production).
     Route::match(['patch', 'post'], '/settings', [UserSettingsController::class, 'update'])->name('settings.update');
     Route::post('/password', [UserSettingsController::class, 'changePassword'])->name('password.change');
+    Route::delete('/account', [UserSettingsController::class, 'destroyAccount'])->name('account.destroy');
 
     Route::prefix('email')->name('email.')->group(function () {
         Route::post('/', [UserSettingsController::class, 'updateEmail'])->middleware('throttle:6,1')->name('update');
@@ -37,7 +38,7 @@ Route::prefix('user')->name('user.')->group(function () {
     });
 
     Route::middleware('verified')->group(function (): void {
-        Route::get('/dashboard', fn() => response()->json(['message' => 'User dashboard.']))->name('dashboard');
+        Route::get('/dashboard', fn () => response()->json(['message' => 'User dashboard.']))->name('dashboard');
 
         Route::get('/profile', [UserSettingsController::class, 'profileShow'])->name('profile.show');
         Route::patch('/profile', [UserSettingsController::class, 'profileUpdate'])->name('profile.update');
