@@ -90,6 +90,20 @@ class CmsPageApiTest extends TestCase
         $response->assertJsonPath('data.page.title', 'Terms and Conditions');
     }
 
+    public function test_public_can_fetch_delete_account_cms_page_by_type(): void
+    {
+        CmsPage::factory()->type(CmsPageType::DeleteAccount)->create([
+            'title' => 'Delete Account',
+            'description' => '<p>Delete account instructions</p>',
+        ]);
+
+        $response = $this->getJson('/api/v1/delete-account');
+
+        $response->assertOk();
+        $response->assertJsonPath('data.page.title', 'Delete Account');
+        $response->assertJsonPath('data.page.type', CmsPageType::DeleteAccount->value);
+    }
+
     public function test_upsert_rejects_invalid_type(): void
     {
         $this->actingAsAdmin();

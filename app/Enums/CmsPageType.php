@@ -7,6 +7,7 @@ enum CmsPageType: string
     case TermsAndConditions = 'terms_and_conditions';
     case PrivacyPolicy = 'privacy_policy';
     case AboutUs = 'about_us';
+    case DeleteAccount = 'delete_account';
 
     public static function values(): array
     {
@@ -19,6 +20,7 @@ enum CmsPageType: string
             self::TermsAndConditions => 'Terms and Conditions',
             self::PrivacyPolicy => 'Privacy Policy',
             self::AboutUs => 'About Us',
+            self::DeleteAccount => 'Delete Account',
         };
     }
 
@@ -28,6 +30,7 @@ enum CmsPageType: string
             self::AboutUs => 'about',
             self::PrivacyPolicy => 'privacy-policy',
             self::TermsAndConditions => 'terms',
+            self::DeleteAccount => 'delete-account',
         };
     }
 
@@ -37,6 +40,7 @@ enum CmsPageType: string
             'about' => self::AboutUs,
             'privacy-policy' => self::PrivacyPolicy,
             'terms' => self::TermsAndConditions,
+            'delete-account' => self::DeleteAccount,
             default => null,
         };
     }

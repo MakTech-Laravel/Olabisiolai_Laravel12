@@ -30,6 +30,17 @@ class CmsPageSeeder extends Seeder
         ];
     }
 
+    /**
+     * @return array{title: string, description: string}
+     */
+    public static function deleteAccountPage(): array
+    {
+        return [
+            'title' => 'Delete Account',
+            'description' => self::deleteAccountHtml(),
+        ];
+    }
+
     public static function privacyPolicyHtml(): string
     {
         $path = database_path('seeders/data/privacy-policy.html');
@@ -37,6 +48,18 @@ class CmsPageSeeder extends Seeder
 
         if ($html === false || trim($html) === '') {
             throw new RuntimeException('Privacy policy HTML is missing at '.$path);
+        }
+
+        return $html;
+    }
+
+    public static function deleteAccountHtml(): string
+    {
+        $path = database_path('seeders/data/delete-account.html');
+        $html = is_file($path) ? file_get_contents($path) : false;
+
+        if ($html === false || trim($html) === '') {
+            throw new RuntimeException('Delete account HTML is missing at '.$path);
         }
 
         return $html;
@@ -66,6 +89,7 @@ class CmsPageSeeder extends Seeder
 HTML,
             ],
             CmsPageType::PrivacyPolicy->value => self::privacyPolicyPage(),
+            CmsPageType::DeleteAccount->value => self::deleteAccountPage(),
             CmsPageType::AboutUs->value => [
                 'title' => 'About Gidira',
                 'description' => <<<'HTML'

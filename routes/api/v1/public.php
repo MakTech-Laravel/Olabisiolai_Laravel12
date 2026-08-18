@@ -73,6 +73,7 @@ Route::prefix('reviews')->name('reviews.')->group(function () {
 Route::get('/about', [PublicCmsPageController::class, 'show'])->defaults('slug', 'about')->name('about');
 Route::get('/privacy-policy', [PublicCmsPageController::class, 'show'])->defaults('slug', 'privacy-policy')->name('privacy-policy');
 Route::get('/terms', [PublicCmsPageController::class, 'show'])->defaults('slug', 'terms')->name('terms');
+Route::get('/delete-account', [PublicCmsPageController::class, 'show'])->defaults('slug', 'delete-account')->name('delete-account');
 Route::get('/seo-pages/by-path', [PublicSeoPageController::class, 'byPath'])->name('seo-pages.by-path');
 Route::get('/seo-pages/resolve', [PublicSeoPageController::class, 'resolve'])
     ->middleware('throttle:120,1')
