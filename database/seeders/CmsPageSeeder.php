@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Enums\CmsPageType;
 use App\Services\CmsPageService;
 use Illuminate\Database\Seeder;
+use RuntimeException;
 
 class CmsPageSeeder extends Seeder
 {
@@ -16,6 +17,52 @@ class CmsPageSeeder extends Seeder
             $type = CmsPageType::from($typeValue);
             $cms->upsertByType($type, $page['title'], $page['description']);
         }
+    }
+
+    /**
+     * @return array{title: string, description: string}
+     */
+    public static function privacyPolicyPage(): array
+    {
+        return [
+            'title' => 'Privacy Policy',
+            'description' => self::privacyPolicyHtml(),
+        ];
+    }
+
+    /**
+     * @return array{title: string, description: string}
+     */
+    public static function deleteAccountPage(): array
+    {
+        return [
+            'title' => 'Delete Account',
+            'description' => self::deleteAccountHtml(),
+        ];
+    }
+
+    public static function privacyPolicyHtml(): string
+    {
+        $path = database_path('seeders/data/privacy-policy.html');
+        $html = is_file($path) ? file_get_contents($path) : false;
+
+        if ($html === false || trim($html) === '') {
+            throw new RuntimeException('Privacy policy HTML is missing at '.$path);
+        }
+
+        return $html;
+    }
+
+    public static function deleteAccountHtml(): string
+    {
+        $path = database_path('seeders/data/delete-account.html');
+        $html = is_file($path) ? file_get_contents($path) : false;
+
+        if ($html === false || trim($html) === '') {
+            throw new RuntimeException('Delete account HTML is missing at '.$path);
+        }
+
+        return $html;
     }
 
     /**
@@ -41,25 +88,8 @@ class CmsPageSeeder extends Seeder
 <p><em>Last updated: May 2026</em></p>
 HTML,
             ],
-            CmsPageType::PrivacyPolicy->value => [
-                'title' => 'Privacy Policy',
-                'description' => <<<'HTML'
-<p>Gidira respects your privacy. This policy explains what information we collect and how we use it.</p>
-<h2>Information we collect</h2>
-<ul>
-<li>Account details such as name, email, and phone number</li>
-<li>Profile and business information you choose to provide</li>
-<li>Usage data, device information, and cookies needed to operate the service</li>
-</ul>
-<h2>How we use information</h2>
-<p>We use your data to provide the marketplace, improve security, send service-related messages, and comply with legal obligations.</p>
-<h2>Sharing</h2>
-<p>We do not sell your personal information. We may share data with service providers who help us run the platform, or when required by law.</p>
-<h2>Your choices</h2>
-<p>You may update profile details in account settings and manage marketing preferences where available.</p>
-<p><em>Last updated: May 2026</em></p>
-HTML,
-            ],
+            CmsPageType::PrivacyPolicy->value => self::privacyPolicyPage(),
+            CmsPageType::DeleteAccount->value => self::deleteAccountPage(),
             CmsPageType::AboutUs->value => [
                 'title' => 'About Gidira',
                 'description' => <<<'HTML'

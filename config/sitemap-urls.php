@@ -16,6 +16,7 @@ return [
     ['path' => '/faq', 'changefreq' => 'weekly', 'priority' => 0.7],
     ['path' => '/terms', 'changefreq' => 'weekly', 'priority' => 0.7, 'cms_type' => 'terms_and_conditions'],
     ['path' => '/privacy-policy', 'changefreq' => 'weekly', 'priority' => 0.7, 'cms_type' => 'privacy_policy'],
+    ['path' => '/delete-account', 'changefreq' => 'weekly', 'priority' => 0.7, 'cms_type' => 'delete_account'],
     ['path' => '/cookies-policy', 'changefreq' => 'weekly', 'priority' => 0.6],
     ['path' => '/community-guidelines', 'changefreq' => 'weekly', 'priority' => 0.6],
     ['path' => '/vendor-agreement', 'changefreq' => 'weekly', 'priority' => 0.6],

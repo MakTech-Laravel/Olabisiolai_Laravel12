@@ -34,10 +34,11 @@ Route::post('/contact-messages', [ContactMessageController::class, 'store'])
 
 Route::get('/categories', [PublicCategoryCatalogController::class, 'index'])->name('public.categories');
 Route::get('/categories/{category}', [PublicCategoryCatalogController::class, 'show'])->name('public.categories.show');
-Route::get('/catalog', [PublicCatalogDiscoveryController::class, 'index'])->name('public.catalog');
+Route::get('/catalog/home', [PublicCatalogDiscoveryController::class, 'home'])->name('public.catalog.home');
 Route::get('/catalog/items/{catalogItem}', [PublicCatalogDiscoveryController::class, 'show'])
     ->whereNumber('catalogItem')
     ->name('public.catalog.items.show');
+Route::get('/catalog', [PublicCatalogDiscoveryController::class, 'index'])->name('public.catalog');
 Route::get('/locations', [PublicLocationCatalogController::class, 'index'])->name('public.locations');
 Route::get('/subscription-packages', [PublicSubscriptionPlanController::class, 'index'])->name('public.subscription-packages');
 Route::get('/payments/config', [PaymentConfigController::class, 'show'])->name('public.payments.config');
@@ -72,6 +73,7 @@ Route::prefix('reviews')->name('reviews.')->group(function () {
 Route::get('/about', [PublicCmsPageController::class, 'show'])->defaults('slug', 'about')->name('about');
 Route::get('/privacy-policy', [PublicCmsPageController::class, 'show'])->defaults('slug', 'privacy-policy')->name('privacy-policy');
 Route::get('/terms', [PublicCmsPageController::class, 'show'])->defaults('slug', 'terms')->name('terms');
+Route::get('/delete-account', [PublicCmsPageController::class, 'show'])->defaults('slug', 'delete-account')->name('delete-account');
 Route::get('/seo-pages/by-path', [PublicSeoPageController::class, 'byPath'])->name('seo-pages.by-path');
 Route::get('/seo-pages/resolve', [PublicSeoPageController::class, 'resolve'])
     ->middleware('throttle:120,1')
