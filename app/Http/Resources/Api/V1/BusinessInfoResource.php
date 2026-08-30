@@ -107,6 +107,8 @@ class BusinessInfoResource extends JsonResource
             'subscription_expires_at' => $subscription?->expires_at ? humanDateTime($subscription->expires_at) : null,
             'subscription_expires_at_iso' => $subscription?->expires_at?->toIso8601String(),
             'is_manual_premium' => (bool) ($subscription?->is_manual_grant ?? false),
+            'subscription_package_key' => $subscription?->pricingPackage?->package_key,
+            'subscription_billing_period' => $subscription?->pricingPackage?->billing_period?->value,
             'requires_subscription_payment' => $subscriptionService->requiresPayment($this->resource),
             'can_pay_premium' => $subscriptionService->canPayForPremium($this->resource),
             'is_premium_active' => $subscriptionService->hasActivePremium($this->resource),
