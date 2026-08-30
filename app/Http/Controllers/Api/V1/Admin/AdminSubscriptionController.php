@@ -94,6 +94,73 @@ class AdminSubscriptionController extends Controller
     }
 
     /**
+     * Upgrade monthly (or non-yearly) premium to yearly after a top-up payment (~₦20k difference).
+     */
+    public function upgradeToYearly(Request $request): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'business_id' => ['required', 'integer', 'exists:business_info,id'],
+                'reason' => ['required', 'string', 'max:500'],
+                'payment_handling' => ['nullable', 'string', Rule::in(['waived', 'recorded'])],
+                'payment_method' => ['nullable', 'string', Rule::in(['bank_transfer', 'cash', 'other'])],
+                'payment_reference' => ['nullable', 'string', 'max:255'],
+                'amount' => ['nullable', 'numeric', 'min:0'],
+            ]);
+
+            $paymentHandling = $validated['payment_handling'] ?? 'recorded';
+
+            if ($paymentHandling === 'recorded' && empty($validated['payment_method'])) {
+                return sendResponse(
+                    false,
+                    'Select a payment method when recording a top-up payment (e.g. bank transfer).',
+                    null,
+                    Response::HTTP_UNPROCESSABLE_ENTITY,
+                );
+            }
+
+            $business = BusinessInfo::query()
+                ->with(['subscription.pricingPackage', 'user'])
+                ->findOrFail((int) $validated['business_id']);
+
+            $result = $this->paymentReconciliation->upgradePremiumToYearly(
+                $business,
+                (string) $validated['reason'],
+                $request->user('admin_api')?->id,
+                [
+                    'payment_handling' => $paymentHandling,
+                    'payment_method' => $validated['payment_method'] ?? null,
+                    'payment_reference' => $validated['payment_reference'] ?? null,
+                    'amount' => array_key_exists('amount', $validated) ? (float) $validated['amount'] : null,
+                ],
+            );
+
+            $activatedBusiness = $result['business'];
+            $activatedBusiness->load(['category:id,name,subcategories,icon', 'location:id,lga_name,state_name,city_name,country_name']);
+
+            $message = $paymentHandling === 'waived'
+                ? 'Upgraded to yearly premium (top-up waived). Expiry extended.'
+                : 'Upgraded to yearly premium. Top-up recorded and expiry extended.';
+
+            return sendResponse(true, $message, [
+                'payment' => $this->adminPaymentService->toAdminDetail($result['payment']),
+                'subscription' => $this->subscriptionService->subscriptionPayload($activatedBusiness),
+                'business' => new BusinessInfoResource($activatedBusiness),
+                'previous_expires_at' => $result['previous_expires_at'],
+                'new_expires_at' => $result['new_expires_at'],
+                'days_added' => $result['days_added'],
+                'suggested_amount' => $result['suggested_amount'],
+            ]);
+        } catch (RuntimeException $exception) {
+            return sendResponse(false, $exception->getMessage(), null, Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
      * Premium expiration tracker for admin follow-up / reactivation outreach.
      */
     public function expirationTracker(Request $request): JsonResponse
@@ -120,6 +187,7 @@ class AdminSubscriptionController extends Controller
                     'businessInfo:id,user_id,business_name,business_status,category_id',
                     'businessInfo.user:id,name,email,phone',
                     'businessInfo.category:id,name',
+                    'pricingPackage:id,package_key,billing_period,title',
                 ])
                 ->where('plan', SubscriptionPlan::Premium)
                 ->whereIn('status', [
@@ -215,6 +283,8 @@ class AdminSubscriptionController extends Controller
                     'status' => $subscription->status->value,
                     'status_label' => $subscription->status->label(),
                     'is_trial' => $subscription->status === SubscriptionStatus::Trialing,
+                    'billing_period' => $subscription->pricingPackage?->billing_period?->value,
+                    'package_key' => $subscription->pricingPackage?->package_key,
                     'expires_at' => $expiresAt?->toIso8601String(),
                     'expires_at_label' => $expiresAt ? humanDateTime($expiresAt) : null,
                     'days_remaining' => $daysRemaining,

@@ -679,6 +679,248 @@ class PaymentReconciliationService
     }
 
     /**
+     * Upgrade an existing (usually monthly) premium subscription to yearly after a top-up payment.
+     *
+     * Extends expiry so the vendor effectively gets a full year:
+     * - Active monthly: keep remaining days, then add (365 − 30) more days
+     * - Expired / no remaining days: start a fresh 365-day yearly term from now
+     *
+     * @param  array{
+     *     payment_handling?: string|null,
+     *     payment_method?: string|null,
+     *     payment_reference?: string|null,
+     *     amount?: float|int|null,
+     * }  $options
+     * @return array{
+     *     payment: Payment,
+     *     business: BusinessInfo,
+     *     previous_expires_at: string|null,
+     *     new_expires_at: string,
+     *     days_added: int,
+     *     suggested_amount: float,
+     * }
+     */
+    public function upgradePremiumToYearly(
+        BusinessInfo $business,
+        string $reason,
+        ?int $grantedByAdminId = null,
+        array $options = [],
+    ): array {
+        $reason = trim($reason);
+        if ($reason === '') {
+            throw new RuntimeException('A reason is required when upgrading to yearly.');
+        }
+
+        $vendor = $business->user;
+        if ($vendor === null) {
+            throw new RuntimeException('Business has no owner account.');
+        }
+
+        $business->loadMissing(['subscription.pricingPackage']);
+        $subscription = $business->subscription;
+
+        if ($subscription === null || $subscription->plan !== \App\Enums\SubscriptionPlan::Premium) {
+            throw new RuntimeException('This business is not on a premium plan. Use Move to Premium first.');
+        }
+
+        $yearlyPackage = \App\Models\PricingPackage::query()
+            ->where('type', \App\Enums\PricingPackageType::Subscription)
+            ->where('package_key', 'premium_yearly')
+            ->where('is_active', true)
+            ->first();
+
+        if ($yearlyPackage === null) {
+            throw new RuntimeException('Yearly premium package was not found.');
+        }
+
+        $monthlyPackage = \App\Models\PricingPackage::query()
+            ->where('type', \App\Enums\PricingPackageType::Subscription)
+            ->where('package_key', 'premium_monthly')
+            ->where('is_active', true)
+            ->first();
+
+        $currentPackage = $subscription->pricingPackage;
+        $currentPeriod = $currentPackage?->billing_period;
+
+        if ($currentPeriod === \App\Enums\BillingPeriod::Yearly) {
+            throw new RuntimeException('This business is already on the yearly premium plan.');
+        }
+
+        if ($currentPeriod === \App\Enums\BillingPeriod::Lifetime) {
+            throw new RuntimeException('Lifetime premium cannot be upgraded to yearly.');
+        }
+
+        $yearlyDays = $yearlyPackage->billing_period?->durationDays() ?? 365;
+        $currentDays = $currentPeriod?->durationDays()
+            ?? $monthlyPackage?->billing_period?->durationDays()
+            ?? 30;
+
+        $paymentHandling = strtolower(trim((string) ($options['payment_handling'] ?? 'recorded')));
+        if (! in_array($paymentHandling, ['waived', 'recorded'], true)) {
+            throw new RuntimeException('Invalid payment handling. Use waived or recorded.');
+        }
+
+        $isWaived = $paymentHandling === 'waived';
+        $paymentMethod = $isWaived
+            ? 'waived'
+            : strtolower(trim((string) ($options['payment_method'] ?? 'bank_transfer')));
+
+        if (! $isWaived && ! in_array($paymentMethod, ['bank_transfer', 'cash', 'other'], true)) {
+            throw new RuntimeException('Payment method must be bank_transfer, cash, or other.');
+        }
+
+        $suggestedAmount = max(
+            0.0,
+            (float) $yearlyPackage->amount - (float) ($monthlyPackage?->amount ?? $currentPackage?->amount ?? 0),
+        );
+
+        $amount = $isWaived
+            ? 0.0
+            : (isset($options['amount']) && $options['amount'] !== null
+                ? max(0, (float) $options['amount'])
+                : $suggestedAmount);
+
+        if (! $isWaived && $amount <= 0) {
+            throw new RuntimeException('Enter the top-up amount received (e.g. yearly minus monthly).');
+        }
+
+        $paymentReference = isset($options['payment_reference'])
+            ? trim((string) $options['payment_reference'])
+            : '';
+
+        $previousExpiresAt = $subscription->expires_at;
+        $now = now();
+
+        // Active with remaining time: keep remainder, add the gap from current term → yearly.
+        // Expired: grant a full yearly term from now.
+        if ($previousExpiresAt !== null && $previousExpiresAt->greaterThan($now)) {
+            $daysAdded = max(1, $yearlyDays - $currentDays);
+            $newExpiresAt = $previousExpiresAt->copy()->addDays($daysAdded);
+        } else {
+            $daysAdded = $yearlyDays;
+            $newExpiresAt = $now->copy()->addDays($yearlyDays);
+        }
+
+        $packagePayload = $this->paymentService->findPackage(PaymentPurpose::Subscription, 'premium_yearly');
+        if ($packagePayload === null) {
+            throw new RuntimeException('Yearly subscription package pricing was not found.');
+        }
+
+        return DB::transaction(function () use (
+            $business,
+            $vendor,
+            $subscription,
+            $reason,
+            $grantedByAdminId,
+            $yearlyPackage,
+            $packagePayload,
+            $isWaived,
+            $paymentMethod,
+            $amount,
+            $paymentReference,
+            $suggestedAmount,
+            $previousExpiresAt,
+            $newExpiresAt,
+            $daysAdded,
+            $yearlyDays,
+            $currentDays,
+            $currentPeriod,
+        ): array {
+            $txRef = sprintf(
+                'admin_%s_yearly_%s_%s',
+                $isWaived ? 'waive' : 'topup',
+                $vendor->id,
+                strtolower(\Illuminate\Support\Str::random(10)),
+            );
+
+            $metadata = [
+                'package_title' => $packagePayload['title'] ?? 'Premium yearly',
+                'line_item' => 'subscription',
+                'manual_grant' => true,
+                'upgrade_to_yearly' => true,
+                'grant_reason' => $reason,
+                'granted_by_admin_id' => $grantedByAdminId,
+                'granted_at' => now()->toIso8601String(),
+                'payment_method' => $paymentMethod,
+                'duration_days' => $yearlyDays,
+                'days_added' => $daysAdded,
+                'previous_billing_period' => $currentPeriod?->value,
+                'previous_term_days' => $currentDays,
+                'previous_expires_at' => $previousExpiresAt?->toIso8601String(),
+                'new_expires_at' => $newExpiresAt->toIso8601String(),
+                'suggested_top_up_amount' => $suggestedAmount,
+                'pricing_package_id' => $yearlyPackage->id,
+            ];
+
+            if ($isWaived) {
+                $metadata['payment_waived'] = true;
+                $metadata['payment_handling'] = 'waived';
+            } else {
+                $metadata['payment_handling'] = 'recorded';
+                $metadata['payment_received'] = true;
+            }
+
+            if ($paymentReference !== '') {
+                $metadata['payment_reference'] = $paymentReference;
+            }
+
+            $payment = Payment::query()->create([
+                'user_id' => $vendor->id,
+                'business_info_id' => $business->id,
+                'purpose' => PaymentPurpose::Subscription,
+                'package_id' => 'premium_yearly',
+                'amount' => $amount,
+                'currency' => config('subscription.currency', 'NGN'),
+                'tx_ref' => $txRef,
+                'gateway' => null,
+                'gateway_transaction_id' => $paymentReference !== ''
+                    ? $paymentReference
+                    : ('admin_yearly_topup_' . now()->timestamp),
+                'status' => PaymentStatus::Completed,
+                'paid_at' => now(),
+                'is_consumed' => true,
+                'metadata' => $metadata,
+            ]);
+
+            $subscription->update([
+                'plan' => \App\Enums\SubscriptionPlan::Premium,
+                'status' => \App\Enums\SubscriptionStatus::Active,
+                'expires_at' => $newExpiresAt,
+                'pricing_package_id' => $yearlyPackage->id,
+                'trial_ends_at' => null,
+                'is_manual_grant' => true,
+            ]);
+
+            $business->update([
+                'business_status' => \App\Enums\BusinessStatus::Active,
+            ]);
+
+            $activated = $business->fresh(['subscription.pricingPackage']);
+
+            Log::info('subscription.premium.upgraded_to_yearly', [
+                'payment_id' => $payment->id,
+                'business_id' => $activated->id,
+                'user_id' => $vendor->id,
+                'granted_by_admin_id' => $grantedByAdminId,
+                'reason' => $reason,
+                'days_added' => $daysAdded,
+                'previous_expires_at' => $previousExpiresAt?->toIso8601String(),
+                'new_expires_at' => $newExpiresAt->toIso8601String(),
+                'amount' => $amount,
+            ]);
+
+            return [
+                'payment' => $payment->fresh(),
+                'business' => $activated,
+                'previous_expires_at' => $previousExpiresAt?->toIso8601String(),
+                'new_expires_at' => $newExpiresAt->toIso8601String(),
+                'days_added' => $daysAdded,
+                'suggested_amount' => $suggestedAmount,
+            ];
+        });
+    }
+
+    /**
      * Admin manual verification grant (pending checkout or Paystack reference).
      *
      * @return array{payment: Payment, business: BusinessInfo, verification: array<string, mixed>}
