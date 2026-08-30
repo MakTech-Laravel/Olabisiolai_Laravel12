@@ -141,6 +141,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
     Route::prefix('subscriptions')->name('subscriptions.')->group(function () {
         Route::post('/grant-premium', [AdminSubscriptionController::class, 'grantPremium'])->name('grant-premium');
+        Route::post('/upgrade-to-yearly', [AdminSubscriptionController::class, 'upgradeToYearly'])->name('upgrade-to-yearly');
         Route::post('/expiration-tracker', [AdminSubscriptionController::class, 'expirationTracker'])->name('expiration-tracker');
     });
 

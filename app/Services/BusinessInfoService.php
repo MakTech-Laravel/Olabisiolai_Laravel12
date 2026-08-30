@@ -1295,7 +1295,7 @@ class BusinessInfoService
                 'category:id,name,subcategories,icon',
                 'location:id,lga_name,state_name,city_name,country_name,latitude,longitude,formatted_address',
                 'user:id,first_name,last_name,name,email,phone,role',
-                'subscription',
+                'subscription.pricingPackage',
                 'boost:id,business_info_id,is_active,activated_at,deactivated_at',
             ])
             ->paginate($perPage, ['*'], 'page', $page);
@@ -1309,6 +1309,7 @@ class BusinessInfoService
                 'location:id,lga_name,state_name,city_name,country_name,latitude,longitude,formatted_address',
                 'user:id,first_name,last_name,name,email,phone,role',
                 'verifiedBy:id,name,email,phone,role',
+                'subscription.pricingPackage',
                 'boost:id,business_info_id,is_active,activated_at,deactivated_at',
                 'messages' => fn($query) => $query
                     ->with(['admin:id,name,email', 'vendor:id,name,email'])
