@@ -17,7 +17,18 @@ class BusinessReportService
      */
     public function storeReport(BusinessInfo $business, User $user, array $data): BusinessReport
     {
+        if (! $user->isUser()) {
+            throw new \RuntimeException('Only customer accounts can report a business. Business accounts cannot report other businesses.');
+        }
+
+        if ((int) $business->user_id === (int) $user->id) {
+            throw new \RuntimeException('You cannot report your own business.');
+        }
+
         $reason = ReviewReportReason::from($data['reason']);
+        if (! in_array($reason, ReviewReportReason::forBusinessReports(), true)) {
+            throw new \RuntimeException('The selected report reason is invalid for business reports.');
+        }
 
         try {
             $report = BusinessReport::create([

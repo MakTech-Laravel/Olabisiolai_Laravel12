@@ -15,7 +15,7 @@ class ReviewReportReasonsTest extends TestCase
 
         $response->assertOk();
         $response->assertJsonPath('success', true);
-        $response->assertJsonPath('data.reasons.0.value', 'illegal_or_fraudulent');
-        $response->assertJsonPath('data.reasons.0.label', 'This is illegal/fraudulent');
+        $response->assertJsonPath('data.reasons.0.value', 'abusive_or_offensive');
+        $response->assertJsonPath('data.reasons.0.label', 'Abusive or offensive language');
     }
 }
