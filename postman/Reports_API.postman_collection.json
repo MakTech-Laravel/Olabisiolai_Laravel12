@@ -1,0 +1,687 @@
+{
+  "info": {
+    "_postman_id": "reports-api-olabisiolai-2026",
+    "name": "Olabisiolai - Reports API",
+    "description": "Business reports + review reports.\n\n**How to use**\n1. Set `base_url` (default `http://localhost:8000/api/v1`).\n2. Run **Customer Login** (role=user) before customer report requests.\n3. Run **Vendor Login** before vendor review-report.\n4. Run **Admin Login** before admin moderation endpoints.\n5. Set `business_id`, `review_id`, `business_report_id`, `review_report_id` as needed.\n\n**Rules**\n- Only customer accounts (`role=user`) can report a business.\n- Customers and vendors can report reviews (vendor: only reviews on their own business).\n- Vendors cannot report other businesses.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000/api/v1"
+    },
+    {
+      "key": "user_token",
+      "value": ""
+    },
+    {
+      "key": "vendor_token",
+      "value": ""
+    },
+    {
+      "key": "admin_token",
+      "value": ""
+    },
+    {
+      "key": "customer_email",
+      "value": "customer@example.com"
+    },
+    {
+      "key": "customer_password",
+      "value": "password"
+    },
+    {
+      "key": "vendor_email",
+      "value": "vendor@example.com"
+    },
+    {
+      "key": "vendor_password",
+      "value": "password"
+    },
+    {
+      "key": "admin_email",
+      "value": "superadmin@dev.com"
+    },
+    {
+      "key": "admin_password",
+      "value": "superadmin@dev.com"
+    },
+    {
+      "key": "business_id",
+      "value": "1"
+    },
+    {
+      "key": "review_id",
+      "value": "1"
+    },
+    {
+      "key": "business_report_id",
+      "value": "1"
+    },
+    {
+      "key": "review_report_id",
+      "value": "1"
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Auth (run first)",
+      "item": [
+        {
+          "name": "Customer Login (role=user)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  const token = json.token || (json.data && json.data.token) || null;",
+                  "  if (token) {",
+                  "    pm.collectionVariables.set('user_token', typeof token === 'string' ? token : (token.access_token || token.token || ''));",
+                  "    console.log('user_token saved');",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{customer_email}}\",\n  \"password\": \"{{customer_password}}\",\n  \"role\": \"user\"\n}"
+            },
+            "url": "{{base_url}}/auth/login",
+            "description": "Must be a customer account (role=user). Vendor accounts cannot report businesses."
+          },
+          "response": []
+        },
+        {
+          "name": "Vendor Login (role=vendor)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  const token = json.token || (json.data && json.data.token) || null;",
+                  "  if (token) {",
+                  "    pm.collectionVariables.set('vendor_token', typeof token === 'string' ? token : (token.access_token || token.token || ''));",
+                  "    console.log('vendor_token saved');",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{vendor_email}}\",\n  \"password\": \"{{vendor_password}}\",\n  \"role\": \"vendor\"\n}"
+            },
+            "url": "{{base_url}}/auth/login",
+            "description": "Vendor token — use only for reporting reviews on their own business."
+          },
+          "response": []
+        },
+        {
+          "name": "Admin Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  const token = json.token || (json.data && json.data.token) || null;",
+                  "  if (token) {",
+                  "    pm.collectionVariables.set('admin_token', typeof token === 'string' ? token : (token.access_token || token.token || ''));",
+                  "    console.log('admin_token saved');",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\"\n}"
+            },
+            "url": "{{base_url}}/admin/login",
+            "description": "Saves `admin_token` for moderation endpoints."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "1. Public – Reasons",
+      "item": [
+        {
+          "name": "Get Business Report Reasons",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/business-report-reasons",
+            "description": "No auth required.\n\nExample response:\n```json\n{\n  \"success\": true,\n  \"message\": \"Report reasons retrieved successfully.\",\n  \"data\": {\n    \"reasons\": [\n      { \"value\": \"illegal_or_fraudulent\", \"label\": \"This is illegal/fraudulent\" },\n      { \"value\": \"spam\", \"label\": \"This is spam\" },\n      { \"value\": \"wrong_price\", \"label\": \"The price is wrong\" },\n      { \"value\": \"wrong_category\", \"label\": \"Wrong category\" },\n      { \"value\": \"seller_asked_for_prepayment\", \"label\": \"Seller asked for prepayment\" },\n      { \"value\": \"already_sold\", \"label\": \"It is sold\" },\n      { \"value\": \"other\", \"label\": \"Other\" }\n    ]\n  }\n}\n```"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Review Report Reasons",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/review-report-reasons",
+            "description": "No auth required.\n\nExample response:\n```json\n{\n  \"success\": true,\n  \"message\": \"Report reasons retrieved successfully.\",\n  \"data\": {\n    \"reasons\": [\n      { \"value\": \"abusive_or_offensive\", \"label\": \"Abusive or offensive language\" },\n      { \"value\": \"fake_or_misleading\", \"label\": \"Fake or misleading review\" },\n      { \"value\": \"spam\", \"label\": \"This is spam\" },\n      { \"value\": \"harassment\", \"label\": \"Harassment or personal attack\" },\n      { \"value\": \"illegal_or_fraudulent\", \"label\": \"This is illegal/fraudulent\" },\n      { \"value\": \"other\", \"label\": \"Other\" }\n    ]\n  }\n}\n```"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Customer – Report Business",
+      "item": [
+        {
+          "name": "Report Business",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{user_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"spam\",\n  \"description\": \"This listing looks fake and keeps posting the same ad.\"\n}"
+            },
+            "url": "{{base_url}}/user/businesses/{{business_id}}/report",
+            "description": "Customer only (`role=user`).\n\n**Body**\n- `reason` (required): one of business-report-reasons values\n- `description` (optional): max 1000 chars\n\n**Example 201**\n```json\n{\n  \"success\": true,\n  \"message\": \"Thank you for your report. Our team will review it shortly.\",\n  \"data\": {\n    \"report\": {\n      \"id\": 41,\n      \"business_info_id\": 1,\n      \"reason\": \"spam\",\n      \"reason_label\": \"This is spam\",\n      \"description\": \"This listing looks fake and keeps posting the same ad.\",\n      \"status\": \"pending\",\n      \"created_at\": \"2026-09-06T11:20:00.000000Z\"\n    }\n  }\n}\n```\n\n**Errors**\n- 422 vendor / own business / invalid reason\n- 409 already reported"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Customer – Report Review",
+      "item": [
+        {
+          "name": "Report Review (Customer)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{user_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"abusive_or_offensive\",\n  \"description\": \"Contains personal insults.\"\n}"
+            },
+            "url": "{{base_url}}/user/reviews/{{review_id}}/report",
+            "description": "Customer token.\n\n**Body**\n- `reason` (required): one of review-report-reasons values\n- `description` (optional)\n\n**Example 201**\n```json\n{\n  \"success\": true,\n  \"message\": \"Report submitted successfully.\",\n  \"data\": {\n    \"id\": 19,\n    \"review_id\": 1,\n    \"reason\": \"abusive_or_offensive\",\n    \"status\": \"pending\"\n  }\n}\n```"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Vendor – Report Review",
+      "item": [
+        {
+          "name": "Report Review (Vendor – own business only)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{vendor_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"fake_or_misleading\",\n  \"description\": \"Customer never visited our store.\"\n}"
+            },
+            "url": "{{base_url}}/vendor/reviews/{{review_id}}/report",
+            "description": "Vendor can report a review only if it belongs to their business.\n\n**Body** same as customer review report."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5. Admin – Business Reports",
+      "item": [
+        {
+          "name": "List Business Reports",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/business-reports?page=1&per_page=15",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "business-reports"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "15"
+                },
+                {
+                  "key": "status",
+                  "value": "pending",
+                  "disabled": true
+                },
+                {
+                  "key": "reason",
+                  "value": "spam",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Shown in Admin → Reviews → Business Reports tab."
+          },
+          "response": []
+        },
+        {
+          "name": "Business Report Statistics",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/business-reports/statistics"
+          },
+          "response": []
+        },
+        {
+          "name": "View Business Report",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/business-reports/{{business_report_id}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Dismiss Business Report",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": "{{base_url}}/admin/business-reports/{{business_report_id}}/dismiss"
+          },
+          "response": []
+        },
+        {
+          "name": "Resolve Business Report",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": "{{base_url}}/admin/business-reports/{{business_report_id}}/resolve"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "6. Admin – Review Reports",
+      "item": [
+        {
+          "name": "List Review Reports",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/review-reports?page=1&per_page=15",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "review-reports"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "15"
+                },
+                {
+                  "key": "status",
+                  "value": "pending",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Shown in Admin → Reviews → Review Reports tab."
+          },
+          "response": []
+        },
+        {
+          "name": "Admin Review Report Reasons",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/review-reports/reasons"
+          },
+          "response": []
+        },
+        {
+          "name": "View Review Report",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/review-reports/{{review_report_id}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Dismiss Review Report",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": "{{base_url}}/admin/review-reports/{{review_report_id}}/dismiss"
+          },
+          "response": []
+        },
+        {
+          "name": "Resolve Review Report",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": "{{base_url}}/admin/review-reports/{{review_report_id}}/resolve"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

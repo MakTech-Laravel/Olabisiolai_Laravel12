@@ -97,6 +97,9 @@ Route::prefix('vendor')->name('vendor.')->group(function () {
             Route::get('/{review}', [VendorReviewController::class, 'show'])->name('show');
             Route::get('/{review}/replies', [VendorReviewController::class, 'replies'])->name('replies');
             Route::post('/{review}/reply', [VendorReviewController::class, 'reply'])->name('reply');
+            Route::post('/{review}/report', [VendorReviewController::class, 'report'])
+                ->middleware('throttle:5,1')
+                ->name('report');
             Route::put('/replies/{reply}', [VendorReviewController::class, 'updateReply'])->name('update-reply');
             Route::delete('/replies/{reply}', [VendorReviewController::class, 'deleteReply'])->name('delete-reply');
         });

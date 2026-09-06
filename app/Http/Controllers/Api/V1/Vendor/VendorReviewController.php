@@ -3,18 +3,24 @@
 namespace App\Http\Controllers\Api\V1\Vendor;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\StoreReviewReportRequest;
 use App\Http\Resources\Api\V1\ReviewReplyResource;
+use App\Http\Resources\Api\V1\ReviewReportResource;
 use App\Http\Resources\Api\V1\ReviewResource;
 use App\Models\Review;
 use App\Models\ReviewReply;
 use App\Services\ReviewReplyService;
+use App\Services\ReviewReportService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Throwable;
 
 class VendorReviewController extends Controller
 {
     public function __construct(
-        private ReviewReplyService $reviewReplyService
+        private ReviewReplyService $reviewReplyService,
+        private ReviewReportService $reviewReportService,
     ) {}
 
     /**
@@ -134,6 +140,38 @@ class VendorReviewController extends Controller
             'success' => true,
             'message' => 'Reply deleted successfully',
         ]);
+    }
+
+    /**
+     * Report a customer review left on the vendor's business.
+     */
+    public function report(StoreReviewReportRequest $request, Review $review): JsonResponse
+    {
+        try {
+            $report = $this->reviewReportService->storeVendorReport(
+                $review,
+                $request->user(),
+                $request->validated(),
+            );
+
+            return sendResponse(
+                true,
+                'Thank you for your report. Our team will review it shortly.',
+                ['report' => new ReviewReportResource($report)],
+                Response::HTTP_CREATED,
+            );
+        } catch (\RuntimeException $e) {
+            $message = $e->getMessage();
+            $status = str_contains(strtolower($message), 'already reported')
+                ? Response::HTTP_CONFLICT
+                : Response::HTTP_FORBIDDEN;
+
+            return sendResponse(false, $message, null, $status);
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            return sendResponse(false, 'Something went wrong. Please try again.', null, Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
     }
 
     /**
