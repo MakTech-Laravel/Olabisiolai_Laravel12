@@ -19,7 +19,13 @@ class StoreBusinessReportRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'reason' => ['required', Rule::in(ReviewReportReason::values())],
+            'reason' => [
+                'required',
+                Rule::in(array_map(
+                    static fn (ReviewReportReason $reason) => $reason->value,
+                    ReviewReportReason::forBusinessReports(),
+                )),
+            ],
             'description' => ['nullable', 'string', 'max:1000'],
         ];
     }

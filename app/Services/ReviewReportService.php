@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\ReviewReportReason;
 use App\Enums\ReviewReportStatus;
+use App\Models\BusinessInfo;
 use App\Models\Review;
 use App\Models\ReviewReport;
 use App\Models\User;
@@ -19,21 +20,55 @@ class ReviewReportService
      */
     public function storeReport(Review $review, User $user, array $data): ReviewReport
     {
+        if ((int) $review->user_id === (int) $user->id) {
+            throw new \RuntimeException('You cannot report your own review.');
+        }
+
         $reason = ReviewReportReason::from($data['reason']);
+        if (! in_array($reason, ReviewReportReason::forReviewReports(), true)) {
+            throw new \RuntimeException('The selected report reason is invalid for review reports.');
+        }
 
         try {
             $report = ReviewReport::create([
                 'review_id' => $review->id,
                 'user_id' => $user->id,
                 'reason' => $reason,
-                'description' => isset($data['description']) ? trim($data['description']) : null,
+                'description' => isset($data['description']) ? trim((string) $data['description']) : null,
                 'status' => ReviewReportStatus::Pending,
             ]);
         } catch (UniqueConstraintViolationException) {
             throw new \RuntimeException('You have already reported this review.');
         }
 
-        return $report->load(['review:id,review_text,rating,full_name,is_anonymous', 'user:id,first_name,last_name,email']);
+        return $report->load([
+            'review:id,review_text,rating,full_name,is_anonymous,business_id,is_approved',
+            'review.business:id,business_name',
+            'user:id,first_name,last_name,email',
+        ]);
+    }
+
+    /**
+     * Business owner reports a review left on their business.
+     *
+     * @throws \RuntimeException
+     */
+    public function storeVendorReport(Review $review, User $vendor, array $data): ReviewReport
+    {
+        if (! $vendor->isVendor()) {
+            throw new \RuntimeException('Only business accounts can report reviews on their listings.');
+        }
+
+        $ownsBusiness = BusinessInfo::query()
+            ->where('user_id', $vendor->id)
+            ->where('id', $review->business_id)
+            ->exists();
+
+        if (! $ownsBusiness) {
+            throw new \RuntimeException('You can only report reviews for your own business.');
+        }
+
+        return $this->storeReport($review, $vendor, $data);
     }
 
     /**

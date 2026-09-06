@@ -24,11 +24,11 @@ class ReviewReportController extends Controller
     public function reasons(): JsonResponse
     {
         $reasons = array_map(
-            fn(ReviewReportReason $reason) => [
+            fn (ReviewReportReason $reason) => [
                 'value' => $reason->value,
                 'label' => $reason->label(),
             ],
-            ReviewReportReason::cases()
+            ReviewReportReason::forReviewReports()
         );
 
         return sendResponse(true, 'Report reasons retrieved successfully.', [
@@ -37,20 +37,29 @@ class ReviewReportController extends Controller
     }
 
     /**
-     * Report a review for abuse.
+     * Report a review for abuse (customer or vendor).
      */
     public function store(StoreReviewReportRequest $request, Review $review): Response
     {
         $user = $request->user('api');
 
         try {
-            $report = $this->reviewReportService->storeReport($review, $user, $request->validated());
+            $report = $user->isVendor()
+                ? $this->reviewReportService->storeVendorReport($review, $user, $request->validated())
+                : $this->reviewReportService->storeReport($review, $user, $request->validated());
 
             return sendResponse(true, 'Thank you for your report. Our team will review it shortly.', [
                 'report' => new ReviewReportResource($report),
             ], Response::HTTP_CREATED);
         } catch (\RuntimeException $e) {
-            return sendResponse(false, $e->getMessage(), null, Response::HTTP_CONFLICT);
+            $message = $e->getMessage();
+            $status = str_contains(strtolower($message), 'already reported')
+                ? Response::HTTP_CONFLICT
+                : (str_contains(strtolower($message), 'only') || str_contains(strtolower($message), 'cannot')
+                    ? Response::HTTP_FORBIDDEN
+                    : Response::HTTP_UNPROCESSABLE_ENTITY);
+
+            return sendResponse(false, $message, null, $status);
         } catch (Throwable $throwable) {
             report($throwable);
 

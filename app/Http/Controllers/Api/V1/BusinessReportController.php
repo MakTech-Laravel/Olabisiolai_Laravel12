@@ -69,10 +69,7 @@ class BusinessReportController extends Controller
                 'value' => $reason->value,
                 'label' => $reason->label(),
             ],
-            array_filter(
-                ReviewReportReason::cases(),
-                fn (ReviewReportReason $reason) => $reason !== ReviewReportReason::Other,
-            ),
+            ReviewReportReason::forBusinessReports(),
         );
 
         return sendResponse(true, 'Report reasons retrieved successfully.', [
@@ -98,7 +95,11 @@ class BusinessReportController extends Controller
                 Response::HTTP_CREATED,
             );
         } catch (\RuntimeException $e) {
-            return sendResponse(false, $e->getMessage(), null, Response::HTTP_CONFLICT);
+            $status = str_contains(strtolower($e->getMessage()), 'already reported')
+                ? Response::HTTP_CONFLICT
+                : Response::HTTP_UNPROCESSABLE_ENTITY;
+
+            return sendResponse(false, $e->getMessage(), null, $status);
         } catch (Throwable $throwable) {
             report($throwable);
 
