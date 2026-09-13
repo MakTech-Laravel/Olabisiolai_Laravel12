@@ -153,9 +153,11 @@ class SocialAuthService
             ]);
         }
 
-        if ($user->status === UserStatus::Block->value) {
+        if ($user->isSuspendedOrBlocked()) {
             throw ValidationException::withMessages([
-                'provider' => ['This account has been blocked. Please contact support.'],
+                'provider' => [$user->status === UserStatus::Suspended
+                    ? 'Account suspended. Please contact support.'
+                    : 'This account has been blocked. Please contact support.'],
             ]);
         }
 

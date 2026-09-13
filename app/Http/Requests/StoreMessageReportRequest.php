@@ -2,31 +2,21 @@
 
 namespace App\Http\Requests;
 
-use App\Enums\ReviewReportReason;
+use App\Enums\MessageReportReason;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
-class StoreBusinessReportRequest extends FormRequest
+class StoreMessageReportRequest extends FormRequest
 {
     public function authorize(): bool
     {
         return true;
     }
 
-    /**
-     * @return array<string, mixed>
-     */
     public function rules(): array
     {
         return [
-            'reason' => [
-                'required',
-                'string',
-                Rule::in(array_map(
-                    static fn (ReviewReportReason $reason) => $reason->value,
-                    ReviewReportReason::forBusinessReports(),
-                )),
-            ],
+            'reason' => ['required', 'string', Rule::in(MessageReportReason::values())],
             'description' => ['nullable', 'string', 'max:1000'],
         ];
     }
@@ -34,7 +24,7 @@ class StoreBusinessReportRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'reason.required' => 'Please select a reason for reporting this business.',
+            'reason.required' => 'Please select a reason for reporting this message.',
             'reason.in' => 'The selected report reason is invalid.',
             'description.max' => 'Description cannot exceed 1000 characters.',
         ];

@@ -109,6 +109,11 @@ class User extends Authenticatable
         return ! $this->hasUnverifiedEmail();
     }
 
+    public function isSuspendedOrBlocked(): bool
+    {
+        return in_array($this->status, [UserStatus::Block, UserStatus::Suspended], true);
+    }
+
     public function registrationVerificationChannel(): ?string
     {
         $settings = is_array($this->settings) ? $this->settings : [];

@@ -19,7 +19,14 @@ class StoreReviewReportRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'reason' => ['required', Rule::in(ReviewReportReason::values())],
+            'reason' => [
+                'required',
+                'string',
+                Rule::in(array_map(
+                    static fn (ReviewReportReason $reason) => $reason->value,
+                    ReviewReportReason::forReviewReports(),
+                )),
+            ],
             'description' => ['nullable', 'string', 'max:1000'],
         ];
     }

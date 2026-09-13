@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Enums\UserStatus;
 use App\Models\User;
 use Closure;
 use Illuminate\Http\Request;
@@ -23,6 +24,18 @@ class EnsureRole
 
         if (! $user instanceof User || ! in_array($user->role, $roles, true)) {
             return response()->json(['message' => 'Forbidden.'], Response::HTTP_FORBIDDEN);
+        }
+
+        if ($user->isSuspendedOrBlocked()) {
+            return response()->json([
+                'success' => false,
+                'message' => $user->status === UserStatus::Suspended
+                    ? 'Account suspended. Please contact support.'
+                    : 'This account has been blocked. Please contact support.',
+                'data' => [
+                    'account_status' => $user->status instanceof UserStatus ? $user->status->value : $user->status,
+                ],
+            ], Response::HTTP_FORBIDDEN);
         }
 
         return $next($request);
