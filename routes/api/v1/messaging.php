@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Controllers\Api\V1\AttachmentController;
 use App\Http\Controllers\Api\V1\ConversationController;
 use App\Http\Controllers\Api\V1\MessageController;
+use App\Http\Controllers\Api\V1\MessageReportController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('presence/ping', [MessageController::class, 'presencePing'])->name('presence.ping');
@@ -25,6 +26,7 @@ Route::post('conversations/{conversation}/messages', [MessageController::class, 
 Route::patch('messages/{message}', [MessageController::class, 'update'])->middleware(['throttle:60,1'])->name('messages.update');
 Route::delete('messages/{message}', [MessageController::class, 'destroy'])->middleware(['throttle:60,1'])->name('messages.destroy');
 Route::post('messages/{message}/read', [MessageController::class, 'markRead'])->middleware(['throttle:60,1'])->name('messages.read');
+Route::post('messages/{message}/report', [MessageReportController::class, 'store'])->middleware(['throttle:20,1'])->name('messages.report');
 
 Route::post('conversations/{conversation}/typing', [MessageController::class, 'typing'])
     ->name('conversations.typing');

@@ -97,12 +97,14 @@ class ReviewReportController extends Controller
                 'value' => $reason->value,
                 'label' => $reason->label(),
             ],
-            ReviewReportReason::cases()
+            ReviewReportReason::forReviewReports(),
         );
 
         return response()->json([
             'success' => true,
-            'data' => $reasons,
+            'data' => [
+                'reasons' => array_values($reasons),
+            ],
         ]);
     }
 }
