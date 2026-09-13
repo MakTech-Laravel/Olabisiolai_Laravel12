@@ -8,6 +8,7 @@ use App\Enums\VerificationStatus;
 use App\Models\BoostPurchaseRequest;
 use App\Models\BusinessInfo;
 use App\Models\BusinessProfileView;
+use App\Models\MessageReport;
 use App\Models\Payment;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +28,7 @@ class AdminDashboardService
             'pending_boosts' => BoostPurchaseRequest::query()
                 ->where('status', BoostPurchaseRequestStatus::PendingAdmin)
                 ->count(),
+            'pending_message_reports' => MessageReport::pending()->count(),
         ];
     }
 

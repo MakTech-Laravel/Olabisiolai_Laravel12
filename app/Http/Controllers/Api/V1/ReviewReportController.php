@@ -24,15 +24,15 @@ class ReviewReportController extends Controller
     public function reasons(): JsonResponse
     {
         $reasons = array_map(
-            fn(ReviewReportReason $reason) => [
+            fn (ReviewReportReason $reason) => [
                 'value' => $reason->value,
                 'label' => $reason->label(),
             ],
-            ReviewReportReason::cases()
+            ReviewReportReason::forReviewReports(),
         );
 
         return sendResponse(true, 'Report reasons retrieved successfully.', [
-            'reasons' => $reasons,
+            'reasons' => array_values($reasons),
         ]);
     }
 
@@ -50,7 +50,11 @@ class ReviewReportController extends Controller
                 'report' => new ReviewReportResource($report),
             ], Response::HTTP_CREATED);
         } catch (\RuntimeException $e) {
-            return sendResponse(false, $e->getMessage(), null, Response::HTTP_CONFLICT);
+            $status = str_contains(strtolower($e->getMessage()), 'already reported')
+                ? Response::HTTP_CONFLICT
+                : Response::HTTP_UNPROCESSABLE_ENTITY;
+
+            return sendResponse(false, $e->getMessage(), null, $status);
         } catch (Throwable $throwable) {
             report($throwable);
 

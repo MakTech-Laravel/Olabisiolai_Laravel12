@@ -7,6 +7,7 @@ enum UserStatus: string
     case Active = 'active';
     case Pending = 'pending';
     case Block = 'block';
+    case Suspended = 'suspended';
 
     public static function values(): array
     {
@@ -18,6 +19,7 @@ enum UserStatus: string
             self::Active => 'Active',
             self::Pending => 'Pending',
             self::Block => 'Block',
+            self::Suspended => 'Suspended',
         };
     }
 }
