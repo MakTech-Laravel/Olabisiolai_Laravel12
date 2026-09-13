@@ -129,8 +129,8 @@ class UserController extends Controller
 
             $user = $this->userService->changeStatus($user, (string) $validated['status']);
 
-            if ($validated['status'] === UserStatus::Block->value) {
-                // Force logout from all devices after account is blocked.
+            if (in_array($validated['status'], [UserStatus::Block->value, UserStatus::Suspended->value], true)) {
+                // Force logout from all devices after account is blocked or suspended.
                 $this->userService->revokeAllTokens($user);
             }
 

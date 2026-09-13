@@ -69,10 +69,7 @@ class BusinessReportController extends Controller
                 'value' => $reason->value,
                 'label' => $reason->label(),
             ],
-            array_filter(
-                ReviewReportReason::cases(),
-                fn (ReviewReportReason $reason) => $reason !== ReviewReportReason::Other,
-            ),
+            ReviewReportReason::forBusinessReports(),
         );
 
         return sendResponse(true, 'Report reasons retrieved successfully.', [
