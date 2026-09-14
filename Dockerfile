@@ -1,5 +1,11 @@
 FROM php:8.3-fpm
 
+# Coolify often injects NODE_ENV=production at build time; that would skip Vite
+# (listed under package.json "devDependencies") and break `npm run build`.
+ENV COMPOSER_ALLOW_SUPERUSER=1 \
+    COMPOSER_NO_INTERACTION=1 \
+    NODE_ENV=development
+
 COPY ./docker/php.ini /usr/local/etc/php/conf.d/custom.ini
 
 # Install dependencies
@@ -22,15 +28,28 @@ COPY . .
 # Runtime .env is injected by Coolify at boot (see docker/entrypoint.sh).
 # PHP 8.3 image — API publisher only; WebSockets run in olabisiolai_websocket (ws.gidira.tech).
 # Production env template: docs/env.coolify.example
+# Split layers so Coolify logs show which step failed (composer vs npm vs link).
 RUN cp .env.example .env || touch .env \
-    && mkdir -p storage/framework/{views,sessions,cache} storage/logs bootstrap/cache \
-    && composer install --no-dev --optimize-autoloader \
+    && mkdir -p \
+    storage/framework/views \
+    storage/framework/sessions \
+    storage/framework/cache \
+    storage/logs \
+    bootstrap/cache \
+    && composer install --no-dev --optimize-autoloader --no-interaction \
     && php artisan package:discover --ansi \
-    && npm ci --ignore-scripts \
+    && (php artisan key:generate --force --no-interaction || true)
+
+# Vite lives in devDependencies — force include even if build env is production.
+RUN npm ci --ignore-scripts --include=dev \
     && npm run build \
-    && php artisan storage:link --force --ansi \
+    && rm -rf node_modules
+
+RUN php artisan storage:link --force --ansi \
     && chown -R www-data:www-data /var/www \
-    && chmod -R 775 storage bootstrap/cache 
+    && chmod -R 775 storage bootstrap/cache
+
+ENV NODE_ENV=production
 
 COPY ./docker/nginx.conf /etc/nginx/nginx.conf
 COPY ./docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
