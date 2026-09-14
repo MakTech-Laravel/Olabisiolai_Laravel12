@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\V1\Admin\CmsPageController;
 use App\Http\Controllers\Api\V1\Admin\ContactMessageController;
 use App\Http\Controllers\Api\V1\Admin\DashboardController;
 use App\Http\Controllers\Api\V1\Admin\LocationController;
+use App\Http\Controllers\Api\V1\Admin\MessageReportController;
 use App\Http\Controllers\Api\V1\Admin\PermissionController;
 use App\Http\Controllers\Api\V1\Admin\ReviewController;
 use App\Http\Controllers\Api\V1\Admin\ReviewReportController;
@@ -225,6 +226,16 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/{businessReport}', [BusinessReportController::class, 'show'])->name('show');
         Route::post('/{businessReport}/dismiss', [BusinessReportController::class, 'dismiss'])->name('dismiss');
         Route::post('/{businessReport}/resolve', [BusinessReportController::class, 'resolve'])->name('resolve');
+    });
+
+    Route::prefix('message-reports')->name('message-reports.')->group(function () {
+        Route::get('/', [MessageReportController::class, 'index'])->name('index');
+        Route::get('/statistics', [MessageReportController::class, 'statistics'])->name('statistics');
+        Route::get('/{messageReport}', [MessageReportController::class, 'show'])->name('show');
+        Route::post('/{messageReport}/dismiss', [MessageReportController::class, 'dismiss'])->name('dismiss');
+        Route::post('/{messageReport}/resolve', [MessageReportController::class, 'resolve'])->name('resolve');
+        Route::post('/{messageReport}/email-reported-user', [MessageReportController::class, 'emailReportedUser'])->name('email-reported-user');
+        Route::post('/{messageReport}/suspend-reported-user', [MessageReportController::class, 'suspendReportedUser'])->name('suspend-reported-user');
     });
 
     Route::middleware(['role_or_permission:super-admin|create admins'])

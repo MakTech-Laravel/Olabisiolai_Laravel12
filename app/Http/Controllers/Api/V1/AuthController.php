@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\UserStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\ForgotPasswordRequest;
 use App\Http\Requests\Api\V1\LoginRequest;
@@ -504,6 +505,19 @@ class AuthController extends Controller
 
             if ($user->role === 'admin') {
                 return sendResponse(false, 'Admins must use the admin login URL.', null, Response::HTTP_FORBIDDEN);
+            }
+
+            if ($user->isSuspendedOrBlocked()) {
+                return sendResponse(
+                    false,
+                    $user->status === UserStatus::Suspended
+                        ? 'Account suspended. Please contact support.'
+                        : 'This account has been blocked. Please contact support.',
+                    [
+                        'account_status' => $user->status instanceof UserStatus ? $user->status->value : $user->status,
+                    ],
+                    Response::HTTP_FORBIDDEN,
+                );
             }
 
             if (isset($validated['role']) && ! LoginRoleCompatibility::matches($validated['role'], $user->role)) {

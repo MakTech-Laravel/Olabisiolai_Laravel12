@@ -19,14 +19,21 @@ class ReviewReportService
      */
     public function storeReport(Review $review, User $user, array $data): ReviewReport
     {
+        if ((int) $review->user_id === (int) $user->id) {
+            throw new \RuntimeException('You cannot report your own review.');
+        }
+
         $reason = ReviewReportReason::from($data['reason']);
+        if (! in_array($reason, ReviewReportReason::forReviewReports(), true)) {
+            throw new \RuntimeException('The selected report reason is invalid for review reports.');
+        }
 
         try {
             $report = ReviewReport::create([
                 'review_id' => $review->id,
                 'user_id' => $user->id,
                 'reason' => $reason,
-                'description' => isset($data['description']) ? trim($data['description']) : null,
+                'description' => isset($data['description']) ? trim((string) $data['description']) : null,
                 'status' => ReviewReportStatus::Pending,
             ]);
         } catch (UniqueConstraintViolationException) {

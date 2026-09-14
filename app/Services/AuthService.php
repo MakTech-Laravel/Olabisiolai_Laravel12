@@ -163,9 +163,11 @@ class AuthService
             ]);
         }
 
-        if ($user->status === UserStatus::Block->value) {
+        if ($user->isSuspendedOrBlocked()) {
             throw ValidationException::withMessages([
-                'phone' => ['This account has been blocked. Please contact support.'],
+                'phone' => [$user->status === UserStatus::Suspended
+                    ? 'Account suspended. Please contact support.'
+                    : 'This account has been blocked. Please contact support.'],
             ]);
         }
 
@@ -214,9 +216,11 @@ class AuthService
             ]);
         }
 
-        if ($user->status === UserStatus::Block->value) {
+        if ($user->isSuspendedOrBlocked()) {
             throw ValidationException::withMessages([
-                'code' => ['This account has been blocked. Please contact support.'],
+                'code' => [$user->status === UserStatus::Suspended
+                    ? 'Account suspended. Please contact support.'
+                    : 'This account has been blocked. Please contact support.'],
             ]);
         }
 
@@ -361,6 +365,15 @@ class AuthService
             Cache::forget($cacheKey);
             throw ValidationException::withMessages([
                 'two_factor_token' => ['Your login session has expired. Please sign in again.'],
+            ]);
+        }
+
+        if ($user->isSuspendedOrBlocked()) {
+            Cache::forget($cacheKey);
+            throw ValidationException::withMessages([
+                'two_factor_token' => [$user->status === UserStatus::Suspended
+                    ? 'Account suspended. Please contact support.'
+                    : 'This account has been blocked. Please contact support.'],
             ]);
         }
 
@@ -537,6 +550,15 @@ class AuthService
             Cache::forget($cacheKey);
             throw ValidationException::withMessages([
                 'device_verification_token' => ['Your verification session has expired. Please sign in again.'],
+            ]);
+        }
+
+        if ($user->isSuspendedOrBlocked()) {
+            Cache::forget($cacheKey);
+            throw ValidationException::withMessages([
+                'device_verification_token' => [$user->status === UserStatus::Suspended
+                    ? 'Account suspended. Please contact support.'
+                    : 'This account has been blocked. Please contact support.'],
             ]);
         }
 
@@ -1214,7 +1236,7 @@ class AuthService
         }
 
         if ($subject->isAccountVerified()) {
-            if ($subject->status !== UserStatus::Active->value) {
+            if ($subject->status !== UserStatus::Active) {
                 $subject->forceFill(['status' => UserStatus::Active->value])->save();
             }
 

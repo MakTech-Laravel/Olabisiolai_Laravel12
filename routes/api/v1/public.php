@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\BusinessReportController;
+use App\Http\Controllers\Api\V1\MessageReportController;
 use App\Http\Controllers\Api\V1\Public\BusinessInfoController;
 use App\Http\Controllers\Api\V1\Public\ContactMessageController;
 use App\Http\Controllers\Api\V1\Public\PaymentConfigController;
@@ -12,6 +13,7 @@ use App\Http\Controllers\Api\V1\Public\PublicSeoPageController;
 use App\Http\Controllers\Api\V1\Public\PublicSubscriptionPlanController;
 use App\Http\Controllers\Api\V1\Public\ReviewController;
 use App\Http\Controllers\Api\V1\RealtimeController;
+use App\Http\Controllers\Api\V1\ReviewReportController;
 use App\Http\Controllers\Api\V1\Webhooks\PaystackWebhookController;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
@@ -60,8 +62,11 @@ Route::prefix('businesses')->name('businesses.')->group(function () {
 Route::get('/business-report-reasons', [BusinessReportController::class, 'reasons'])
     ->name('business-report-reasons');
 
-Route::get('/review-report-reasons', [BusinessReportController::class, 'reasons'])
+Route::get('/review-report-reasons', [ReviewReportController::class, 'reasons'])
     ->name('review-report-reasons');
+
+Route::get('/message-report-reasons', [MessageReportController::class, 'reasons'])
+    ->name('message-report-reasons');
 
 Route::prefix('reviews')->name('reviews.')->group(function () {
     Route::post('/', [ReviewController::class, 'index'])->name('index');
