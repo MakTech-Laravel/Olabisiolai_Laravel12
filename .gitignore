@@ -9,8 +9,7 @@
 /storage/app/sitemap
 /storage/api-docs
 /vendor
-.env
-.env.*
+temp_auto_push.bat
 !.env.example
 .env.backup
 .phpactor.json
@@ -23,8 +22,7 @@ yarn-error.log
 /.fleet
 /.idea
 /.nova
-/.vscode
 /.zed
+.gitignore
 branch_structure.json
-temp_auto_push.bat
-temp_interactive_push.bat
+config.bat
