@@ -11,6 +11,7 @@
 /vendor
 .env
 .env.*
+temp_auto_push.bat
 !.env.example
 .env.backup
 .phpactor.json
@@ -23,6 +24,7 @@ yarn-error.log
 /.fleet
 /.idea
 /.nova
-/.vscode
 
 
+.gitignore
+branch_structure.json
