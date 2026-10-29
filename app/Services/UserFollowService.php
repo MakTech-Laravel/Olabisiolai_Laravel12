@@ -33,6 +33,40 @@ class UserFollowService
     }
 
     /**
+     * Resolve which business page should receive the follow.
+     * Handles stale client caches and swapped vendor/business ids.
+     */
+    public function resolveFollowableBusiness(User $vendor, int $businessInfoId): ?BusinessInfo
+    {
+        $owned = BusinessInfo::query()
+            ->whereKey($businessInfoId)
+            ->where('user_id', $vendor->id)
+            ->first();
+
+        if ($owned instanceof BusinessInfo) {
+            return $owned;
+        }
+
+        // Client sent the vendor user id as business_id by mistake.
+        if ($businessInfoId === (int) $vendor->id) {
+            return BusinessInfo::query()
+                ->where('user_id', $vendor->id)
+                ->where('business_status', BusinessStatus::Active->value)
+                ->where('is_flagged', false)
+                ->orderByDesc('id')
+                ->first();
+        }
+
+        // Stale/wrong business id for this vendor — fall back to their active page.
+        return BusinessInfo::query()
+            ->where('user_id', $vendor->id)
+            ->where('business_status', BusinessStatus::Active->value)
+            ->where('is_flagged', false)
+            ->orderByDesc('id')
+            ->first();
+    }
+
+    /**
      * @return array{following: bool, following_user_id: int, business_info_id: int, followers_count: int}
      */
     public function toggle(User $follower, User $target, int $businessInfoId): array
@@ -45,14 +79,13 @@ class UserFollowService
             throw new RuntimeException('Only vendor profiles can be followed.');
         }
 
-        $business = BusinessInfo::query()
-            ->whereKey($businessInfoId)
-            ->where('user_id', $target->id)
-            ->first();
+        $business = $this->resolveFollowableBusiness($target, $businessInfoId);
 
         if (! $business instanceof BusinessInfo) {
-            throw new RuntimeException('Business not found.');
+            throw new RuntimeException('The selected business id is invalid.');
         }
+
+        $businessInfoId = (int) $business->id;
 
         /** @var UserFollow|null $existing */
         $existing = UserFollow::withTrashed()
