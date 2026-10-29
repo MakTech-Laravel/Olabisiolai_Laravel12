@@ -155,6 +155,47 @@ class UserFollowTest extends TestCase
         $response->assertUnprocessable();
     }
 
+    public function test_follow_recovers_when_client_sends_vendor_user_id_as_business_id(): void
+    {
+        $customer = User::factory()->create([
+            'role' => 'user',
+            'email_verified_at' => now(),
+        ]);
+        [$vendor, $business] = $this->createVendorBusiness('Mirahon Test');
+
+        $token = $customer->createToken('test')->accessToken;
+
+        $response = $this->withToken($token)->postJson('/api/v1/user/follows/toggle', [
+            'following_user_id' => $vendor->id,
+            // Common client bug: vendor user id posted as business_id.
+            'business_id' => $vendor->id,
+        ]);
+
+        $response->assertCreated();
+        $response->assertJsonPath('data.following', true);
+        $response->assertJsonPath('data.business_info_id', $business->id);
+    }
+
+    public function test_follow_recovers_when_client_sends_stale_business_id_for_vendor(): void
+    {
+        $customer = User::factory()->create([
+            'role' => 'user',
+            'email_verified_at' => now(),
+        ]);
+        [$vendor, $business] = $this->createVendorBusiness('Stale Id Biz');
+
+        $token = $customer->createToken('test')->accessToken;
+
+        $response = $this->withToken($token)->postJson('/api/v1/user/follows/toggle', [
+            'following_user_id' => $vendor->id,
+            'business_id' => 999999,
+        ]);
+
+        $response->assertCreated();
+        $response->assertJsonPath('data.following', true);
+        $response->assertJsonPath('data.business_info_id', $business->id);
+    }
+
     /**
      * @return array{0: User, 1: BusinessInfo}
      */

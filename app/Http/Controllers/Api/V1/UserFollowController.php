@@ -195,7 +195,9 @@ class UserFollowController extends Controller
         try {
             $validated = $request->validate([
                 'following_user_id' => ['required', 'integer', Rule::exists('users', 'id')],
-                'business_id' => ['required', 'integer', Rule::exists('business_info', 'id')],
+                // Resolve ownership in the service — strict exists() produced a cryptic
+                // "selected business id is invalid" when clients sent a stale/swapped id.
+                'business_id' => ['required', 'integer', 'min:1'],
             ]);
 
             $target = User::query()->find((int) $validated['following_user_id']);
