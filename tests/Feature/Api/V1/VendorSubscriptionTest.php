@@ -98,9 +98,24 @@ class VendorSubscriptionTest extends TestCase
 
         $token = $user->createToken('test')->accessToken;
 
+        config(['services.paystack.secret' => 'sk_test_subscription']);
+
+        \Illuminate\Support\Facades\Http::fake([
+            'api.paystack.co/transaction/verify/*' => \Illuminate\Support\Facades\Http::response([
+                'status' => true,
+                'data' => [
+                    'status' => 'success',
+                    'reference' => 'psk_sub_test_12345',
+                    'amount' => ((int) $payment->amount) * 100,
+                    'currency' => 'NGN',
+                ],
+            ], 200),
+        ]);
+
         $confirmResponse = $this->withToken($token)->postJson('/api/v1/vendor/subscription/payment/confirm', [
             'payment_id' => $payment->id,
-            'gateway_transaction_id' => 'FLW-SUB-12345',
+            'gateway_transaction_id' => 'psk_sub_test_12345',
+            'gateway' => 'paystack',
         ]);
 
         $confirmResponse->assertOk();
@@ -213,10 +228,26 @@ class VendorSubscriptionTest extends TestCase
         $initResponse->assertCreated();
 
         $paymentId = (int) $initResponse->json('data.payments.subscription.id');
+        $amount = (float) $initResponse->json('data.payments.subscription.amount');
+
+        config(['services.paystack.secret' => 'sk_test_subscription']);
+
+        \Illuminate\Support\Facades\Http::fake([
+            'api.paystack.co/transaction/verify/*' => \Illuminate\Support\Facades\Http::response([
+                'status' => true,
+                'data' => [
+                    'status' => 'success',
+                    'reference' => 'psk_free_upgrade_001',
+                    'amount' => (int) round($amount * 100),
+                    'currency' => 'NGN',
+                ],
+            ], 200),
+        ]);
 
         $confirmResponse = $this->withToken($token)->postJson('/api/v1/vendor/subscription/payment/confirm', [
             'payment_id' => $paymentId,
-            'gateway_transaction_id' => 'FLW-FREE-UPGRADE-001',
+            'gateway_transaction_id' => 'psk_free_upgrade_001',
+            'gateway' => 'paystack',
         ]);
 
         $confirmResponse->assertOk();

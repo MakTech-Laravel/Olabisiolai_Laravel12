@@ -1299,12 +1299,20 @@ class PaymentReconciliationService
 
     private function verifyPaystackForSubscriptionPayment(Payment $payment, string $reference): void
     {
+        $this->assertPaystackPaidForPayment($payment, $reference);
+    }
+
+    /**
+     * Confirm Paystack reports success and the charged amount covers this payment.
+     */
+    public function assertPaystackPaidForPayment(Payment $payment, string $reference): void
+    {
         $paystackData = $this->verifyPaystackWithRetry(strtolower(trim($reference)));
         if (strtolower((string) ($paystackData['status'] ?? '')) !== 'success') {
             throw new RuntimeException('Paystack could not verify this payment. Please try again or contact support.');
         }
 
-        $this->assertPaystackAmountMatchesSubscriptionCheckout($payment, $paystackData);
+        $this->assertPaystackAmountForPayment($payment, $paystackData);
     }
 
     /**

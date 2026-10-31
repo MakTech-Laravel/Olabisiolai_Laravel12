@@ -17,6 +17,8 @@ class PricingPackageService
      */
     public function verificationPackages(): array
     {
+        $this->ensureCoreVerificationPackages();
+
         return $this->activePackages(PricingPackageType::Verification)
             ->map(fn (PricingPackage $package): array => $package->toPackageArray())
             ->values()
@@ -39,9 +41,74 @@ class PricingPackageService
      */
     public function verificationPackageKeys(): array
     {
+        $this->ensureCoreVerificationPackages();
+
         return $this->activePackages(PricingPackageType::Verification)
             ->pluck('package_key')
             ->all();
+    }
+
+    /**
+     * Keep core verification tiers (`business`, `ltd`) present and active without
+     * overwriting admin-customised amounts/titles on existing rows.
+     */
+    public function ensureCoreVerificationPackages(): void
+    {
+        $currency = config('verification.currency', 'NGN');
+        $configPackages = config('verification.packages', []);
+
+        foreach ($configPackages as $index => $package) {
+            $key = (string) ($package['id'] ?? '');
+            if ($key === '') {
+                continue;
+            }
+
+            $existing = PricingPackage::withTrashed()
+                ->where('type', PricingPackageType::Verification)
+                ->where('package_key', $key)
+                ->first();
+
+            if ($existing !== null) {
+                $updates = [
+                    'is_active' => true,
+                ];
+
+                if ($existing->trashed()) {
+                    $existing->restore();
+                }
+
+                // Only fill empty descriptive fields; never clobber live pricing.
+                if (trim((string) $existing->title) === '') {
+                    $updates['title'] = (string) ($package['title'] ?? $key);
+                }
+                if ((int) $existing->amount <= 0) {
+                    $updates['amount'] = (int) ($package['amount'] ?? 0);
+                }
+                if (trim((string) ($existing->description ?? '')) === '') {
+                    $updates['description'] = (string) ($package['description'] ?? '');
+                }
+                if (! is_array($existing->perks) || $existing->perks === []) {
+                    $updates['perks'] = $package['perks'] ?? [];
+                }
+
+                $existing->fill($updates);
+                $existing->save();
+
+                continue;
+            }
+
+            PricingPackage::query()->create([
+                'package_key' => $key,
+                'type' => PricingPackageType::Verification,
+                'title' => (string) ($package['title'] ?? $key),
+                'amount' => (int) ($package['amount'] ?? 0),
+                'currency' => $currency,
+                'description' => (string) ($package['description'] ?? ''),
+                'perks' => $package['perks'] ?? [],
+                'is_active' => true,
+                'sort_order' => $index + 1,
+            ]);
+        }
     }
 
     public function verificationCurrency(): string

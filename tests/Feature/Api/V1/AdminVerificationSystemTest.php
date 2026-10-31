@@ -97,10 +97,24 @@ class AdminVerificationSystemTest extends TestCase
         $init->assertCreated();
         $paymentId = $init->json('data.payment.id');
 
+        config(['services.paystack.secret' => 'sk_test_verification']);
+
+        \Illuminate\Support\Facades\Http::fake([
+            'api.paystack.co/transaction/verify/*' => \Illuminate\Support\Facades\Http::response([
+                'status' => true,
+                'data' => [
+                    'status' => 'success',
+                    'reference' => 'psk_ver_test_12345',
+                    'amount' => 500000,
+                    'currency' => 'NGN',
+                ],
+            ], 200),
+        ]);
+
         $confirm = $this->withToken($token)->postJson('/api/v1/vendor/verification/payment/confirm', [
             'payment_id' => $paymentId,
-            'gateway_transaction_id' => 'FLW-TEST-12345',
-            'gateway' => 'flutterwave',
+            'gateway_transaction_id' => 'psk_ver_test_12345',
+            'gateway' => 'paystack',
         ]);
 
         $confirm->assertOk();

@@ -49,9 +49,20 @@ class AdminPricingController extends Controller
 
             if ($type === 'verification') {
                 $allowedKeys = ['business', 'ltd'];
+                $incomingKeys = [];
                 foreach ($validated['packages'] as $package) {
-                    if (! in_array($package['package_key'], $allowedKeys, true)) {
+                    $key = (string) ($package['package_key'] ?? '');
+                    if (! in_array($key, $allowedKeys, true)) {
                         throw new RuntimeException('Invalid verification package key.');
+                    }
+                    $incomingKeys[] = $key;
+                }
+
+                foreach ($allowedKeys as $requiredKey) {
+                    if (! in_array($requiredKey, $incomingKeys, true)) {
+                        throw new RuntimeException(
+                            'Verification pricing must include both business and ltd packages.',
+                        );
                     }
                 }
 
