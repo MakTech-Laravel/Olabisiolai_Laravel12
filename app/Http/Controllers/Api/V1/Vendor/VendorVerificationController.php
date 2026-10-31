@@ -31,6 +31,7 @@ class VendorVerificationController extends Controller
         private readonly PricingPackageService $pricingPackageService,
         private readonly WalletService $walletService,
         private readonly PaystackCheckoutService $paystackCheckoutService,
+        private readonly \App\Services\PaymentReconciliationService $paymentReconciliation,
     ) {}
 
     public function packages()
@@ -47,11 +48,17 @@ class VendorVerificationController extends Controller
             $vendor = $request->user('api');
             $business = $this->businessInfoService->resolveBusinessFromRequest($request);
 
+            $allowedPackageKeys = $this->pricingPackageService->verificationPackageKeys();
+
             $validated = $request->validate([
-                'package_id' => ['required', 'string', Rule::in($this->pricingPackageService->verificationPackageKeys())],
+                'package_id' => ['required', 'string', Rule::in($allowedPackageKeys)],
                 'gateway' => ['nullable', 'string', Rule::in(PaymentGateway::values())],
                 'use_wallet' => ['sometimes', 'boolean'],
                 'apply_wallet' => ['sometimes', 'boolean'],
+            ], [
+                'package_id.in' => $allowedPackageKeys === []
+                    ? 'No verification packages are available right now. Please try again later.'
+                    : 'The selected verification package is not available. Allowed: '.implode(', ', $allowedPackageKeys).'.',
             ]);
 
             $gateway = isset($validated['gateway']) ? PaymentGateway::from((string) $validated['gateway']) : null;
@@ -200,11 +207,21 @@ class VendorVerificationController extends Controller
             );
 
             $gateway = PaymentGateway::from((string) $validated['gateway']);
+            $gatewayTransactionId = trim((string) $validated['gateway_transaction_id']);
+
             if ($payment->status === PaymentStatus::Pending) {
+                if ($gateway === PaymentGateway::Paystack) {
+                    $this->paymentReconciliation->assertPaystackPaidForPayment($payment, $gatewayTransactionId);
+                } elseif ($gateway === PaymentGateway::Flutterwave) {
+                    throw new RuntimeException(
+                        'Flutterwave verification payments must settle via webhook or admin apply. Please use Paystack, or contact support.',
+                    );
+                }
+
                 $this->walletService->settleApplication($vendor, $payment, 'Verification checkout');
                 $payment = $this->paymentService->confirmPayment(
                     $payment,
-                    trim((string) $validated['gateway_transaction_id']),
+                    $gatewayTransactionId,
                     $gateway,
                 );
             } elseif ($payment->gateway === null) {

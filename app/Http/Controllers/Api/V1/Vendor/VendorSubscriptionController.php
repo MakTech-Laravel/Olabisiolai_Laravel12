@@ -423,6 +423,13 @@ class VendorSubscriptionController extends Controller
             $gateway = PaymentGateway::from((string) $validated['gateway']);
             Log::info('Gateway', ['gateway' => $gateway]);
 
+            // Prevent premium activation without gateway verification (Flutterwave had no verify path).
+            if ($gateway === PaymentGateway::Flutterwave) {
+                throw new RuntimeException(
+                    'Flutterwave premium checkout must settle via webhook or admin apply. Please pay with Paystack, or contact support.',
+                );
+            }
+
             $business = $this->paymentReconciliation->completeSubscriptionCheckout(
                 $payment,
                 $vendor,
