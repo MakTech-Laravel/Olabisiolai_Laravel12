@@ -226,7 +226,9 @@ class PublicSearchQueryParser
             return false;
         }
 
-        if (str_contains($candidate, $token) || str_contains($token, $candidate)) {
+        // Require a meaningful substring (min 4 chars) so brand tokens like
+        // "strandsbyel" do not match category phrases via "and" / "by" / "el".
+        if ($this->hasMeaningfulSubstringOverlap($token, $candidate)) {
             return true;
         }
 
@@ -253,7 +255,7 @@ class PublicSearchQueryParser
             return true;
         }
 
-        if (str_contains($a, $b) || str_contains($b, $a)) {
+        if ($this->hasMeaningfulSubstringOverlap($a, $b)) {
             return true;
         }
 
@@ -269,6 +271,22 @@ class PublicSearchQueryParser
         };
 
         return levenshtein($a, $b) <= $threshold;
+    }
+
+    /**
+     * Substring overlap only counts when the shorter side is long enough to be
+     * a real stem (e.g. "clean" in "cleaning"), not stop-fragments inside brands.
+     */
+    private function hasMeaningfulSubstringOverlap(string $a, string $b): bool
+    {
+        $shorter = mb_strlen($a) <= mb_strlen($b) ? $a : $b;
+        $longer = mb_strlen($a) <= mb_strlen($b) ? $b : $a;
+
+        if (mb_strlen($shorter) < 4) {
+            return false;
+        }
+
+        return str_contains($longer, $shorter);
     }
 
     private function singularize(string $word): string

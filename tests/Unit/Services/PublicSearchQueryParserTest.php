@@ -5,6 +5,7 @@ namespace Tests\Unit\Services;
 use App\Models\Category;
 use App\Models\Location;
 use App\Services\PublicSearchQueryParser;
+use App\Services\SearchSynonymService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -20,6 +21,11 @@ class PublicSearchQueryParserTest extends TestCase
         Category::factory()->create([
             'name' => 'Home Repair Services',
             'subcategories' => ['Cleaning Services', 'Plumber'],
+        ]);
+
+        app(SearchSynonymService::class)->createSynonym([
+            'term' => 'cleaner',
+            'synonyms' => ['clean', 'cleaning', 'cleaning services'],
         ]);
 
         $parsed = app(PublicSearchQueryParser::class)->parse('cleaner in Surulere');
@@ -53,5 +59,30 @@ class PublicSearchQueryParserTest extends TestCase
         $this->assertSame([], $parsed->locationIds);
         $this->assertNotEmpty($parsed->serviceTermGroups);
         $this->assertContains('clean', $parsed->serviceTermGroups[0]);
+    }
+
+    public function test_brand_like_token_does_not_expand_via_short_category_fragments(): void
+    {
+        Category::factory()->create([
+            'name' => 'Gifts and Sourvenirs Shop',
+            'subcategories' => ['Souvenirs'],
+        ]);
+        Category::factory()->create([
+            'name' => 'Shopping and Retail Store',
+            'subcategories' => ['Retail'],
+        ]);
+
+        $expanded = app(PublicSearchQueryParser::class)->expandTerms('Strandsbyel');
+
+        $this->assertContains('strandsbyel', $expanded);
+        foreach ($expanded as $term) {
+            $this->assertStringNotContainsString('gift', $term);
+            $this->assertStringNotContainsString('souvenir', $term);
+            $this->assertStringNotContainsString('shopping', $term);
+            $this->assertStringNotContainsString('retail', $term);
+            $this->assertNotSame('and', $term);
+            $this->assertNotSame('by', $term);
+            $this->assertNotSame('el', $term);
+        }
     }
 }

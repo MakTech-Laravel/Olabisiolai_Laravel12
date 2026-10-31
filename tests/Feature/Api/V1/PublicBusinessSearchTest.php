@@ -7,6 +7,7 @@ use App\Models\BusinessInfo;
 use App\Models\Category;
 use App\Models\Location;
 use App\Models\User;
+use App\Services\SearchSynonymService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -22,6 +23,11 @@ class PublicBusinessSearchTest extends TestCase
         ]);
         $surulere = Location::factory()->create(['lga_name' => 'Surulere', 'city_name' => 'Lagos']);
         $ikeja = Location::factory()->create(['lga_name' => 'Ikeja', 'city_name' => 'Lagos']);
+
+        app(SearchSynonymService::class)->createSynonym([
+            'term' => 'cleaner',
+            'synonyms' => ['clean', 'cleaning', 'cleaning services'],
+        ]);
 
         $surulereCleaner = $this->createActiveBusiness($category, $surulere, 'Sparkle Clean Services', [
             'subcategory' => 'Cleaning Services',
@@ -96,6 +102,63 @@ class PublicBusinessSearchTest extends TestCase
 
         $this->assertContains($inSurulere->id, $ids);
         $this->assertNotContains($inIkeja->id, $ids);
+    }
+
+    public function test_unique_brand_query_does_not_return_unrelated_category_matches(): void
+    {
+        $gifts = Category::factory()->create([
+            'name' => 'Gifts and Sourvenirs Shop',
+            'subcategories' => ['Souvenirs'],
+        ]);
+        $retail = Category::factory()->create([
+            'name' => 'Shopping and Retail Store',
+            'subcategories' => ['Retail'],
+        ]);
+        $location = Location::factory()->create(['lga_name' => 'Ikorodu']);
+
+        $unrelatedGift = $this->createActiveBusiness($gifts, $location, 'Akin Delight Photogifts and Concepts', [
+            'business_description' => 'We deal in Framing, Acrylics, Wall Clocks and other Photogifts.',
+            'services_offered' => ['Uncategorized services'],
+        ]);
+        $unrelatedRetail = $this->createActiveBusiness($retail, $location, 'NELIZ HUB VENTURE', [
+            'business_description' => 'Home care products and retail supplies.',
+            'services_offered' => ['Retail'],
+        ]);
+        $exactBrand = $this->createActiveBusiness($retail, $location, 'Strandsbyel Beauty', [
+            'business_description' => 'Hair strands and beauty products.',
+            'services_offered' => ['Beauty'],
+        ]);
+
+        $response = $this->getJson('/api/v1/businesses/all?per_page=20&search=Strandsbyel');
+
+        $response->assertOk();
+
+        $ids = collect($response->json('data.businesses'))->pluck('id')->all();
+
+        $this->assertContains($exactBrand->id, $ids);
+        $this->assertNotContains($unrelatedGift->id, $ids);
+        $this->assertNotContains($unrelatedRetail->id, $ids);
+        $this->assertCount(1, $ids);
+    }
+
+    public function test_unknown_brand_query_returns_empty_instead_of_category_noise(): void
+    {
+        $gifts = Category::factory()->create([
+            'name' => 'Gifts and Sourvenirs Shop',
+            'subcategories' => ['Souvenirs'],
+        ]);
+        $location = Location::factory()->create(['lga_name' => 'Ikorodu']);
+
+        $this->createActiveBusiness($gifts, $location, 'Akin Delight Photogifts and Concepts', [
+            'business_description' => 'Photogifts and framing.',
+            'services_offered' => ['Uncategorized services'],
+        ]);
+
+        $response = $this->getJson('/api/v1/businesses/all?per_page=20&search=Strandsbyel');
+
+        $response->assertOk();
+        $this->assertSame(0, (int) $response->json('data.count'));
+        $this->assertSame([], $response->json('data.businesses'));
     }
 
     public function test_search_endpoint_supports_compound_queries(): void
